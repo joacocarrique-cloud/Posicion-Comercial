@@ -634,3 +634,4 @@ function applyMarketData() {
     document.getElementById('spot').value = futuro.ajuste;
   }
   renderAll();
+}
