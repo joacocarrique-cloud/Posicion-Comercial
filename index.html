@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Builder de Coberturas — Espartina S.A.</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="header-brand">
+    <div class="header-logo">🌾</div>
+    <div>
+      <div class="header-title">Suite Comercial · Espartina S.A.</div>
+      <div class="header-subtitle">Coberturas · FAS & Retenciones · Pases & Tasas · Desvío de Precios</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <span class="save-indicator" id="save-indicator"></span>
+    <nav id="mod-pills" style="display:flex;gap:4px;">
+      <button class="mod-pill active" onclick="switchToWorkspace()">◈ Coberturas</button>
+      <button class="mod-pill" onclick="toggleRetenciones()">🌾 FAS & Ret.</button>
+      <button class="mod-pill" onclick="togglePases()">📊 Pases & Tasas</button>
+      <button class="mod-pill" onclick="toggleSpreads()">📈 Spreads</button>
+      <button class="mod-pill" onclick="toggleDesvio()">📉 Desvío</button>
+      <button class="mod-pill" onclick="toggleTheory()">📙 Manual</button>
+    </nav>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="tabs-bar" id="tabs-container"></div>
+
+  <!-- ─── Barra FOB Bolsa ─── -->
+  <div id="fob-bar" style="display:flex;align-items:center;gap:12px;background:#f0f7f4;border:1px solid #b2d8c8;border-radius:8px;padding:8px 16px;margin-bottom:8px;font-size:12px;">
+    <span style="font-weight:700;color:#145430;">📊 FOB Bolsa</span>
+    <span id="fob-status" style="color:#3d5a47;">⏳ Cargando...</span>
+    <button onclick="syncFOBFromSheet()" style="margin-left:auto;background:#1a6b3c;color:#fff;border:none;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">🔄 Actualizar FOB</button>
+  </div>
+
+  <!-- ═══ BARRA GLOBAL DE DATOS DE MERCADO (A3) ═══ -->
+  <div class="fas-info-bar" id="mkt-bar" style="display:flex; gap:10px; align-items:center; margin-bottom:16px; padding:10px 16px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); flex-wrap:wrap;">
+    <input type="file" id="mkt-file-input" accept=".json,.csv" style="display:none" onchange="handleMarketFile(event)">
+    <button class="btn" onclick="syncFromSheet()" style="white-space:nowrap; font-size:12px;" id="btn-sync-sheet">📡 Sincronizar A3</button>
+    <div class="field" style="gap:3px;">
+      <label style="font-size:9px;">Cultivo</label>
+      <select id="mkt-crop-select" onchange="changeMarketCrop()" style="font-family:var(--mono); font-size:12px; padding:5px 8px; border:1px solid var(--border); border-radius:5px; background:var(--bg-input);">
+        <option value="">—</option>
+      </select>
+    </div>
+    <div class="field" style="gap:3px;">
+      <label style="font-size:9px;">Posición</label>
+      <select id="mkt-pos-select" onchange="changeMarketPosition()" style="font-family:var(--mono); font-size:12px; padding:5px 8px; border:1px solid var(--border); border-radius:5px; background:var(--bg-input);">
+        <option value="">—</option>
+      </select>
+    </div>
+    <button class="btn btn-outline" id="btn-update-primas" onclick="autoFillAllPrimas()" style="white-space:nowrap; font-size:11px;" title="Actualiza todas las primas de las estrategias con datos del mercado">🔄 Actualizar primas</button>
+    <button class="btn btn-outline" onclick="loadMarketJSON()" style="white-space:nowrap; font-size:11px;" title="Cargar archivo CSV o JSON manual como alternativa">📂 CSV / JSON</button>
+    <span id="mkt-status" style="font-size:11px; color:var(--text-3); font-style:italic;">Sin datos — pulsar Sincronizar A3</span>
+  </div>
+
+  <div id="workspace">
+    <div class="top-bar">
+      <div class="field">
+        <label>Seteo Rápido</label>
+        <select id="asset-select" onchange="applyAssetPreset()">
+          <option value="soja" data-spot="340">Soja MATBA</option>
+          <option value="maiz" data-spot="195">Maíz MATBA</option>
+          <option value="trigo" data-spot="215">Trigo MATBA</option>
+          <option value="girasol" data-spot="340">Girasol</option>
+        </select>
+      </div>
+      <div class="field"><label>Precio Spot (u$s)</label><input type="number" id="spot" step="0.1" oninput="updateGlobalInputs()"></div>
+      <div class="field"><label>Eje X Mín</label><input type="number" id="chart-min" step="0.1" oninput="updateGlobalInputs()"></div>
+      <div class="field"><label>Eje X Máx</label><input type="number" id="chart-max" step="0.1" oninput="updateGlobalInputs()"></div>
+      <div class="field"><label>Nombre Solapa</label><input type="text" id="tab-name-input" oninput="updateTabName(this.value)" style="font-family:var(--font); width: 160px;"></div>
+    </div>
+
+    <div class="fas-info-bar" id="fas-info-bar" style="display:none;">
+      <div class="fas-info-chip">
+        <div>
+          <div class="fic-label">FAS mercado (spot)</div>
+          <div class="fic-val" id="fic-fas-mercado" style="color:var(--text);">—</div>
+        </div>
+      </div>
+      <div class="fas-info-chip">
+        <div>
+          <div class="fic-label">FAS teórico (CTP)</div>
+          <div class="fic-val" id="fic-fas-teorico" style="color:var(--es-green);">—</div>
+        </div>
+      </div>
+      <div class="fas-info-chip">
+        <div>
+          <div class="fic-label">Spread mercado vs teórico</div>
+          <div class="fic-spread" id="fic-spread">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="builder-area">
+      <div class="strats-list">
+        <div class="strats-toolbar">
+          <button class="btn" onclick="addStrategy()">+ Nueva Estrategia</button>
+          <div class="preset-wrapper">
+            <button class="btn btn-preset" onclick="togglePresetMenu()">📋 Cargar Plantilla ▾</button>
+            <div class="preset-menu" id="preset-menu"></div>
+          </div>
+        </div>
+        <div id="strats-container"></div>
+      </div>
+      <div class="chart-section">
+        <div class="chart-wrap"><canvas id="main-chart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="bottom-area">
+      <div class="table-section">
+        <h2>Análisis de Escenarios</h2>
+        <table class="comp-table" id="scenario-table"></table>
+      </div>
+      <div class="winner-section">
+        <h2>Rango de Dominancia</h2>
+        <div id="winner-container"></div>
+      </div>
+    </div>
+
+    <!-- ═══ VOLATILIDAD & GRIEGAS ═══ -->
+    <div id="vg-panel" style="display:none;margin-top:30px;border-top:3px solid var(--es-green);padding-top:24px;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;cursor:pointer;" onclick="vgToggle()">
+        <span style="font-size:28px;">📐</span>
+        <div style="flex:1;">
+          <div style="font-size:18px;font-weight:700;color:var(--text);">Volatilidad & Griegas</div>
+          <div style="font-size:12px;color:var(--text-2);">Análisis en tiempo real de las opciones cargadas · VI histórica · Sensibilidad temporal y al subyacente</div>
+        </div>
+        <span id="vg-toggle-arrow" style="font-size:16px;color:var(--text-3);">▾</span>
+      </div>
+      <div id="vg-content"></div>
+    </div>
+
+    <!-- ═══ ASISTENTE INTELIGENTE (dentro de Coberturas) ═══ -->
+    <div style="margin-top:30px;border-top:3px solid var(--es-green);padding-top:24px;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+        <span style="font-size:28px;">🧠</span>
+        <div>
+          <div style="font-size:18px;font-weight:700;color:var(--text);">Asistente Inteligente de Coberturas</div>
+          <div style="font-size:12px;color:var(--text-2);">Motor Black-76 · Griegas · Análisis de valor relativo con datos históricos MATBA</div>
+        </div>
+      </div>
+
+      <div id="asst-sync-bar" style="display:none;padding:8px 16px;border-radius:8px;margin-bottom:10px;border:1px solid var(--border);font-size:12px;"></div>
+      <div id="asst-vi-context" style="padding:6px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;margin-bottom:14px;font-family:var(--mono);font-size:11px;min-height:28px;"></div>
+
+      <!-- Explicación de Griegas -->
+      <details style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;margin-bottom:16px;box-shadow:var(--shadow);">
+        <summary style="padding:14px 18px;cursor:pointer;font-weight:700;font-size:13px;color:var(--es-green);list-style:none;display:flex;align-items:center;gap:8px;">
+          <span style="font-size:16px;">📐</span> ¿Qué significan las letras griegas? <span style="margin-left:auto;font-size:10px;color:var(--text-3);">Click para expandir</span>
+        </summary>
+        <div style="padding:0 18px 18px;font-size:12px;line-height:1.7;color:var(--text-2);">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px;">
+            <div style="padding:14px;background:var(--bg-input);border-radius:8px;">
+              <div style="font-weight:700;color:var(--text);font-size:14px;margin-bottom:6px;">Δ Delta</div>
+              <div><strong>¿Qué mide?</strong> Cuánto cambia el precio de la opción por cada u$s que se mueve el futuro.</div>
+              <div style="margin-top:6px;"><strong>Ejemplo:</strong> Delta -0.31 significa que si el futuro baja 1 u$s, tu put gana 0.31 u$s. Es tu "velocidad" de cobertura.</div>
+              <div style="margin-top:6px;"><strong>Cómo se lee:</strong> Delta cercano a -1 = protección casi total (muy ITM). Delta cercano a 0 = protección lejana (muy OTM). Para calls vendidos, delta positivo reduce tu cobertura neta.</div>
+              <div style="margin-top:6px;font-family:var(--mono);font-size:10px;color:var(--text-3);">Fórmula: Δ = e^(-rT) · N(d1) para calls, -e^(-rT) · N(-d1) para puts</div>
+            </div>
+            <div style="padding:14px;background:var(--bg-input);border-radius:8px;">
+              <div style="font-weight:700;color:var(--text);font-size:14px;margin-bottom:6px;">Γ Gamma</div>
+              <div><strong>¿Qué mide?</strong> Cuánto cambia el Delta por cada u$s que se mueve el futuro. Es la "aceleración".</div>
+              <div style="margin-top:6px;"><strong>Ejemplo:</strong> Gamma 0.012 significa que si el futuro baja 1 u$s, tu delta pasa de -0.31 a -0.322. Tu protección se hace más fuerte a medida que el precio cae.</div>
+              <div style="margin-top:6px;"><strong>Cómo se lee:</strong> Gamma alto = la opción reacciona rápido a los movimientos. Las opciones ATM tienen el gamma más alto. Compradores de opciones se benefician del gamma.</div>
+              <div style="margin-top:6px;font-family:var(--mono);font-size:10px;color:var(--text-3);">Fórmula: Γ = e^(-rT) · N'(d1) / (F · σ · √T)</div>
+            </div>
+            <div style="padding:14px;background:var(--bg-input);border-radius:8px;">
+              <div style="font-weight:700;color:var(--text);font-size:14px;margin-bottom:6px;">Θ Theta</div>
+              <div><strong>¿Qué mide?</strong> Cuánto pierde la opción de valor por cada día que pasa (time decay).</div>
+              <div style="margin-top:6px;"><strong>Ejemplo:</strong> Theta -0.04 significa que tu opción pierde 0.04 u$s por día solo por el paso del tiempo, sin que el futuro se mueva. Es el "costo de esperar".</div>
+              <div style="margin-top:6px;"><strong>Cómo se lee:</strong> Theta siempre es negativo para el comprador de opciones. Se acelera las últimas semanas antes del vencimiento. En un spread, theta se reduce porque vendés time decay.</div>
+              <div style="margin-top:6px;font-family:var(--mono);font-size:10px;color:var(--text-3);">Fórmula: Θ = -F · e^(-rT) · N'(d1) · σ / (2√T) / 365</div>
+            </div>
+            <div style="padding:14px;background:var(--bg-input);border-radius:8px;">
+              <div style="font-weight:700;color:var(--text);font-size:14px;margin-bottom:6px;">ν Vega</div>
+              <div><strong>¿Qué mide?</strong> Cuánto cambia el precio de la opción por cada 1% que sube la volatilidad implícita.</div>
+              <div style="margin-top:6px;"><strong>Ejemplo:</strong> Vega +0.31 significa que si la VI sube de 15% a 16%, tu opción gana 0.31 u$s. Si compraste protección antes de un weather market y la VI sube, ganás por vega.</div>
+              <div style="margin-top:6px;"><strong>Cómo se lee:</strong> Vega positivo = te beneficia la suba de volatilidad (compradores). Vega negativo = te perjudica (vendedores). En un spread, vega se reduce parcialmente.</div>
+              <div style="margin-top:6px;font-family:var(--mono);font-size:10px;color:var(--text-3);">Fórmula: ν = F · e^(-rT) · N'(d1) · √T / 100</div>
+            </div>
+          </div>
+          <div style="margin-top:14px;padding:12px;background:var(--es-gold-light);border-radius:8px;border:1px solid var(--es-gold);">
+            <strong style="color:var(--text);">💡 Tip de trading:</strong> La combinación clave es Delta + Theta. Un delta alto te da protección fuerte pero un theta alto te la cobra todos los días. El "costo por punto de delta" (u$s/Δ) que muestra el motor es exactamente esa relación: cuánta protección comprás por cada dólar de prima que pagás.
+          </div>
+        </div>
+      </details>
+
+      <!-- Mode selector -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;">
+        <div id="asst-mode1" onclick="asstSetMode(1)" style="background:var(--bg-card);border:2px solid var(--es-green);border-radius:14px;padding:20px;cursor:pointer;">
+          <div style="font-size:24px;margin-bottom:8px;">🧭</div>
+          <div style="font-size:15px;font-weight:700;">¿Qué hago?</div>
+          <div style="font-size:12px;color:var(--text-2);">Tengo una visión y quiero que me sugiera la mejor estructura.</div>
+        </div>
+        <div id="asst-mode2" onclick="asstSetMode(2)" style="background:var(--bg-card);border:2px solid var(--border);border-radius:14px;padding:20px;cursor:pointer;">
+          <div style="font-size:24px;margin-bottom:8px;">🔍</div>
+          <div style="font-size:15px;font-weight:700;">¿Cuánto me cuesta?</div>
+          <div style="font-size:12px;color:var(--text-2);">Ya decidí cubrir. Quiero comparar y encontrar el mejor valor.</div>
+        </div>
+      </div>
+
+      <!-- Wizard inputs -->
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:20px;box-shadow:var(--shadow);margin-bottom:16px;">
+        <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">
+          <div class="field"><label>Cultivo</label><select id="asst-crop" onchange="asstUpdatePos()" style="font-family:var(--mono);font-size:13px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);width:120px;"><option value="soja">Soja</option><option value="maiz">Maíz</option><option value="trigo">Trigo</option></select></div>
+          <div class="field"><label>Posición</label><select id="asst-pos" onchange="asstUpdateVto()" style="font-family:var(--mono);font-size:13px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);width:170px;"></select></div>
+          <div class="field"><label>Futuro (u$s)</label><input type="number" id="asst-fwd" step="0.5" style="font-family:var(--mono);font-size:13px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);width:90px;"></div>
+          <div class="field"><label>Volumen (tn)</label><input type="number" id="asst-vol" value="5000" style="font-family:var(--mono);font-size:13px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);width:90px;"></div>
+          <div class="field" id="asst-tol-wrap"><label>Tolerancia prima</label><select id="asst-tol" style="font-family:var(--mono);font-size:13px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);width:150px;"><option value="low">Mínima (≤2 u$s)</option><option value="med" selected>Moderada (3-6 u$s)</option><option value="high">Sin restricción</option></select></div>
+          <div style="margin-left:auto;" id="asst-vto-display"></div>
+        </div>
+        <div id="asst-vision-wrap" style="margin-top:14px;">
+          <label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-3);letter-spacing:0.6px;display:block;margin-bottom:8px;">Visión de Mercado</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;" id="asst-vision-chips">
+            <button class="btn btn-outline" data-v="bearish" onclick="asstVision(this)" style="font-size:12px;">📉 Bajista</button>
+            <button class="btn btn-outline" data-v="neutral" onclick="asstVision(this)" style="font-size:12px;">↔️ Neutral</button>
+            <button class="btn" data-v="floor" onclick="asstVision(this)" style="font-size:12px;background:var(--es-green);color:#fff;">🔒 Quiero piso</button>
+            <button class="btn btn-outline" data-v="bullish" onclick="asstVision(this)" style="font-size:12px;">🌤️ Alcista con protección</button>
+            <button class="btn btn-outline" data-v="highvol" onclick="asstVision(this)" style="font-size:12px;">🌪️ Alta vol esperada</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chain input -->
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:20px;box-shadow:var(--shadow);margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div style="font-size:14px;font-weight:700;">📋 Cadena de Opciones</div>
+          <div id="asst-sync-note"></div>
+        </div>
+        <div style="font-size:12px;color:var(--text-2);margin-bottom:12px;">Cargá strikes y primas del mercado, o sincronizá A3 arriba para llenar automáticamente.</div>
+        <div id="asst-chain-inputs"></div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+          <button class="btn btn-outline" onclick="asstAddRow()" style="font-size:12px;">+ Agregar strike</button>
+          <button class="btn btn-outline" onclick="asstLoadSample()" style="font-size:12px;border-color:var(--es-gold);color:var(--es-gold);">📊 Cargar ejemplo</button>
+          <button class="btn" onclick="asstGenerate()" style="font-size:13px;background:var(--es-green);color:#fff;">⚡ <span id="asst-btn-label">Generar recomendaciones</span></button>
+        </div>
+      </div>
+
+      <div id="asst-results"></div>
+    </div>
+  </div>
+
+  <div id="theory-space" class="theory-section">
+    <h1>Catálogo de Estructuras Comerciales</h1>
+    <p class="theory-intro">El diseño de una cobertura no busca predecir el mercado, sino administrar asimetrías de riesgo. Toda decisión operativa implica un <em>trade-off</em> entre tres variables: <strong>Costo financiero (caja inicial), Riesgo de cola (Piso) y Costo de oportunidad (Techo)</strong>.</p>
+
+    <h2>Módulo 1 — Protecciones Base y Franquicias</h2>
+
+    <h3>1. Seguro de Margen Puro (Put Seco)</h3>
+    <ul>
+      <li><strong>Estructura:</strong> Compra de Put.</li>
+      <li><strong>Fundamento:</strong> Asegura el margen bruto operativo sin comprometer mercadería física ni limitar capturas de subas futuras.</li>
+      <li><strong>Impacto en P&amp;L:</strong> Exige alto hundimiento de caja inicial. Brinda la mayor flexibilidad comercial, ideal para el primer 20-30% del volumen.</li>
+    </ul>
+
+    <h3>2. Protección con Franquicia (Put Spread)</h3>
+    <ul>
+      <li><strong>Estructura:</strong> Compra de Put + Venta de Put (Strike inferior).</li>
+      <li><strong>Fundamento:</strong> Se asume conscientemente el "riesgo de ruina" a la baja para abaratar el costo de protección en el rango más probable.</li>
+      <li><strong>Impacto en P&amp;L:</strong> Reduce el impacto en el flujo de caja, fijando una "banda de supervivencia". Exige monitoreo activo del piso.</li>
+    </ul>
+
+    <h3>3. Túnel de Rentabilidad (Collar)</h3>
+    <ul>
+      <li><strong>Estructura:</strong> Compra de Put + Venta de Call.</li>
+      <li><strong>Fundamento:</strong> Cobertura de "Costo Cero". El seguro a la baja se paga cediendo el upside del mercado.</li>
+      <li><strong>Impacto en P&amp;L:</strong> Acota el resultado a un rango predecible. Es la estructura preferida para estabilizar flujos futuros.</li>
+    </ul>
+
+    <h2>Módulo 2 — Coberturas Direccionales y Sintéticas</h2>
+
+    <h3>4. Cobertura Financiada (Seagull / Gaviota)</h3>
+    <ul>
+      <li><strong>Estructura:</strong> Compra Put + Venta Put + Venta Call.</li>
+      <li><strong>Fundamento:</strong> Híbrido que busca anular por completo el costo, asumiendo un doble compromiso: techo de precio y exposición a bajas extremas.</li>
+      <li><strong>Impacto en P&amp;L:</strong> Estructura de alto rendimiento en mercados estancados. Requiere que Producción tenga alta certeza sobre los rindes.</li>
+    </ul>
+
+    <h3>5. Fijación Sintética con Opcionalidad (Futuro + Call)</h3>
+    <ul>
+      <li><strong>Estructura:</strong> Venta de Futuro (o Forward) + Compra de Call.</li>
+      <li><strong>Fundamento:</strong> Monetización del físico sin perder exposición alcista. Separa la logística de la comercialización.</li>
+      <li><strong>Impacto en P&amp;L:</strong> Cancela 100% el riesgo a la baja y soluciona el flujo inmediato. Transforma una posición rígida en una posición asimétrica.</li>
+    </ul>
+
+    <h2>Módulo 3 — Estrategias Avanzadas y de Apalancamiento</h2>
+
+    <h3>6. Gaviota Invertida (Recompra Sintética / Bullish Seagull)</h3>
+    <ul>
+      <li><strong>Estructura:</strong> Compra Call + Venta Call (Strike superior) + Venta Put (Strike inferior).</li>
+      <li><strong>Fundamento:</strong> Estrategia netamente alcista y de costo cero. Ideal para recuperar participación de mercado sobre toneladas que ya fueron fijadas por Forward (ej: pago de alquileres).</li>
+      <li><strong>Alerta Directorio:</strong> Armar esta estrategia teniendo el físico sin vender implica duplicar el riesgo bajista. Solo debe usarse calzada contra ventas preexistentes.</li>
+    </ul>
+
+    <h3>7. Ratio Put Spread (Cobertura Asimétrica 1x2)</h3>
+    <ul>
+      <li><strong>Estructura:</strong> Compra de 1 Put + Venta de 2 Puts de un Strike inferior.</li>
+      <li><strong>Fundamento:</strong> Cobertura de costo cero que financia un seguro fuerte cerca del precio actual, obligando a comprar el doble si el mercado colapsa.</li>
+      <li><strong>Impacto en P&amp;L:</strong> Excelente para promediar el precio a la suba en bajas moderadas, pero requiere márgenes de garantía robustos.</li>
+    </ul>
+
+    <h3>8. Lanzamiento Cubierto (Generación de Tasa)</h3>
+    <ul>
+      <li><strong>Estructura:</strong> Retención de Físico + Venta de Call OTM.</li>
+      <li><strong>Fundamento:</strong> Extraer "tasa de interés" al grano almacenado en silobolsa en mercados estancados con alta volatilidad implícita.</li>
+      <li><strong>Impacto en P&amp;L:</strong> Inyección de liquidez inmediata a cambio de resignar subas. No ofrece protección alguna si el precio cae.</li>
+    </ul>
+  </div>
+
+  <div id="ret-space" class="ret-section">
+
+    <div class="ret-topbar">
+      <div class="ret-topbar-left">
+        <div class="field">
+          <label>Cultivo</label>
+          <select id="ret-cultivo" onchange="retChangeCultivo()" style="font-family:var(--font);">
+            <option value="soja">Soja</option>
+            <option value="maiz">Maíz</option>
+            <option value="trigo">Trigo</option>
+            <option value="girasol">Girasol</option>
+          </select>
+        </div>
+        <div class="field">
+          <label id="lbl-pos-1">Posición 1</label>
+          <select id="ret-posicion" onchange="onRetPosicionChange()" style="font-family:var(--font);">
+            <option value="">⏳ Cargando...</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>FAS Obj 1 (u$s)</label>
+          <input type="number" id="ret-fas-obj" value="323" step="0.1" oninput="retCalc()" style="width:90px; font-weight:700; border: 2px solid var(--es-green); background: var(--es-green-light); color: var(--es-green-dark); text-align:center;">
+        </div>
+        
+        <div class="field" id="field-pos-2" style="display:none; margin-left: 12px;">
+          <label>Posición 2</label>
+          <select id="ret-posicion-2" onchange="onRetPos2Change()" style="font-family:var(--font);"></select>
+        </div>
+        <div class="field" id="field-fas-2" style="display:none;">
+          <label>FAS Obj 2 (u$s)</label>
+          <input type="number" id="ret-fas-obj-2" value="" step="0.1" oninput="retCalc()" style="width:90px; font-weight:700; border: 2px solid var(--es-gold); background: var(--es-gold-light); color: var(--es-gold); text-align:center;">
+        </div>
+
+        <span style="font-size:11px; color:var(--text-3); font-style:italic; margin-left:8px;">Precio que pagan / necesitan pagar</span>
+      </div>
+      <button class="btn btn-outline" onclick="retExportPDF()" style="white-space:nowrap;">📄 Exportar PDF</button>
+    </div>
+
+    <div id="ret-panels-grid" class="ret-panels-grid">
+
+      <div class="ret-panel" id="ret-panel-grano">
+        <div class="ret-panel-title" style="color:var(--es-green);" id="ret-panel-title-1">Exportación grano</div>
+        <div class="ret-panel-inputs">
+          <div class="field"><label>FOB Índice</label><input type="number" id="ret-fob" value="417" step="0.1" oninput="retCalc()" style="width:85px;"></div>
+          <div class="field"><label>Ret %</label><input type="number" id="ret-pct" value="24" step="0.1" oninput="retCalc()" style="width:70px;"></div>
+          <div class="field"><label>Fobbing</label><input type="number" id="ret-fobbing" value="12" step="0.1" oninput="retCalc()" style="width:70px;"></div>
+        </div>
+        <div id="ret-grano-bars"></div>
+        <div class="ret-panel-result">
+          <span class="ret-panel-result-lbl">FAS Teórico (CTP)</span>
+          <span class="ret-panel-result-val" id="ret-fas-ctp" style="color:var(--es-green);">304.92</span>
+        </div>
+        <div class="ret-panel-margin" id="ret-grano-margin"></div>
+        <div class="ret-panel-tri" id="ret-grano-tri">
+          <div class="ret-tri-chip"><div class="ret-tri-lbl">FOB Necesario</div><div class="ret-tri-val" id="ret-fob-needed" style="color:#2563eb;">430.26</div><div class="ret-tri-sub" id="ret-fob-needed-sub">Para pagar FAS obj 323</div></div>
+          <div class="ret-tri-chip"><div class="ret-tri-lbl">Retención Implícita</div><div class="ret-tri-val" id="ret-impl" style="color:#d97706;">21.58%</div><div class="ret-tri-sub" id="ret-impl-sub">Gap: -2.42 pp</div></div>
+        </div>
+      </div>
+
+      <div class="ret-panel" id="ret-panel-crush">
+        <div class="ret-panel-title" style="color:var(--es-gold);">Crushing subproductos</div>
+        <div class="ret-panel-inputs">
+          <div class="field"><label>FOB Aceite</label><input type="number" id="ret-crush-fob-aceite" value="1200" step="0.1" oninput="retCalc()" style="width:75px;"></div>
+          <div class="field"><label>Coef.</label><input type="number" id="ret-crush-coef-aceite" value="0.19" step="0.01" oninput="retCalc()" style="width:70px;"></div>
+          <div class="field"><label>FOB Harina</label><input type="number" id="ret-crush-fob-harina" value="353" step="0.1" oninput="retCalc()" style="width:70px;"></div>
+          <div class="field"><label>Coef.</label><input type="number" id="ret-crush-coef-harina" value="0.78" step="0.01" oninput="retCalc()" style="width:70px;"></div>
+          <div class="field"><label>Ret Sub %</label><input type="number" id="ret-crush-ret-subprod" value="22.5" step="0.1" oninput="retCalc()" style="width:70px;"></div>
+          <div class="field"><label>Fobbing</label><input type="number" id="ret-crush-fobbing-val" value="19" step="0.1" oninput="retCalc()" style="width:70px;"></div>
+          <div class="field"><label>Gto Ind.</label><input type="number" id="ret-crush-industria-val" value="29" step="0.1" oninput="retCalc()" style="width:70px;"></div>
+        </div>
+        <div id="ret-crush-bars"></div>
+        <div class="ret-panel-result">
+          <span class="ret-panel-result-lbl">FAS Crushing</span>
+          <span class="ret-panel-result-val" id="ret-crush-fas" style="color:var(--es-gold);">342.09</span>
+        </div>
+        <div class="ret-panel-margin" id="ret-crush-margin"></div>
+      </div>
+
+      <div class="ret-panel" id="ret-panel-grano-2" style="display:none;">
+        <div class="ret-panel-title" style="color:var(--es-gold);" id="ret-panel-title-2">Exportación grano</div>
+        <div class="ret-panel-inputs">
+          <div class="field"><label>FOB Índice</label><input type="number" id="ret-fob-2" value="" step="0.1" oninput="retCalc()" style="width:85px;"></div>
+          <div class="field"><label>Ret %</label><input type="number" id="ret-pct-show-2" value="" style="width:70px; background:var(--bg);" disabled></div>
+          <div class="field"><label>Fobbing</label><input type="number" id="ret-fobbing-show-2" value="" style="width:70px; background:var(--bg);" disabled></div>
+        </div>
+        <div id="ret-grano-bars-2"></div>
+        <div class="ret-panel-result">
+          <span class="ret-panel-result-lbl">FAS Teórico (CTP)</span>
+          <span class="ret-panel-result-val" id="ret-fas-ctp-2" style="color:var(--es-gold);">0.00</span>
+        </div>
+        <div class="ret-panel-margin" id="ret-grano-margin-2"></div>
+        <div class="ret-panel-tri" id="ret-grano-tri-2">
+          <div class="ret-tri-chip"><div class="ret-tri-lbl">FOB Necesario</div><div class="ret-tri-val" id="ret-fob-needed-2" style="color:#2563eb;">0.00</div><div class="ret-tri-sub" id="ret-fob-needed-sub-2"></div></div>
+          <div class="ret-tri-chip"><div class="ret-tri-lbl">Retención Implícita</div><div class="ret-tri-val" id="ret-impl-2" style="color:#d97706;">0.00%</div><div class="ret-tri-sub" id="ret-impl-sub-2"></div></div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="ret-section-title gold">Simulador de escenario — Baja de retenciones</div>
+
+    <div class="ret-scenario-row">
+      <label>Reducción de retenciones:</label>
+      <button class="ret-slider-btn" onclick="retSliderStep(-5)">−</button>
+      <input type="range" id="ret-slider" min="0" max="100" value="25" step="5" oninput="retCalc()">
+      <button class="ret-slider-btn" onclick="retSliderStep(5)">+</button>
+      <span class="ret-slider-val" id="ret-slider-val">−25%</span>
+    </div>
+
+    <div class="ret-comparison">
+      <div class="ret-comp-card">
+        <div class="ret-comp-title">Escenario actual</div>
+        <div class="ret-comp-row"><span class="rcr-label">Retención grano</span><span class="rcr-val" id="ret-sc-act-ret">24.0%</span></div>
+        <div class="ret-comp-row"><span class="rcr-label">FAS teórico</span><span class="rcr-val" id="ret-sc-act-fas">304.92</span></div>
+        <div class="ret-comp-row" id="ret-sc-act-crush-row"><span class="rcr-label">FAS crushing</span><span class="rcr-val" id="ret-sc-act-crush">342.09</span></div>
+      </div>
+      <div class="ret-comp-card highlighted">
+        <div class="ret-comp-title">Escenario con reducción</div>
+        <div class="ret-comp-row"><span class="rcr-label">Retención grano</span><span class="rcr-val" id="ret-sc-new-ret">18.0%</span></div>
+        <div class="ret-comp-row"><span class="rcr-label">FAS teórico</span><span class="rcr-val" id="ret-sc-new-fas">329.94</span></div>
+        <div class="ret-comp-row" id="ret-sc-new-crush-row"><span class="rcr-label">FAS crushing</span><span class="rcr-val" id="ret-sc-new-crush">370.40</span></div>
+      </div>
+    </div>
+
+    <div class="ret-link-note">
+      <strong>Conexión con coberturas:</strong> Si cubrís a FOB <span id="ret-note-fob">417</span> con un PUT, tu piso de FAS neto es <span id="ret-note-fas" style="font-family:var(--mono); font-weight:700; color:var(--es-green);">304.92</span> u$s/tn menos la prima pagada. Usá la solapa de estrategias para calcular el impacto exacto.
+    </div>
+
+  </div>
+
+  <div id="pase-space" class="pase-section">
+
+    <div class="ret-section-title">Calculadora de pases, tasas implícitas y estrategias de venta</div>
+
+    <div class="pase-grain-chips" id="pase-grain-chips">
+      <button class="pase-chip active" onclick="paseSetGrain('soja', event)">Soja</button>
+      <button class="pase-chip" onclick="paseSetGrain('maiz', event)">Maíz</button>
+      <button class="pase-chip" onclick="paseSetGrain('trigo', event)">Trigo</button>
+      <button class="pase-chip" onclick="paseSetGrain('girasol', event)">Girasol</button>
+    </div>
+
+    <div class="pase-pos-grid" id="pase-pos-grid">
+      <div class="pase-pos-card" id="pase-pos-1">
+        <span class="pase-pos-tag p1">Posición 1 — cercana</span>
+        <div class="field"><label>Posición</label><select id="pase-p1-sel" onchange="paseOnPosChange(1)" style="font-family:var(--font);"><option value="">⚠ Sincronizar A3</option></select></div>
+        <div class="field"><label>Precio USD/tn</label><input type="number" id="pase-p1-price" value="" step="0.1" oninput="paseCalc()" placeholder="Auto desde A3"></div>
+        <div class="field"><label>Fecha</label><input type="date" id="pase-p1-date" value="" onchange="paseCalc()"></div>
+      </div>
+      <div class="pase-pos-card" id="pase-pos-2">
+        <span class="pase-pos-tag p2">Posición 2</span>
+        <div class="field"><label>Posición</label><select id="pase-p2-sel" onchange="paseOnPosChange(2)" style="font-family:var(--font);"><option value="">⚠ Sincronizar A3</option></select></div>
+        <div class="field"><label>Precio USD/tn</label><input type="number" id="pase-p2-price" value="" step="0.1" oninput="paseCalc()" placeholder="Auto desde A3"></div>
+        <div class="field"><label>Fecha</label><input type="date" id="pase-p2-date" value="" onchange="paseCalc()"></div>
+      </div>
+      <div class="pase-pos-card" id="pase-pos-3">
+        <span class="pase-pos-tag p3">Posición 3</span>
+        <button class="pase-toggle-p3" id="pase-toggle-p3-btn" onclick="paseToggleP3()" title="Activar/desactivar posición 3">+</button>
+        <div id="pase-p3-fields" style="display:none;">
+          <div class="field"><label>Posición</label><select id="pase-p3-sel" onchange="paseOnPosChange(3)" style="font-family:var(--font);"><option value="">⚠ Sincronizar A3</option></select></div>
+          <div class="field"><label>Precio USD/tn</label><input type="number" id="pase-p3-price" value="" step="0.1" oninput="paseCalc()" placeholder="Auto desde A3"></div>
+          <div class="field"><label>Fecha</label><input type="date" id="pase-p3-date" value="" onchange="paseCalc()"></div>
+        </div>
+        <div id="pase-p3-placeholder" style="text-align:center; padding:20px 0; color:var(--text-3); font-size:12px;">Click + para agregar<br>una 3ra posición</div>
+      </div>
+    </div>
+
+    <div class="pase-params-grid">
+      <div class="pase-params-card">
+        <div class="pase-params-title">Tipo de cambio</div>
+        <div class="pase-params-row">
+          <div class="field"><label>TC Spot (ARS/USD)</label><input type="number" id="pase-tc-spot" value="1200" step="1" oninput="paseCalc()"></div>
+          <div class="field"><label>TC Futuro Pos 2</label><input type="number" id="pase-tc-fut2" value="1380" step="1" oninput="paseCalc()"></div>
+          <div class="field" id="pase-tc-fut3-field" style="display:none;"><label>TC Futuro Pos 3</label><input type="number" id="pase-tc-fut3" value="1620" step="1" oninput="paseCalc()"></div>
+        </div>
+      </div>
+      <div class="pase-params-card">
+        <div class="pase-params-title">Tasas de referencia y crédito</div>
+        <div class="pase-params-row">
+          <div class="field"><label>Crédito USD (TNA %)</label><input type="number" id="pase-tasa-credito-usd" value="8.0" step="0.1" oninput="paseCalc()" style="font-weight:700; border: 2px solid var(--es-green); background: var(--es-green-light); color: var(--es-green-dark);"></div>
+          <div class="field"><label>Crédito ARS (TNA %)</label><input type="number" id="pase-tasa-credito-ars" value="40.0" step="0.1" oninput="paseCalc()" style="font-weight:700; border: 2px solid var(--es-gold); background: var(--es-gold-light); color: #96700e;"></div>
+          <div class="field"><label>Caución USD TNA (%)</label><input type="number" id="pase-tasa-caucion-usd" value="3.5" step="0.1" oninput="paseCalc()"></div>
+          <div class="field"><label>Caución ARS TNA (%)</label><input type="number" id="pase-tasa-caucion-ars" value="38" step="0.1" oninput="paseCalc()"></div>
+          <div class="field"><label>LECAP / PF TNA (%)</label><input type="number" id="pase-tasa-lecap" value="42" step="0.1" oninput="paseCalc()"></div>
+          <div class="field"><label>Almacenaje (USD/tn/mes)</label><input type="number" id="pase-almacenaje" value="2.5" step="0.1" oninput="paseCalc()"></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align:right; margin-bottom:20px;">
+      <button class="btn" onclick="paseCalc()">Calcular</button>
+    </div>
+
+    <div class="ret-section-title">Matrix de pases y tasas implícitas</div>
+
+    <div class="pase-matrix" id="pase-matrix-container">
+      <table id="pase-matrix-table">
+        <thead>
+          <tr>
+            <th style="text-align:left;">Pase</th>
+            <th>Días</th>
+            <th>Pase USD/tn</th>
+            <th>Tasa USD bruta</th>
+            <th>Tasa USD neta</th>
+            <th>Tasa ARS</th>
+            <th>vs Crédito USD</th>
+          </tr>
+        </thead>
+        <tbody id="pase-matrix-body"></tbody>
+      </table>
+    </div>
+
+    <div class="ret-section-title">Lectura rápida</div>
+    <div class="pase-reading-grid" id="pase-reading-grid"></div>
+
+    <div class="ret-section-title gold">Carry trade vs crédito de capital de trabajo</div>
+    <div class="pase-strat-tabs" id="pase-carry-tabs"></div>
+    <div class="pase-reading-grid" id="pase-carry-cards"></div>
+    <div id="pase-carry-decision"></div>
+    <div class="pase-note" id="pase-carry-note" style="margin-bottom:20px;"></div>
+
+    <div class="ret-section-title">Comparador de estrategias de venta</div>
+
+    <div class="pase-strat-tabs" id="pase-strat-tabs"></div>
+    <div id="pase-strat-summary" style="margin-bottom:16px;"></div>
+    <div id="pase-strat-rows"></div>
+    <div class="pase-note" id="pase-strat-note"></div>
+
+  </div>
+</div>
+
+  <!-- ═══ SPREADS & RELACIONES ═══ -->
+  <div id="spreads-space" style="display:none;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <span style="font-size:28px;">📈</span>
+      <div>
+        <div style="font-size:18px;font-weight:700;">Spreads, Basis & Relaciones</div>
+        <div style="font-size:12px;color:var(--text-2);">Análisis histórico y estacional de diferenciales entre posiciones y productos</div>
+      </div>
+    </div>
+
+    <div id="spread-sync-bar" style="display:none;padding:8px 16px;border-radius:8px;margin-bottom:10px;border:1px solid var(--border);font-size:12px;"></div>
+
+    <!-- Selectores cross-producto -->
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:20px;box-shadow:var(--shadow);margin-bottom:16px;">
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">
+        <div class="field"><label>Producto 1 (numerador)</label>
+          <div style="display:flex;gap:6px;">
+            <select id="sp-crop1" onchange="spUpdatePos1()" style="font-family:var(--mono);font-size:13px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);width:100px;"><option value="soja">Soja</option><option value="maiz">Maíz</option><option value="trigo">Trigo</option></select>
+            <select id="sp-pos1" onchange="spCalcSpread()" style="font-family:var(--mono);font-size:13px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);width:110px;"></select>
+          </div>
+        </div>
+        <div style="font-size:18px;color:var(--text-3);padding-bottom:4px;font-weight:700;">/</div>
+        <div class="field"><label>Producto 2 (denominador)</label>
+          <div style="display:flex;gap:6px;">
+            <select id="sp-crop2" onchange="spUpdatePos2()" style="font-family:var(--mono);font-size:13px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);width:100px;"><option value="soja">Soja</option><option value="maiz">Maíz</option><option value="trigo">Trigo</option></select>
+            <select id="sp-pos2" onchange="spCalcSpread()" style="font-family:var(--mono);font-size:13px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);width:110px;"></select>
+          </div>
+        </div>
+        <div style="display:flex;gap:4px;background:var(--bg-input);border-radius:8px;padding:3px;">
+          <button class="btn" id="sp-mode-basis" onclick="spSetMode('basis')" style="font-size:12px;background:var(--es-green);color:#fff;padding:7px 14px;">Basis (resta)</button>
+          <button class="btn btn-outline" id="sp-mode-ratio" onclick="spSetMode('ratio')" style="font-size:12px;padding:7px 14px;">Relación (÷)</button>
+        </div>
+        <div class="field"><label>Eje Y Mín</label><input type="number" id="sp-ymin" step="0.1" placeholder="Auto" onchange="spCalcSpread()" style="font-family:var(--mono);font-size:12px;padding:7px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);width:70px;"></div>
+        <div class="field"><label>Eje Y Máx</label><input type="number" id="sp-ymax" step="0.1" placeholder="Auto" onchange="spCalcSpread()" style="font-family:var(--mono);font-size:12px;padding:7px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);width:70px;"></div>
+      </div>
+      <!-- Year filter -->
+      <div style="margin-top:14px;">
+        <label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-3);letter-spacing:0.6px;display:block;margin-bottom:6px;">Filtro de campañas para análisis</label>
+        <div id="sp-year-chips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px;" id="sp-stats"></div>
+
+    <!-- Gráficos 1 y 2 -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);">
+        <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Serie actual</div>
+        <div style="position:relative;height:260px;"><canvas id="sp-chart-current"></canvas></div>
+      </div>
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);">
+        <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Estacionalidad (por días al vencimiento)</div>
+        <div style="position:relative;height:260px;"><canvas id="sp-chart-season"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Gráfico 3: Distribución -->
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Distribución histórica</div>
+      <div style="position:relative;height:200px;"><canvas id="sp-chart-dist"></canvas></div>
+      <div id="sp-dist-insight" style="margin-top:8px;"></div>
+    </div>
+
+    <!-- Tabla datos -->
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);max-height:300px;overflow-y:auto;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Datos</div>
+      <div id="sp-table"></div>
+    </div>
+  </div>
+
+  <!-- ═══ ASISTENTE DE COBERTURAS (now inside workspace below) ═══ -->
+
+  <!-- ═══ DESVÍO DE PRECIOS ═══ -->
+  <div id="desvio-space" class="dv-section">
+    <!-- Overview -->
+    <div id="dv-overview">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+        <span style="font-size:28px;">📉</span>
+        <div>
+          <div style="font-size:18px;font-weight:700;">Desvío de Precios</div>
+          <div style="font-size:12px;color:var(--text-2);">Volatilidad histórica por posición — Tocá una tarjeta para comparar campañas</div>
+        </div>
+      </div>
+      <div id="dv-overview-cards" class="dv-cards-grid"></div>
+    </div>
+
+    <!-- Detail -->
+    <div id="dv-detail" style="display:none;">
+      <!-- Selectors row -->
+      <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:16px;flex-wrap:wrap;">
+        <div class="field">
+          <label>Cultivo</label>
+          <select id="dv-crop-sel" onchange="dvOnCropChange(this.value)" style="font-family:var(--mono);font-size:13px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);min-width:100px;"></select>
+        </div>
+        <div class="field">
+          <label>Posición</label>
+          <select id="dv-pos-sel" onchange="dvOnPosChange(this.value)" style="font-family:var(--mono);font-size:13px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);min-width:120px;"></select>
+        </div>
+        <button class="dv-back-btn" onclick="dvBackToOverview()" style="margin-left:auto;">← Resumen</button>
+      </div>
+
+      <!-- Campaign chips -->
+      <div style="margin-bottom:14px;">
+        <label style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--text-3);letter-spacing:0.6px;display:block;margin-bottom:6px;">Campañas</label>
+        <div id="dv-camp-chips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      </div>
+
+      <!-- Mode toggle -->
+      <div style="display:flex;gap:6px;margin-bottom:14px;align-items:center;">
+        <button class="dv-mode-btn active" id="dv-btn-compare" onclick="dvSetCompare()">Comparar campañas</button>
+        <button class="dv-mode-btn" id="dv-btn-single" onclick="dvSetSingle()">Detalle campaña</button>
+      </div>
+
+      <!-- Single campaign selector -->
+      <div id="dv-single-selector" style="display:none;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
+
+      <!-- KPI cards (single mode) -->
+      <div id="dv-kpi-cards" class="dv-kpi-grid" style="display:none;"></div>
+
+      <!-- Chart -->
+      <div class="dv-chart-box">
+        <div class="dv-chart-title" id="dv-chart-title-text"></div>
+        <div class="dv-chart-legend" id="dv-chart-legend"></div>
+        <div id="dv-chart-overlay-wrap" class="dv-chart-canvas-wrap">
+          <canvas id="dv-chart-overlay"></canvas>
+        </div>
+        <div id="dv-chart-single-wrap" class="dv-chart-canvas-wrap" style="display:none;">
+          <canvas id="dv-chart-single"></canvas>
+        </div>
+      </div>
+
+      <!-- Comparison table -->
+      <div class="dv-table-wrap">
+        <div class="ret-section-title">Tabla Comparativa</div>
+        <table class="dv-table">
+          <thead>
+            <tr>
+              <th style="text-align:left;">Campaña</th>
+              <th>Promedio</th>
+              <th>Máximo</th>
+              <th>Mínimo</th>
+              <th>Desv+</th>
+              <th>Desv−</th>
+              <th>CV</th>
+            </tr>
+          </thead>
+          <tbody id="dv-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+<script src="globals.js"></script>
+<script src="storage.js"></script>
+<script src="sync.js"></script>
+<script src="coberturas.js"></script>
+<script src="retenciones.js"></script>
+<script src="pases.js"></script>
+<script src="asistente.js"></script>
+<script src="vol_greeks.js"></script>
+<script src="spreads.js"></script>
+<script src="desvio.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
