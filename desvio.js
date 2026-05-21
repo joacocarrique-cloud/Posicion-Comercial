@@ -6,7 +6,7 @@
 
 // ── State ──
 let dvCrop='',dvPos='',dvActiveCamps={},dvSingleMode=null;
-let dvOverlayChart=null,dvSingleChart=null;
+let dvOverlayChart=null,dvSingleChart=null,dvSeasonChart=null;
 
 const DV_KEY_POS={soja:['MAY','JUL','NOV'],maiz:['ABR','JUL'],trigo:['DIC','JUL']};
 const DV_CAMP_COLORS=['#1a6b3c','#c8a44a','#5b9bd5','#d4844a','#8b7db5','#c06080','#4a9aaa','#9a6aaa','#6aaa7a','#c0504a'];
@@ -20,7 +20,7 @@ function dvGetAllPositions(){
     if(!tree[crop])tree[crop]={};
     if(!tree[crop][mes])tree[crop][mes]={};
     if(!tree[crop][mes][anio])tree[crop][mes][anio]=[];
-    tree[crop][mes][anio].push({fecha:String(r.fecha).slice(0,10),precio:r.precio});
+    tree[crop][mes][anio].push({fecha:String(r.fecha).slice(0,10),precio:r.precio,dte:r.dias_vto});
   });
   for(const crop of Object.keys(tree))
     for(const mes of Object.keys(tree[crop]))
@@ -157,6 +157,7 @@ function dvBackToOverview(){
   document.getElementById('dv-detail').style.display='none';
   if(dvOverlayChart){dvOverlayChart.destroy();dvOverlayChart=null;}
   if(dvSingleChart){dvSingleChart.destroy();dvSingleChart=null;}
+  if(dvSeasonChart){dvSeasonChart.destroy();dvSeasonChart=null;}
 }
 
 function dvRenderCampChips(){
@@ -245,8 +246,16 @@ function dvRenderChart(){
   if(!campaigns)return;
   const cropLabel=dvCrop.charAt(0).toUpperCase()+dvCrop.slice(1);
   document.getElementById('dv-chart-title-text').textContent=cropLabel+' — Posición '+dvPos;
-  if(dvSingleMode){dvRenderSingleChart(campaigns);}
-  else{dvRenderOverlayChart(campaigns);}
+  const seasonWrap=document.getElementById('dv-season-wrap');
+  if(dvSingleMode){
+    dvRenderSingleChart(campaigns);
+    if(seasonWrap)seasonWrap.style.display='none';
+    if(dvSeasonChart){dvSeasonChart.destroy();dvSeasonChart=null;}
+  }else{
+    dvRenderOverlayChart(campaigns);
+    if(seasonWrap)seasonWrap.style.display='block';
+    dvRenderSeasonChart(campaigns);
+  }
 }
 
 function dvRenderOverlayChart(campaigns){
@@ -312,6 +321,123 @@ function dvRenderSingleChart(campaigns){
           label:ctx=>{if(ctx.dataset.label==='Precio'){const diff=ctx.parsed.y-m.avg;const pct=(diff/m.avg)*100;return['Precio: $'+ctx.parsed.y.toFixed(1),'Promedio: $'+m.avg.toFixed(1),'Desvío: '+(diff>=0?'+':'')+diff.toFixed(1)+' ('+(diff>=0?'+':'')+pct.toFixed(1)+'%)'];}return null;}}}},
       scales:{x:{ticks:{font:{family:'JetBrains Mono',size:9},color:'#7e8574',maxTicksLimit:12},grid:{color:'#dde0d522'}},
         y:{min:m.min-5,max:m.max+5,ticks:{font:{family:'JetBrains Mono',size:10},color:'#7e8574',callback:v=>'$'+v},grid:{color:'#dde0d544'}}}}});
+}
+
+// ── Seasonality chart: deviation % by DTE ──
+function dvRenderSeasonChart(campaigns){
+  if(dvSeasonChart){dvSeasonChart.destroy();dvSeasonChart=null;}
+  const campKeys=Object.keys(campaigns).sort((a,b)=>b-a);
+  const visible=campKeys.filter(k=>dvActiveCamps[k]);
+  if(!visible.length)return;
+
+  const datasets=[];
+  const avgByDte={};
+
+  visible.forEach((k,vi)=>{
+    const ci=campKeys.indexOf(k);
+    const color=DV_CAMP_COLORS[ci%DV_CAMP_COLORS.length];
+    const isLatest=ci===0;
+    const label=dvGetCampLabel(parseInt(k));
+    const prices=campaigns[k];
+    const m=dvCalcMetrics(prices);
+    if(!m)return;
+
+    // Build scatter points: x=DTE, y=desvio%
+    const pts=prices.filter(p=>p.dte!=null&&p.dte>0).map(p=>({
+      x:p.dte,
+      y:((p.precio-m.avg)/m.avg)*100
+    })).sort((a,b)=>b.x-a.x);
+
+    if(!pts.length)return;
+
+    // Accumulate for average line
+    pts.forEach(p=>{
+      const bin=Math.round(p.x/5)*5;
+      if(!avgByDte[bin])avgByDte[bin]={sum:0,count:0};
+      avgByDte[bin].sum+=p.y;
+      avgByDte[bin].count++;
+    });
+
+    datasets.push({
+      label:label,
+      data:pts,
+      showLine:true,
+      borderColor:color,
+      backgroundColor:color,
+      borderWidth:isLatest?2.5:1.5,
+      pointRadius:isLatest?2:1,
+      tension:0.3,
+      borderDash:isLatest?[]:[3,3],
+    });
+  });
+
+  // Average line across all campaigns
+  const avgPts=Object.keys(avgByDte)
+    .map(d=>({x:parseInt(d),y:avgByDte[d].sum/avgByDte[d].count}))
+    .sort((a,b)=>b.x-a.x);
+
+  if(avgPts.length>1){
+    datasets.push({
+      label:'Promedio',
+      data:avgPts,
+      showLine:true,
+      borderColor:'#d97706',
+      borderWidth:2.5,
+      pointRadius:0,
+      tension:0.4,
+      borderDash:[6,3],
+      backgroundColor:'rgba(217,119,6,.08)',
+      fill:true,
+    });
+  }
+
+  // Y axis range from data
+  let yMin=0,yMax=0;
+  datasets.forEach(ds=>(ds.data||[]).forEach(p=>{if(p.y<yMin)yMin=p.y;if(p.y>yMax)yMax=p.y;}));
+  const yPad=(yMax-yMin)*0.1||2;
+
+  const ctx=document.getElementById('dv-chart-season').getContext('2d');
+  dvSeasonChart=new Chart(ctx,{
+    type:'scatter',
+    data:{datasets},
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      interaction:{mode:'nearest',intersect:false},
+      plugins:{
+        legend:{display:true,position:'top',labels:{font:{family:'JetBrains Mono',size:10},boxWidth:12,boxHeight:2,padding:10}},
+        tooltip:{
+          backgroundColor:'#fff',titleColor:'#1c2118',bodyColor:'#505845',
+          borderColor:'#dde0d5',borderWidth:1,
+          titleFont:{family:'Montserrat',weight:'700',size:12},
+          bodyFont:{family:'JetBrains Mono',size:11},
+          padding:10,cornerRadius:8,
+          callbacks:{
+            title:items=>{const p=items[0]?.parsed;return p?'DTE: '+Math.round(p.x)+' días':'';},
+            label:ctx=>{
+              const v=ctx.parsed.y;
+              return ctx.dataset.label+': '+(v>=0?'+':'')+v.toFixed(1)+'%';
+            }
+          }
+        }
+      },
+      scales:{
+        x:{
+          title:{display:true,text:'Días al vencimiento',font:{family:'Montserrat',size:11,weight:'600'},color:'#505845'},
+          reverse:true,
+          ticks:{font:{family:'JetBrains Mono',size:9},color:'#7e8574'},
+          grid:{color:'#dde0d522'},
+        },
+        y:{
+          min:Math.floor(yMin-yPad),
+          max:Math.ceil(yMax+yPad),
+          title:{display:true,text:'Desvío %',font:{family:'Montserrat',size:11,weight:'600'},color:'#505845'},
+          ticks:{font:{family:'JetBrains Mono',size:10},color:'#7e8574',callback:v=>(v>=0?'+':'')+v+'%'},
+          grid:{color:'#dde0d544'},
+        }
+      }
+    }
+  });
 }
 
 // ── Auto-patch: make existing toggles hide desvio ──
