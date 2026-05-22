@@ -110,7 +110,7 @@ async function asstLoadDrive(){
     {key:'futuros_posicion',fn:r=>{ASST_FUTPOS=r;}},
   ];
   let ok=0,errs=[];
-  for(const l of loaders){try{const r=await fetch(ASST_DRIVE[l.key]);const t=await r.text();l.fn(asstParseCSV(t));ok++;}catch(e){errs.push(l.key);}}
+  for(const l of loaders){try{const r=await fetch(ASST_DRIVE[l.key]);const t=await r.text();const parsed=Papa.parse(t.trim(),{header:true,dynamicTyping:true,skipEmptyLines:true});l.fn(parsed.data);ok++;}catch(e){errs.push(l.key);}}
   if(errs.length===0){
     bar.style.background='var(--es-green-light)';bar.style.borderColor='var(--es-green)';
     bar.innerHTML=`✅ Datos sincronizados — ${ASST_VI_PERC.length} percentiles, ${ASST_SKEW.length} skew, ${ASST_SERIE.length} días VI, ${ASST_VIVHV.length} VI/HV, ${ASST_FUTPOS.length} futuros/posición`;

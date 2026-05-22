@@ -103,11 +103,11 @@ const RET_DEFAULTS = {
 // ─── Asistente constants ───
 const ASST_DRIVE_SHEET = '1XBwsmTKJl_Vp9_4kLF_K6NS-eOFBLT9z3hme1w7n2ug';
 const ASST_DRIVE = {
-  vi_percentiles: `https://docs.google.com/spreadsheets/d/${ASST_DRIVE_SHEET}/export?format=csv&gid=1409067483`,
-  skew_historico: `https://docs.google.com/spreadsheets/d/${ASST_DRIVE_SHEET}/export?format=csv&gid=1915187575`,
-  serie_vi_diaria: `https://docs.google.com/spreadsheets/d/${ASST_DRIVE_SHEET}/export?format=csv&gid=594879154`,
-  vi_vs_hv: `https://docs.google.com/spreadsheets/d/${ASST_DRIVE_SHEET}/export?format=csv&gid=1570458834`,
-  futuros_posicion: `https://docs.google.com/spreadsheets/d/${ASST_DRIVE_SHEET}/export?format=csv&gid=888551675`,
+  vi_percentiles: `https://docs.google.com/spreadsheets/d/${ASST_DRIVE_SHEET}/gviz/tq?tqx=out:csv&gid=1409067483`,
+  skew_historico: `https://docs.google.com/spreadsheets/d/${ASST_DRIVE_SHEET}/gviz/tq?tqx=out:csv&gid=1915187575`,
+  serie_vi_diaria: `https://docs.google.com/spreadsheets/d/${ASST_DRIVE_SHEET}/gviz/tq?tqx=out:csv&gid=594879154`,
+  vi_vs_hv: `https://docs.google.com/spreadsheets/d/${ASST_DRIVE_SHEET}/gviz/tq?tqx=out:csv&gid=1570458834`,
+  futuros_posicion: `https://docs.google.com/spreadsheets/d/${ASST_DRIVE_SHEET}/gviz/tq?tqx=out:csv&gid=888551675`,
 };
 
 const ASST_POS = {soja:['JUL26','NOV26','ENE27','MAR27','MAY27','JUL27'],maiz:['JUL26','SEP26','DIC26','ABR27','JUL27'],trigo:['JUL26','SEP26','DIC26','ENE27','MAR27']};
