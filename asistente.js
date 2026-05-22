@@ -170,8 +170,15 @@ function asstGenStrategies(analyzed,F,T,vision,tol,crop,vol){
   const gk=(F,K,T,r,vi,tp)=>asstGreeks(F,K,T,r,vi/100,tp);
   const netG=(legs)=>{let d=0,g=0,t=0,v=0;legs.forEach(l=>{const m=l.dir==='buy'?1:-1;const gr=gk(F,l.strike,T,r,l.vi,l.type.toLowerCase());d+=gr.delta*m;g+=gr.gamma*m;t+=gr.theta*m;v+=gr.vega*m;});return{delta:+d.toFixed(4),gamma:+g.toFixed(6),theta:+t.toFixed(4),vega:+v.toFixed(4)};};
 
+  // ═══ MONEYNESS FILTERS ═══
+  // Puts para comprar: ATM o OTM (strike ≤ futuro +2%)
+  // Calls para comprar participación: ATM o OTM (strike ≥ futuro -2%)
+  // Calls para vender techo: OTM (strike > futuro +1%) — ya filtrado en collar/gaviota
+  const hedgePuts = puts.filter(p => p.strike <= F * 1.02);
+  const upsideCalls = calls.filter(c => c.strike >= F * 0.98);
+
   // ─── 1. PUT SECO (best value) ───
-  for(const p of puts.slice(0,3)){
+  for(const p of hedgePuts.slice(0,3)){
     const g=gk(F,p.strike,T,r,p.vi,'put');
     const cpd=Math.abs(g.delta)>.01?p.prima/Math.abs(g.delta):999;
     strats.push({name:`Put Seco ${p.strike}`,structure:`Compra Put ${p.strike}`,tipo:'put_seco',
@@ -183,8 +190,8 @@ function asstGenStrategies(analyzed,F,T,vision,tol,crop,vol){
   }
 
   // ─── 2. PUT SPREADS ───
-  for(let i=0;i<puts.length;i++)for(let j=i+1;j<puts.length;j++){
-    const b=puts[i],s=puts[j];if(b.strike-s.strike<5)continue;
+  for(let i=0;i<hedgePuts.length;i++)for(let j=i+1;j<hedgePuts.length;j++){
+    const b=hedgePuts[i],s=hedgePuts[j];if(b.strike-s.strike<5)continue;
     const cost=b.prima-s.prima;const legs=[{dir:'buy',type:'Put',strike:b.strike,prima:b.prima,vi:b.vi},{dir:'sell',type:'Put',strike:s.strike,prima:s.prima,vi:s.vi}];
     const g=netG(legs);const spread=b.strike-s.strike;
     const financ=((s.prima/b.prima)*100).toFixed(0);
@@ -197,7 +204,7 @@ function asstGenStrategies(analyzed,F,T,vision,tol,crop,vol){
   }
 
   // ─── 3. COLLARS ───
-  if(calls.length) for(const p of puts.slice(0,3)) for(const c of calls){
+  if(calls.length) for(const p of hedgePuts.slice(0,3)) for(const c of calls){
     if(c.strike<=F*1.01)continue;
     const cost=p.prima-c.prima;const legs=[{dir:'buy',type:'Put',strike:p.strike,prima:p.prima,vi:p.vi},{dir:'sell',type:'Call',strike:c.strike,prima:c.prima,vi:c.vi}];
     const g=netG(legs);const techo_dist=((c.strike/F-1)*100).toFixed(1);
@@ -210,8 +217,8 @@ function asstGenStrategies(analyzed,F,T,vision,tol,crop,vol){
   }
 
   // ─── 4. GAVIOTAS (Seagull) — Put + Venta Put bajo + Venta Call ───
-  if(calls.length && puts.length>=2) for(let i=0;i<Math.min(puts.length,3);i++) for(let j=i+1;j<puts.length;j++){
-    const pb=puts[i],ps=puts[j];if(pb.strike-ps.strike<5)continue;
+  if(calls.length && hedgePuts.length>=2) for(let i=0;i<Math.min(hedgePuts.length,3);i++) for(let j=i+1;j<hedgePuts.length;j++){
+    const pb=hedgePuts[i],ps=hedgePuts[j];if(pb.strike-ps.strike<5)continue;
     for(const c of calls.slice(-2)){
       if(c.strike<=F*1.01)continue;
       const cost=pb.prima-ps.prima-c.prima;
@@ -227,7 +234,8 @@ function asstGenStrategies(analyzed,F,T,vision,tol,crop,vol){
   }
 
   // ─── 5. PUT SINTÉTICO: Venta Futuro + Compra Call ───
-  if(calls.length) for(const c of calls.slice(0,3)){
+  // Call DEBE ser ATM u OTM (strike ≥ futuro) para que la participación alcista tenga sentido
+  if(upsideCalls.length) for(const c of upsideCalls.slice(0,3)){
     const cost=c.prima;const legs=[{dir:'sell',type:'Futuro',strike:F,prima:0,vi:0},{dir:'buy',type:'Call',strike:c.strike,prima:c.prima,vi:c.vi}];
     const gC=gk(F,c.strike,T,r,c.vi,'call');
     const g={delta:+(-1+gC.delta).toFixed(4),gamma:gC.gamma,theta:gC.theta,vega:gC.vega};
@@ -236,13 +244,14 @@ function asstGenStrategies(analyzed,F,T,vision,tol,crop,vol){
       legs,cost,floor:pisoSint,maxProt:'∞',ceiling:null,greeks:g,
       prob:Math.round(Math.abs(gC.delta)*100),
       cpd:999,
-      narrative:`Vendés el futuro a ${F.toFixed(1)} u$s fijando la venta, y comprás un Call ${c.strike} por ${cost.toFixed(1)} u$s para quedar abierto a la suba. Tu piso es ${pisoSint.toFixed(1)} u$s (precio de venta menos la prima del call). Si el mercado sube por encima de ${c.strike}, participás de la suba. Económicamente equivalente a comprar un Put, pero con la ventaja psicológica de que "ya vendiste". Ideal cuando te gusta el precio actual y querés asegurar la venta pero no perderte una suba.`,
+      narrative:`Vendés el futuro a ${F.toFixed(1)} u$s fijando la venta, y comprás un Call ${c.strike} por ${cost.toFixed(1)} u$s para quedar abierto a la suba desde ${c.strike}. Tu piso es ${pisoSint.toFixed(1)} u$s (precio de venta menos la prima del call). Si el mercado sube por encima de ${c.strike}, participás de la suba. Económicamente equivalente a comprar un Put, pero con la ventaja psicológica de que "ya vendiste". Ideal cuando te gusta el precio actual y querés asegurar la venta pero no perderte una suba.`,
     });
   }
 
   // ─── 6. VENTA FUTURO + CALL SPREAD ───
-  if(calls.length>=2) for(let i=0;i<Math.min(calls.length-1,2);i++){
-    const cb=calls[i],cs=calls[i+1];if(cs.strike-cb.strike<3)continue;
+  // Ambos calls DEBEN ser ATM u OTM para que el spread dé participación real en suba
+  if(upsideCalls.length>=2) for(let i=0;i<Math.min(upsideCalls.length-1,2);i++){
+    const cb=upsideCalls[i],cs=upsideCalls[i+1];if(cs.strike-cb.strike<3)continue;
     const cost=cb.prima-cs.prima;
     const legs=[{dir:'sell',type:'Futuro',strike:F,prima:0,vi:0},{dir:'buy',type:'Call',strike:cb.strike,prima:cb.prima,vi:cb.vi},{dir:'sell',type:'Call',strike:cs.strike,prima:cs.prima,vi:cs.vi}];
     const gCb=gk(F,cb.strike,T,r,cb.vi,'call'),gCs=gk(F,cs.strike,T,r,cs.vi,'call');

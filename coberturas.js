@@ -466,7 +466,15 @@ function renderChart() {
   const t = getActiveTab(); const prices = [];
   for (let p = t.min; p <= t.max; p += 2) prices.push(p);
 
-  const datasets = [];
+  const datasets = [{
+    label: 'Mercado',
+    data: prices.map(p => p),
+    borderColor: '#b0afa8',
+    borderWidth: 2,
+    borderDash: [6, 4],
+    pointRadius: 0,
+    tension: 0
+  }];
 
   t.strategies.forEach(s => {
     datasets.push({
