@@ -466,15 +466,7 @@ function renderChart() {
   const t = getActiveTab(); const prices = [];
   for (let p = t.min; p <= t.max; p += 2) prices.push(p);
 
-  const datasets = [{
-    label: 'Físico (Sin Cobertura)',
-    data: prices.map(p => p),
-    borderColor: '#b0afa8',
-    borderWidth: 2,
-    borderDash: [6, 4],
-    pointRadius: 0,
-    tension: 0
-  }];
+  const datasets = [];
 
   t.strategies.forEach(s => {
     datasets.push({
@@ -552,7 +544,7 @@ function renderTable() {
   });
   scenarios.sort((a, b) => a.val - b.val);
 
-  let thead = `<tr><th>Escenario</th><th>Mercado</th><th>Sin Cobertura</th>`;
+  let thead = `<tr><th>Escenario</th><th>Mercado</th>`;
   t.strategies.forEach(s => { thead += `<th style="color:${s.color}">${s.name}</th>`; }); thead += `</tr>`;
 
   let tbody = '';
@@ -560,7 +552,6 @@ function renderTable() {
     const isSpot = Math.abs(sc.val - t.spot) < 0.5;
     let row = `<tr${isSpot ? ' style="background:var(--es-green-light)"' : ''}>
       <td style="font-family:var(--font); font-weight:500">${sc.name}</td>
-      <td>$${sc.val.toFixed(1)}</td>
       <td>$${sc.val.toFixed(1)}</td>`;
     t.strategies.forEach(s => {
       let payoff = calcPayoff(s, sc.val); let diff = payoff - sc.val;
@@ -583,7 +574,7 @@ function renderWinner() {
   let rangeStart = t.min;
 
   prices.forEach(p => {
-    let bestName = 'Sin Cobertura';
+    let bestName = 'Mercado';
     let bestPayoff = p;
     let bestColor = '#b0afa8';
 
