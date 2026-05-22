@@ -43,22 +43,9 @@
   </div>
 
   <!-- ═══ BARRA GLOBAL DE DATOS DE MERCADO (A3) ═══ -->
-  <div class="fas-info-bar" id="mkt-bar" style="display:flex; gap:10px; align-items:center; margin-bottom:16px; padding:10px 16px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); flex-wrap:wrap;">
+  <div class="fas-info-bar" id="mkt-bar" style="display:flex; gap:10px; align-items:center; margin-bottom:16px; padding:8px 16px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); flex-wrap:wrap;">
     <input type="file" id="mkt-file-input" accept=".json,.csv" style="display:none" onchange="handleMarketFile(event)">
     <button class="btn" onclick="syncFromSheet()" style="white-space:nowrap; font-size:12px;" id="btn-sync-sheet">📡 Sincronizar A3</button>
-    <div class="field" style="gap:3px;">
-      <label style="font-size:9px;">Cultivo</label>
-      <select id="mkt-crop-select" onchange="changeMarketCrop()" style="font-family:var(--mono); font-size:12px; padding:5px 8px; border:1px solid var(--border); border-radius:5px; background:var(--bg-input);">
-        <option value="">—</option>
-      </select>
-    </div>
-    <div class="field" style="gap:3px;">
-      <label style="font-size:9px;">Posición</label>
-      <select id="mkt-pos-select" onchange="changeMarketPosition()" style="font-family:var(--mono); font-size:12px; padding:5px 8px; border:1px solid var(--border); border-radius:5px; background:var(--bg-input);">
-        <option value="">—</option>
-      </select>
-    </div>
-    <button class="btn btn-outline" id="btn-update-primas" onclick="autoFillAllPrimas()" style="white-space:nowrap; font-size:11px;" title="Actualiza todas las primas de las estrategias con datos del mercado">🔄 Actualizar primas</button>
     <button class="btn btn-outline" onclick="loadMarketJSON()" style="white-space:nowrap; font-size:11px;" title="Cargar archivo CSV o JSON manual como alternativa">📂 CSV / JSON</button>
     <span id="mkt-status" style="font-size:11px; color:var(--text-3); font-style:italic;">Sin datos — pulsar Sincronizar A3</span>
   </div>
@@ -66,18 +53,25 @@
   <div id="workspace">
     <div class="top-bar">
       <div class="field">
-        <label>Seteo Rápido</label>
-        <select id="asset-select" onchange="applyAssetPreset()">
-          <option value="soja" data-spot="340">Soja MATBA</option>
-          <option value="maiz" data-spot="195">Maíz MATBA</option>
-          <option value="trigo" data-spot="215">Trigo MATBA</option>
-          <option value="girasol" data-spot="340">Girasol</option>
+        <label>Cultivo</label>
+        <select id="mkt-crop-select" onchange="onCultChange()" style="font-family:var(--mono); font-size:13px;">
+          <option value="soja">Soja</option>
+          <option value="maiz">Maíz</option>
+          <option value="trigo">Trigo</option>
+          <option value="girasol">Girasol</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Posición</label>
+        <select id="mkt-pos-select" onchange="onPosChange()" style="font-family:var(--mono); font-size:13px;">
+          <option value="">⏳ Sincronizar A3</option>
         </select>
       </div>
       <div class="field"><label>Precio Spot (u$s)</label><input type="number" id="spot" step="0.1" oninput="updateGlobalInputs()"></div>
       <div class="field"><label>Eje X Mín</label><input type="number" id="chart-min" step="0.1" oninput="updateGlobalInputs()"></div>
       <div class="field"><label>Eje X Máx</label><input type="number" id="chart-max" step="0.1" oninput="updateGlobalInputs()"></div>
       <div class="field"><label>Nombre Solapa</label><input type="text" id="tab-name-input" oninput="updateTabName(this.value)" style="font-family:var(--font); width: 160px;"></div>
+      <button class="btn btn-outline" id="btn-update-primas" onclick="autoFillAllPrimas()" style="white-space:nowrap; font-size:11px;" title="Actualiza todas las primas de las estrategias con datos del mercado">🔄 Actualizar primas</button>
     </div>
 
     <div class="fas-info-bar" id="fas-info-bar" style="display:none;">
@@ -353,7 +347,6 @@
 
         <span style="font-size:11px; color:var(--text-3); font-style:italic; margin-left:8px;">Precio que pagan / necesitan pagar</span>
       </div>
-      <button class="btn btn-outline" onclick="retExportPDF()" style="white-space:nowrap;">📄 Exportar PDF</button>
     </div>
 
     <div id="ret-panels-grid" class="ret-panels-grid">

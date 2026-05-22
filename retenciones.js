@@ -210,7 +210,7 @@ function updateFASInfoBar() {
   el.style.color = spread >= 0 ? 'var(--es-green-dark)' : 'var(--red)';
 }
 
-function retExportPDF() { window.print(); }
+// PDF export removed — use Ctrl+P / browser print instead
 
 function retSliderStep(delta) {
   const slider = document.getElementById('ret-slider');

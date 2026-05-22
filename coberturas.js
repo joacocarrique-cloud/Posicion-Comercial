@@ -221,14 +221,19 @@ function switchTab(idx) {
 }
 
 function addNewTab() {
-  const assetSel = document.getElementById('asset-select');
-  const opt = assetSel.querySelector('option[value="soja"]') || assetSel.options[0];
-  const spot = parseFloat(opt.dataset.spot) || 300;
-  const min = parseFloat(opt.dataset.min) || Math.floor(spot * 0.80 / 5) * 5;
-  const max = parseFloat(opt.dataset.max) || Math.ceil(spot * 1.20 / 5) * 5;
+  const defaults = { soja: 340, maiz: 195, trigo: 215, girasol: 340 };
+  const crop = 'soja';
+  let spot = defaults[crop];
+  // If A3 data is loaded, use real price
+  if (sheetData && sheetData.futuros[crop]) {
+    const fut = sheetData.futuros[crop].find(f => f.precio > 0);
+    if (fut) spot = fut.precio;
+  }
+  const min = Math.floor(spot * 0.80 / 5) * 5;
+  const max = Math.ceil(spot * 1.20 / 5) * 5;
   tabs.push({
     id: tabCounter++, name: 'Estrategia de Coberturas',
-    assetVal: opt.value, spot, min, max,
+    assetVal: crop, spot, min, max,
     stratCounter: 2,
     strategies: [{ id: 1, name: 'Estrategia 1', color: COLORS[0], legs: [{ dir: 'buy', type: 'put', ratio: 1, strike: Math.round(spot * 0.97), prima: 3 }] }]
   });
@@ -246,7 +251,10 @@ function updateTabName(val) { getActiveTab().name = val || 'Sin título'; render
 
 function syncTopBar() {
   const t = getActiveTab();
-  document.getElementById('asset-select').value = t.assetVal;
+  const cropSel = document.getElementById('mkt-crop-select');
+  if (cropSel && cropSel.querySelector(`option[value="${t.assetVal}"]`)) {
+    cropSel.value = t.assetVal;
+  }
   document.getElementById('spot').value = t.spot;
   document.getElementById('chart-min').value = t.min;
   document.getElementById('chart-max').value = t.max;
@@ -261,15 +269,47 @@ function syncTopBar() {
   }
 }
 
-function applyAssetPreset() {
+function onCultChange() {
+  const crop = document.getElementById('mkt-crop-select').value;
   const t = getActiveTab();
-  const sel = document.getElementById('asset-select').selectedOptions[0];
-  t.assetVal = sel.value;
-  t.spot = parseFloat(sel.dataset.spot);
-  // Auto-calcular rango: ±20% del spot, redondeado a múltiplo de 5
-  t.min = Math.floor(t.spot * 0.80 / 5) * 5;
-  t.max = Math.ceil(t.spot * 1.20 / 5) * 5;
-  syncTopBar(); renderAll();
+  t.assetVal = crop;
+
+  if (sheetData) {
+    // A3 data loaded — use real data
+    changeMarketCrop();
+    const pos = marketPosition;
+    const fut = (sheetData.futuros[crop] || []).find(f => f.pos === pos && f.precio > 0)
+             || (sheetData.futuros[crop] || []).find(f => f.precio > 0);
+    if (fut) {
+      t.spot = fut.precio;
+      t.min = Math.floor(t.spot * 0.80 / 5) * 5;
+      t.max = Math.ceil(t.spot * 1.20 / 5) * 5;
+    }
+  } else {
+    // No A3 data — use defaults
+    const defaults = { soja: 340, maiz: 195, trigo: 215, girasol: 340 };
+    t.spot = defaults[crop] || 300;
+    t.min = Math.floor(t.spot * 0.80 / 5) * 5;
+    t.max = Math.ceil(t.spot * 1.20 / 5) * 5;
+  }
+  syncTopBar();
+  renderAll();
+}
+
+function onPosChange() {
+  changeMarketPosition();
+  const t = getActiveTab();
+  const crop = document.getElementById('mkt-crop-select').value;
+  const pos = marketPosition;
+  if (sheetData && crop && pos) {
+    const fut = (sheetData.futuros[crop] || []).find(f => f.pos === pos && f.precio > 0);
+    if (fut) {
+      t.spot = fut.precio;
+      t.min = Math.floor(t.spot * 0.80 / 5) * 5;
+      t.max = Math.ceil(t.spot * 1.20 / 5) * 5;
+      syncTopBar();
+    }
+  }
 }
 
 function updateGlobalInputs() {

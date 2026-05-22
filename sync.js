@@ -493,26 +493,17 @@ function changeMarketCrop() {
 
 function updateAssetSelectSpots() {
   if (!sheetData) return;
-  const assetSel = document.getElementById('asset-select');
-  for (const opt of assetSel.options) {
-    const crop = opt.value;
-    const futList = sheetData.futuros[crop];
-    if (futList && futList.length > 0) {
-      const first = futList.find(f => f.precio > 0) || futList[0];
-      if (first.precio > 0) {
-        opt.dataset.spot = first.precio.toString();
-        opt.dataset.min = (Math.floor(first.precio * 0.80 / 5) * 5).toString();
-        opt.dataset.max = (Math.ceil(first.precio * 1.20 / 5) * 5).toString();
-      }
-    }
-  }
   const t = getActiveTab();
-  const activeOpt = assetSel.querySelector(`option[value="${t.assetVal}"]`);
-  if (activeOpt && parseFloat(activeOpt.dataset.spot) > 0) {
-    t.spot = parseFloat(activeOpt.dataset.spot);
-    t.min = parseFloat(activeOpt.dataset.min);
-    t.max = parseFloat(activeOpt.dataset.max);
-    syncTopBar();
+  const crop = t.assetVal;
+  const futList = sheetData.futuros[crop];
+  if (futList && futList.length > 0) {
+    const first = futList.find(f => f.precio > 0) || futList[0];
+    if (first && first.precio > 0) {
+      t.spot = first.precio;
+      t.min = Math.floor(t.spot * 0.80 / 5) * 5;
+      t.max = Math.ceil(t.spot * 1.20 / 5) * 5;
+      syncTopBar();
+    }
   }
 }
 

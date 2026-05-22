@@ -215,64 +215,100 @@ function vgRenderContextBadge(pos) {
 
 // ─── GREEKS TABLE ───
 function vgRenderGreeksTable(pos) {
+  // Group legs by strategy
+  const stratMap = new Map();
+  pos.legs.forEach(l => {
+    if (!stratMap.has(l.stratName)) {
+      stratMap.set(l.stratName, { color: l.stratColor, legs: [], net: { delta: 0, gamma: 0, theta: 0, vega: 0 } });
+    }
+    const s = stratMap.get(l.stratName);
+    s.legs.push(l);
+    s.net.delta += l.greeks.delta;
+    s.net.gamma += l.greeks.gamma;
+    s.net.theta += l.greeks.theta;
+    s.net.vega += l.greeks.vega;
+  });
+
+  const thStyle = 'padding:8px;background:var(--es-green-light);border-bottom:2px solid var(--es-green);font-weight:700;color:var(--es-green-dark);font-size:10px;text-transform:uppercase;';
+  const hasSkew = ASST_SKEW && ASST_SKEW.length > 0;
+  const valorTooltip = hasSkew ? 'VI actual vs percentiles históricos del skew (P25/P75)' : 'Cargar datos históricos para análisis de valor';
+
   let h = `<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);margin-bottom:16px;overflow-x:auto;">`;
   h += `<div style="font-size:12px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px;">
     <span style="font-size:15px;">📐</span> Griegas de la posición</div>`;
-  
-  h += `<table style="width:100%;border-collapse:collapse;font-size:12px;">`;
-  h += `<thead><tr>
-    <th style="padding:8px;background:var(--es-green-light);border-bottom:2px solid var(--es-green);font-weight:700;color:var(--es-green-dark);font-size:10px;text-transform:uppercase;text-align:left;">Pata</th>
-    <th style="padding:8px;background:var(--es-green-light);border-bottom:2px solid var(--es-green);font-weight:700;color:var(--es-green-dark);font-size:10px;text-transform:uppercase;text-align:center;">Instrumento</th>
-    <th style="padding:8px;background:var(--es-green-light);border-bottom:2px solid var(--es-green);font-weight:700;color:var(--es-green-dark);font-size:10px;text-transform:uppercase;text-align:center;">Strike</th>
-    <th style="padding:8px;background:var(--es-green-light);border-bottom:2px solid var(--es-green);font-weight:700;color:var(--es-green-dark);font-size:10px;text-transform:uppercase;text-align:center;">Prima</th>
-    <th style="padding:8px;background:var(--es-green-light);border-bottom:2px solid var(--es-green);font-weight:700;color:var(--es-green-dark);font-size:10px;text-transform:uppercase;text-align:center;">VI %</th>
-    <th style="padding:8px;background:var(--es-green-light);border-bottom:2px solid var(--es-green);font-weight:700;color:var(--es-green-dark);font-size:10px;text-transform:uppercase;text-align:center;">Δ Delta</th>
-    <th style="padding:8px;background:var(--es-green-light);border-bottom:2px solid var(--es-green);font-weight:700;color:var(--es-green-dark);font-size:10px;text-transform:uppercase;text-align:center;">Γ Gamma</th>
-    <th style="padding:8px;background:var(--es-green-light);border-bottom:2px solid var(--es-green);font-weight:700;color:var(--es-green-dark);font-size:10px;text-transform:uppercase;text-align:center;">Θ Theta</th>
-    <th style="padding:8px;background:var(--es-green-light);border-bottom:2px solid var(--es-green);font-weight:700;color:var(--es-green-dark);font-size:10px;text-transform:uppercase;text-align:center;">ν Vega</th>
-    <th style="padding:8px;background:var(--es-green-light);border-bottom:2px solid var(--es-green);font-weight:700;color:var(--es-green-dark);font-size:10px;text-transform:uppercase;text-align:center;">Valor</th>
-  </tr></thead><tbody>`;
-  
-  pos.legs.forEach(l => {
-    const dirLabel = l.dir === 'buy' ? 'C' : 'V';
-    const typeLabel = l.type === 'futuro' ? 'FUT' : l.type.toUpperCase();
-    const qtyLabel = l.ratio > 1 ? `${l.ratio}×` : '';
-    const valBadge = l.value === 'cheap' 
-      ? '<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;background:var(--es-green-light);color:var(--es-green-dark);">BARATO</span>'
-      : l.value === 'expensive' 
-      ? '<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;background:#fde8e8;color:var(--red);">CARO</span>'
-      : '<span style="font-size:8px;color:var(--text-3);">—</span>';
-    
-    h += `<tr>
-      <td style="padding:7px 8px;border-bottom:1px solid var(--border);font-size:11px;">
-        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${l.stratColor};margin-right:6px;"></span>
-        <span style="font-weight:600;">${l.stratName}</span>
-      </td>
-      <td style="padding:7px;border-bottom:1px solid var(--border);text-align:center;font-family:var(--mono);font-weight:600;">
-        <span style="color:${l.dir==='buy'?'var(--es-green)':'var(--red)'}">${dirLabel}</span> ${qtyLabel}${typeLabel}
-      </td>
-      <td style="padding:7px;border-bottom:1px solid var(--border);text-align:center;font-family:var(--mono);font-weight:700;">${l.strike}</td>
-      <td style="padding:7px;border-bottom:1px solid var(--border);text-align:center;font-family:var(--mono);">${l.prima.toFixed(1)}</td>
-      <td style="padding:7px;border-bottom:1px solid var(--border);text-align:center;font-family:var(--mono);${l.value==='expensive'?'color:var(--red);font-weight:700;':l.value==='cheap'?'color:var(--es-green);font-weight:700;':''}">${l.vi !== null ? l.vi.toFixed(1)+'%' : '—'}</td>
-      <td style="padding:7px;border-bottom:1px solid var(--border);text-align:center;font-family:var(--mono);">${l.greeks.delta.toFixed(3)}</td>
-      <td style="padding:7px;border-bottom:1px solid var(--border);text-align:center;font-family:var(--mono);">${l.greeks.gamma.toFixed(5)}</td>
-      <td style="padding:7px;border-bottom:1px solid var(--border);text-align:center;font-family:var(--mono);color:${l.greeks.theta<0?'var(--red)':'var(--es-green)'};">${l.greeks.theta.toFixed(4)}</td>
-      <td style="padding:7px;border-bottom:1px solid var(--border);text-align:center;font-family:var(--mono);">${l.greeks.vega.toFixed(3)}</td>
-      <td style="padding:7px;border-bottom:1px solid var(--border);text-align:center;">${valBadge}</td>
+
+  for (const [stratName, strat] of stratMap) {
+    h += `<div style="margin-bottom:14px;">`;
+    h += `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;padding:4px 0;">
+      <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${strat.color};"></span>
+      <span style="font-size:12px;font-weight:700;color:var(--text);">${stratName}</span>
+    </div>`;
+    h += `<table style="width:100%;border-collapse:collapse;font-size:12px;">`;
+    h += `<thead><tr>
+      <th style="${thStyle}text-align:left;">Instrumento</th>
+      <th style="${thStyle}text-align:center;">Strike</th>
+      <th style="${thStyle}text-align:center;">Prima</th>
+      <th style="${thStyle}text-align:center;">VI %</th>
+      <th style="${thStyle}text-align:center;">Δ Delta</th>
+      <th style="${thStyle}text-align:center;">Γ Gamma</th>
+      <th style="${thStyle}text-align:center;">Θ Theta</th>
+      <th style="${thStyle}text-align:center;">ν Vega</th>
+      <th style="${thStyle}text-align:center;" title="${valorTooltip}">Valor <span style="font-size:8px;cursor:help;">ⓘ</span></th>
+    </tr></thead><tbody>`;
+
+    strat.legs.forEach(l => {
+      const dirLabel = l.dir === 'buy' ? 'C' : 'V';
+      const typeLabel = l.type === 'futuro' ? 'FUT' : l.type.toUpperCase();
+      const qtyLabel = l.ratio > 1 ? `${l.ratio}×` : '';
+      const valBadge = l.value === 'cheap' 
+        ? '<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;background:var(--es-green-light);color:var(--es-green-dark);">BARATO</span>'
+        : l.value === 'expensive' 
+        ? '<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;background:#fde8e8;color:var(--red);">CARO</span>'
+        : '<span style="font-size:8px;color:var(--text-3);">—</span>';
+      
+      h += `<tr>
+        <td style="padding:7px 8px;border-bottom:1px solid var(--border);font-family:var(--mono);font-weight:600;">
+          <span style="color:${l.dir==='buy'?'var(--es-green)':'var(--red)'}">${dirLabel}</span> ${qtyLabel}${typeLabel}
+        </td>
+        <td style="padding:7px;border-bottom:1px solid var(--border);text-align:center;font-family:var(--mono);font-weight:700;">${l.strike}</td>
+        <td style="padding:7px;border-bottom:1px solid var(--border);text-align:center;font-family:var(--mono);">${l.prima.toFixed(1)}</td>
+        <td style="padding:7px;border-bottom:1px solid var(--border);text-align:center;font-family:var(--mono);${l.value==='expensive'?'color:var(--red);font-weight:700;':l.value==='cheap'?'color:var(--es-green);font-weight:700;':''}">${l.vi !== null ? l.vi.toFixed(1)+'%' : '—'}</td>
+        <td style="padding:7px;border-bottom:1px solid var(--border);text-align:center;font-family:var(--mono);">${l.greeks.delta.toFixed(3)}</td>
+        <td style="padding:7px;border-bottom:1px solid var(--border);text-align:center;font-family:var(--mono);">${l.greeks.gamma.toFixed(5)}</td>
+        <td style="padding:7px;border-bottom:1px solid var(--border);text-align:center;font-family:var(--mono);color:${l.greeks.theta<0?'var(--red)':'var(--es-green)'};">${l.greeks.theta.toFixed(4)}</td>
+        <td style="padding:7px;border-bottom:1px solid var(--border);text-align:center;font-family:var(--mono);">${l.greeks.vega.toFixed(3)}</td>
+        <td style="padding:7px;border-bottom:1px solid var(--border);text-align:center;">${valBadge}</td>
+      </tr>`;
+    });
+
+    // Strategy sub-total row
+    if (strat.legs.length > 1) {
+      h += `<tr style="background:#f8f9f5;font-weight:600;">
+        <td style="padding:6px 8px;font-size:11px;color:var(--text-2);" colspan="4">Subtotal ${stratName}</td>
+        <td style="padding:6px;text-align:center;font-family:var(--mono);font-size:11px;">${strat.net.delta.toFixed(3)}</td>
+        <td style="padding:6px;text-align:center;font-family:var(--mono);font-size:11px;">${strat.net.gamma.toFixed(5)}</td>
+        <td style="padding:6px;text-align:center;font-family:var(--mono);font-size:11px;color:${strat.net.theta<0?'var(--red)':'var(--es-green)'};">${strat.net.theta.toFixed(4)}</td>
+        <td style="padding:6px;text-align:center;font-family:var(--mono);font-size:11px;">${strat.net.vega.toFixed(3)}</td>
+        <td></td>
+      </tr>`;
+    }
+
+    h += `</tbody></table></div>`;
+  }
+
+  // Net position row (only if multiple strategies)
+  if (stratMap.size > 1) {
+    h += `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;">`;
+    h += `<tr style="background:var(--es-green-light);font-weight:700;">
+      <td style="padding:8px;font-size:12px;" colspan="4">POSICIÓN NETA</td>
+      <td style="padding:8px;text-align:center;font-family:var(--mono);font-size:13px;">${pos.net.delta.toFixed(3)}</td>
+      <td style="padding:8px;text-align:center;font-family:var(--mono);font-size:13px;">${pos.net.gamma.toFixed(5)}</td>
+      <td style="padding:8px;text-align:center;font-family:var(--mono);font-size:13px;color:${pos.net.theta<0?'var(--red)':'var(--es-green)'};">${pos.net.theta.toFixed(4)}</td>
+      <td style="padding:8px;text-align:center;font-family:var(--mono);font-size:13px;">${pos.net.vega.toFixed(3)}</td>
+      <td></td>
     </tr>`;
-  });
-  
-  // Net row
-  h += `<tr style="background:var(--es-green-light);font-weight:700;">
-    <td style="padding:8px;font-size:12px;" colspan="5">POSICIÓN NETA</td>
-    <td style="padding:8px;text-align:center;font-family:var(--mono);font-size:13px;">${pos.net.delta.toFixed(3)}</td>
-    <td style="padding:8px;text-align:center;font-family:var(--mono);font-size:13px;">${pos.net.gamma.toFixed(5)}</td>
-    <td style="padding:8px;text-align:center;font-family:var(--mono);font-size:13px;color:${pos.net.theta<0?'var(--red)':'var(--es-green)'};">${pos.net.theta.toFixed(4)}</td>
-    <td style="padding:8px;text-align:center;font-family:var(--mono);font-size:13px;">${pos.net.vega.toFixed(3)}</td>
-    <td></td>
-  </tr>`;
-  
-  h += `</tbody></table>`;
+    h += `</table>`;
+  }
   
   // Interpretation
   h += vgRenderGreeksInterpretation(pos);
@@ -343,18 +379,21 @@ function vgRenderThermometer(pos) {
     else pct = 90 + Math.min(10, ((vi - p.p90) / (p.p90 * 0.3)) * 10);
     pct = Math.max(2, Math.min(98, pct));
     
-    const barColor = pct < 25 ? 'var(--es-green)' : pct < 50 ? '#3b82f6' : pct < 75 ? 'var(--es-gold)' : 'var(--red)';
     const label = pct < 20 ? 'MUY BARATA' : pct < 35 ? 'BARATA' : pct < 65 ? 'NORMAL' : pct < 80 ? 'CARA' : 'MUY CARA';
     const labelColor = pct < 35 ? 'var(--es-green)' : pct < 65 ? 'var(--text-3)' : 'var(--red)';
+    // Clamp VI% label position so it doesn't overflow the edges
+    const viLabelLeft = Math.max(8, Math.min(92, pct));
     
-    h += `<div style="background:var(--bg-input);border-radius:8px;padding:14px;">
-      <div style="font-size:11px;font-weight:600;margin-bottom:6px;display:flex;justify-content:space-between;">
-        <span><span style="color:${l.dir==='buy'?'var(--es-green)':'var(--red)'}">${l.dir==='buy'?'C':'V'}</span> ${l.type.toUpperCase()} ${l.strike}</span>
-        <span style="font-family:var(--mono);font-weight:700;color:${labelColor};">${label}</span>
+    h += `<div style="background:var(--bg-input);border-radius:8px;padding:14px 14px 10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <span style="font-size:11px;font-weight:600;"><span style="color:${l.dir==='buy'?'var(--es-green)':'var(--red)'}">${l.dir==='buy'?'C':'V'}</span> ${l.type.toUpperCase()} ${l.strike}</span>
+        <span style="font-size:10px;font-family:var(--mono);font-weight:700;color:${labelColor};letter-spacing:0.5px;white-space:nowrap;margin-left:12px;">${label}</span>
       </div>
-      <div style="position:relative;height:18px;background:linear-gradient(90deg, #22c55e 0%, #22c55e 20%, #3b82f6 35%, #eab308 60%, #ef4444 85%, #dc2626 100%);border-radius:9px;margin-bottom:8px;">
+      <div style="position:relative;height:18px;background:linear-gradient(90deg, #22c55e 0%, #22c55e 20%, #3b82f6 35%, #eab308 60%, #ef4444 85%, #dc2626 100%);border-radius:9px;margin-bottom:6px;">
         <div style="position:absolute;top:-2px;left:${pct}%;transform:translateX(-50%);width:4px;height:22px;background:var(--text);border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.3);"></div>
-        <div style="position:absolute;top:-16px;left:${pct}%;transform:translateX(-50%);font-size:9px;font-weight:700;font-family:var(--mono);color:var(--text);white-space:nowrap;">${vi.toFixed(1)}%</div>
+      </div>
+      <div style="position:relative;height:14px;margin-bottom:6px;">
+        <div style="position:absolute;left:${viLabelLeft}%;transform:translateX(-50%);font-size:10px;font-weight:700;font-family:var(--mono);color:var(--text);white-space:nowrap;">${vi.toFixed(1)}%</div>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:9px;font-family:var(--mono);color:var(--text-3);">
         <span>P10: ${p.p10.toFixed(1)}</span>
