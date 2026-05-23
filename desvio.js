@@ -604,6 +604,31 @@ function dvRenderVolPanel(){
         <div style="position:relative;height:200px;"><canvas id="dv-vol-rango-chart"></canvas></div>
       </div>
       <div id="dv-vol-summary" style="margin-top:16px;"></div>
+      <details style="margin-top:20px;border:1px solid var(--border,#dde0d5);border-radius:10px;overflow:hidden;">
+        <summary style="padding:12px 18px;cursor:pointer;font-size:13px;font-weight:600;color:var(--text-2);font-family:var(--font-head,'Plus Jakarta Sans',sans-serif);background:var(--bg-2,#f5f5f0);user-select:none;">
+          ¿Cómo se calcula cada indicador?
+        </summary>
+        <div style="padding:16px 18px;font-size:12px;color:var(--text-2);line-height:1.7;font-family:var(--font-body,'Plus Jakarta Sans',sans-serif);">
+          <div style="margin-bottom:16px;">
+            <div style="font-weight:700;color:var(--text);margin-bottom:4px;">📊 Volatilidad Realizada (anualizada)</div>
+            <div style="margin-bottom:6px;"><strong>Qué muestra:</strong> Cuánto se movió el precio día a día dentro de cada campaña, expresado como porcentaje anual. Es el indicador más relevante para comparar contra la volatilidad implícita que cotiza en las opciones de MATBA.</div>
+            <div><strong>Cómo se calcula:</strong> Para cada par de ruedas consecutivas se calcula el retorno logarítmico: ln(Precio₂/Precio₁). Se toma el desvío estándar de todos esos retornos diarios y se anualiza multiplicando por √252 (ruedas de negociación por año). Una vol realizada de 20% significa que, en promedio, el precio se movió ±20% anual.</div>
+          </div>
+          <div style="margin-bottom:16px;">
+            <div style="font-weight:700;color:var(--text);margin-bottom:4px;">📈 Coeficiente de Variación (CV)</div>
+            <div style="margin-bottom:6px;"><strong>Qué muestra:</strong> Qué tan dispersos estuvieron los precios respecto al promedio dentro de cada campaña. A diferencia de la volatilidad realizada, no mide movimientos día a día sino la dispersión total. Un CV bajo indica que el precio se mantuvo estable cerca del promedio; un CV alto indica que hubo mucha variación.</div>
+            <div><strong>Cómo se calcula:</strong> Se toma el desvío estándar de todos los precios de la campaña (σ) y se divide por el promedio (μ): CV = σ/μ × 100. Al expresarse como porcentaje del promedio, permite comparar entre cultivos con precios distintos.</div>
+          </div>
+          <div style="margin-bottom:16px;">
+            <div style="font-weight:700;color:var(--text);margin-bottom:4px;">📏 Rango Intra-Campaña</div>
+            <div style="margin-bottom:6px;"><strong>Qué muestra:</strong> La amplitud total del precio dentro de una campaña, normalizada por el promedio. Es el indicador más intuitivo: simplemente cuánto separó el máximo del mínimo. Un rango de 15% significa que entre el punto más alto y más bajo de la campaña hubo una diferencia del 15% sobre el promedio.</div>
+            <div><strong>Cómo se calcula:</strong> Rango % = (Máximo − Mínimo) / Promedio × 100. A diferencia del CV y la vol realizada, es muy sensible a eventos puntuales: un solo día con un spike empuja el rango aunque el resto de la campaña haya sido tranquila.</div>
+          </div>
+          <div style="padding-top:12px;border-top:1px solid var(--border,#dde0d5);color:var(--text-3);font-size:11px;line-height:1.6;">
+            <strong>Lectura conjunta:</strong> Si la volatilidad realizada y el CV de las últimas campañas están por debajo del promedio histórico, las primas de opciones deberían ser menores. Si además el rango intra-campaña también es bajo, la señal es más fuerte: no fue solo menos movimiento diario, sino que el precio efectivamente se mantuvo en un rango acotado.
+          </div>
+        </div>
+      </details>
     </div>`;
 
   // ── Chart defaults ──
