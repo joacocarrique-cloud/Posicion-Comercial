@@ -7,6 +7,7 @@
 // ── State ──
 let dvCrop='',dvPos='',dvActiveCamps={},dvSingleMode=null;
 let dvOverlayChart=null,dvSingleChart=null,dvSeasonChart=null;
+let dvVolCvChart=null,dvVolRealChart=null,dvVolRangoChart=null;
 
 const DV_KEY_POS={soja:['MAY','JUL','NOV'],maiz:['ABR','JUL'],trigo:['DIC','JUL']};
 const DV_CAMP_COLORS=['#1a6b3c','#c8a44a','#5b9bd5','#d4844a','#8b7db5','#c06080','#4a9aaa','#9a6aaa','#6aaa7a','#c0504a'];
@@ -84,7 +85,8 @@ function dvRenderOverview(){
       const campaigns=tree[crop][mes];
       const campKeys=Object.keys(campaigns).sort((a,b)=>b-a);
       if(!campKeys.length)return;
-      const m=dvCalcMetrics(campaigns[campKeys[0]]);
+      const allPrices=campKeys.flatMap(k=>campaigns[k]);
+      const m=dvCalcMetrics(allPrices);
       if(m)keyItems.push({crop,mes,campaigns,campKeys,latestKey:campKeys[0],m,isKey:true});
     });
   }
@@ -96,7 +98,8 @@ function dvRenderOverview(){
       const campaigns=tree[crop][mes];
       const campKeys=Object.keys(campaigns).sort((a,b)=>b-a);
       if(!campKeys.length)continue;
-      const m=dvCalcMetrics(campaigns[campKeys[0]]);
+      const allPrices=campKeys.flatMap(k=>campaigns[k]);
+      const m=dvCalcMetrics(allPrices);
       if(m)otherItems.push({crop,mes,campaigns,campKeys,latestKey:campKeys[0],m,isKey:false});
     }
   }
@@ -181,7 +184,7 @@ function dvEnterDetail(){
   const campKeys=Object.keys(campaigns).sort((a,b)=>b-a);
   dvActiveCamps={};campKeys.forEach(k=>dvActiveCamps[k]=true);
   dvSingleMode=null;
-  dvRenderCampChips();dvRenderModeButtons();dvRenderTable();dvRenderChart();
+  dvRenderCampChips();dvRenderModeButtons();dvRenderTable();dvRenderChart();dvRenderVolPanel();
 }
 
 function dvUpdatePosSel(){
@@ -199,7 +202,7 @@ function dvResetAndRender(){
   const campKeys=Object.keys(campaigns).sort((a,b)=>b-a);
   dvActiveCamps={};campKeys.forEach(k=>dvActiveCamps[k]=true);
   dvSingleMode=null;
-  dvRenderCampChips();dvRenderModeButtons();dvRenderTable();dvRenderChart();
+  dvRenderCampChips();dvRenderModeButtons();dvRenderTable();dvRenderChart();dvRenderVolPanel();
 }
 function dvBackToOverview(){
   document.getElementById('dv-overview').style.display='block';
@@ -207,6 +210,9 @@ function dvBackToOverview(){
   if(dvOverlayChart){dvOverlayChart.destroy();dvOverlayChart=null;}
   if(dvSingleChart){dvSingleChart.destroy();dvSingleChart=null;}
   if(dvSeasonChart){dvSeasonChart.destroy();dvSeasonChart=null;}
+  if(dvVolCvChart){dvVolCvChart.destroy();dvVolCvChart=null;}
+  if(dvVolRealChart){dvVolRealChart.destroy();dvVolRealChart=null;}
+  if(dvVolRangoChart){dvVolRangoChart.destroy();dvVolRangoChart=null;}
 }
 
 function dvRenderCampChips(){
@@ -487,6 +493,182 @@ function dvRenderSeasonChart(campaigns){
       }
     }
   });
+}
+
+// ═══════════════════════════════════════════════════════
+// PANEL DE VOLATILIDAD — CV + Realizada + Rango por campaña
+// ═══════════════════════════════════════════════════════
+
+function dvCalcRealizedVol(prices){
+  // Annualized realized volatility from daily log returns
+  if(!prices||prices.length<3)return null;
+  const sorted=[...prices].sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  const logRets=[];
+  for(let i=1;i<sorted.length;i++){
+    if(sorted[i].precio>0&&sorted[i-1].precio>0){
+      logRets.push(Math.log(sorted[i].precio/sorted[i-1].precio));
+    }
+  }
+  if(logRets.length<2)return null;
+  const avg=logRets.reduce((a,b)=>a+b,0)/logRets.length;
+  const variance=logRets.reduce((s,r)=>s+(r-avg)**2,0)/(logRets.length-1);
+  const dailyVol=Math.sqrt(variance);
+  const annualVol=dailyVol*Math.sqrt(252);
+  return{annualVol:annualVol*100,dailyVol:dailyVol*100,nReturns:logRets.length};
+}
+
+function dvRenderVolPanel(){
+  const tree=dvGetAllPositions();
+  const campaigns=tree[dvCrop]?.[dvPos];
+  if(!campaigns)return;
+  const campKeys=Object.keys(campaigns).sort();// chronological
+
+  // Ensure container exists
+  let wrap=document.getElementById('dv-vol-panel');
+  if(!wrap){
+    wrap=document.createElement('div');
+    wrap.id='dv-vol-panel';
+    // Insert after season wrap or at end of detail
+    const detail=document.getElementById('dv-detail');
+    if(detail)detail.appendChild(wrap);
+  }
+
+  // Destroy previous charts
+  if(dvVolCvChart){dvVolCvChart.destroy();dvVolCvChart=null;}
+  if(dvVolRealChart){dvVolRealChart.destroy();dvVolRealChart=null;}
+  if(dvVolRangoChart){dvVolRangoChart.destroy();dvVolRangoChart=null;}
+
+  // Compute per-campaign data
+  const labels=[], cvData=[], volData=[], rangoData=[];
+  const cvColors=[], volColors=[], rangoColors=[];
+  let avgCv=0, avgVol=0, avgRango=0, countCv=0, countVol=0, countRango=0;
+
+  campKeys.forEach(k=>{
+    const prices=campaigns[k];
+    const label=dvGetCampLabel(parseInt(k));
+    const m=dvCalcMetrics(prices);
+    const rv=dvCalcRealizedVol(prices);
+    labels.push(label);
+    if(m){
+      cvData.push(m.cv);avgCv+=m.cv;countCv++;
+      rangoData.push(m.rangoPct);avgRango+=m.rangoPct;countRango++;
+    }else{cvData.push(null);rangoData.push(null);}
+    if(rv){volData.push(rv.annualVol);avgVol+=rv.annualVol;countVol++;}
+    else{volData.push(null);}
+  });
+
+  avgCv=countCv?avgCv/countCv:0;
+  avgVol=countVol?avgVol/countVol:0;
+  avgRango=countRango?avgRango/countRango:0;
+
+  // Determine which campaigns are "recent" (last 2) for color coding
+  const recentIdx=new Set();
+  for(let i=campKeys.length-1;i>=Math.max(0,campKeys.length-2);i--)recentIdx.add(i);
+
+  campKeys.forEach((_,i)=>{
+    const isRecent=recentIdx.has(i);
+    cvColors.push(isRecent?'#1a6b3c':'#1a6b3c88');
+    volColors.push(isRecent?'#5b9bd5':'#5b9bd588');
+    rangoColors.push(isRecent?'#c8a44a':'#c8a44a88');
+  });
+
+  const cropLabel=dvCrop.charAt(0).toUpperCase()+dvCrop.slice(1);
+
+  wrap.innerHTML=`
+    <div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--border,#dde0d5);">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+        <span style="font-size:15px;font-weight:700;color:var(--text);font-family:var(--font-head,'Plus Jakarta Sans',sans-serif);">Análisis de Volatilidad</span>
+        <span style="font-size:11px;color:var(--text-3);font-family:var(--font-mono,'JetBrains Mono',monospace);">${cropLabel} ${dvPos} · ${campKeys.length} campañas</span>
+      </div>
+      <p style="font-size:12px;color:var(--text-3);margin:0 0 20px 0;line-height:1.5;">
+        Las últimas 2 campañas se resaltan en color sólido. La línea punteada marca el promedio histórico.
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:8px;font-family:var(--font-head,'Plus Jakarta Sans',sans-serif);">
+            Volatilidad Realizada <span style="font-weight:400;color:var(--text-3);">(anualizada, log returns × √252)</span>
+          </div>
+          <div style="position:relative;height:220px;"><canvas id="dv-vol-real-chart"></canvas></div>
+        </div>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:8px;font-family:var(--font-head,'Plus Jakarta Sans',sans-serif);">
+            Coeficiente de Variación <span style="font-weight:400;color:var(--text-3);">(σ/μ por campaña)</span>
+          </div>
+          <div style="position:relative;height:220px;"><canvas id="dv-vol-cv-chart"></canvas></div>
+        </div>
+      </div>
+      <div style="margin-top:20px;">
+        <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:8px;font-family:var(--font-head,'Plus Jakarta Sans',sans-serif);">
+          Rango Intra-Campaña <span style="font-weight:400;color:var(--text-3);">((Máx−Mín)/Promedio %)</span>
+        </div>
+        <div style="position:relative;height:200px;"><canvas id="dv-vol-rango-chart"></canvas></div>
+      </div>
+      <div id="dv-vol-summary" style="margin-top:16px;"></div>
+    </div>`;
+
+  // ── Chart defaults ──
+  const chartFont={family:'JetBrains Mono',size:10};
+  const gridColor='#dde0d544';
+  const tooltipStyle={backgroundColor:'#fff',titleColor:'#1c2118',bodyColor:'#505845',borderColor:'#dde0d5',borderWidth:1,
+    titleFont:{family:'Montserrat',weight:'700',size:12},bodyFont:{family:'JetBrains Mono',size:11},padding:10,cornerRadius:8};
+
+  // ── Realized Vol chart ──
+  const ctxVol=document.getElementById('dv-vol-real-chart').getContext('2d');
+  dvVolRealChart=new Chart(ctxVol,{type:'bar',data:{labels,datasets:[
+    {label:'Vol. Realizada %',data:volData,backgroundColor:volColors,borderRadius:4,barPercentage:0.7},
+    {label:'Promedio',data:labels.map(()=>avgVol),type:'line',borderColor:'#5b9bd5',borderWidth:1.5,borderDash:[6,4],pointRadius:0,fill:false}
+  ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+    plugins:{legend:{display:false},tooltip:{...tooltipStyle,callbacks:{label:ctx=>ctx.dataset.label+': '+dvFmt(ctx.parsed.y)+'%'}}},
+    scales:{x:{ticks:{font:chartFont,color:'#7e8574'},grid:{display:false}},
+      y:{ticks:{font:chartFont,color:'#7e8574',callback:v=>v+'%'},grid:{color:gridColor},beginAtZero:true}}}});
+
+  // ── CV chart ──
+  const ctxCv=document.getElementById('dv-vol-cv-chart').getContext('2d');
+  dvVolCvChart=new Chart(ctxCv,{type:'bar',data:{labels,datasets:[
+    {label:'CV %',data:cvData,backgroundColor:cvColors,borderRadius:4,barPercentage:0.7},
+    {label:'Promedio',data:labels.map(()=>avgCv),type:'line',borderColor:'#1a6b3c',borderWidth:1.5,borderDash:[6,4],pointRadius:0,fill:false}
+  ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+    plugins:{legend:{display:false},tooltip:{...tooltipStyle,callbacks:{label:ctx=>ctx.dataset.label+': '+dvFmt(ctx.parsed.y)+'%'}}},
+    scales:{x:{ticks:{font:chartFont,color:'#7e8574'},grid:{display:false}},
+      y:{ticks:{font:chartFont,color:'#7e8574',callback:v=>v+'%'},grid:{color:gridColor},beginAtZero:true}}}});
+
+  // ── Rango chart ──
+  const ctxR=document.getElementById('dv-vol-rango-chart').getContext('2d');
+  dvVolRangoChart=new Chart(ctxR,{type:'bar',data:{labels,datasets:[
+    {label:'Rango %',data:rangoData,backgroundColor:rangoColors,borderRadius:4,barPercentage:0.7},
+    {label:'Promedio',data:labels.map(()=>avgRango),type:'line',borderColor:'#c8a44a',borderWidth:1.5,borderDash:[6,4],pointRadius:0,fill:false}
+  ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+    plugins:{legend:{display:false},tooltip:{...tooltipStyle,callbacks:{label:ctx=>ctx.dataset.label+': '+dvFmt(ctx.parsed.y)+'%'}}},
+    scales:{x:{ticks:{font:chartFont,color:'#7e8574'},grid:{display:false}},
+      y:{ticks:{font:chartFont,color:'#7e8574',callback:v=>v+'%'},grid:{color:gridColor},beginAtZero:true}}}});
+
+  // ── Summary text ──
+  const summary=document.getElementById('dv-vol-summary');
+  if(summary&&countVol>=3){
+    // Compare last 2 campaigns vs historical average
+    const recentVols=volData.slice(-2).filter(v=>v!=null);
+    const recentAvg=recentVols.length?recentVols.reduce((a,b)=>a+b,0)/recentVols.length:0;
+    const diff=((recentAvg-avgVol)/avgVol)*100;
+    const isLower=diff<-10;
+    const isHigher=diff>10;
+    const emoji=isLower?'📉':isHigher?'📈':'➡️';
+    const color=isLower?'var(--es-green)':isHigher?'var(--red)':'var(--text-2)';
+    const verdict=isLower
+      ?'Las últimas campañas muestran volatilidad significativamente menor al promedio histórico. Esto es consistente con primas de opciones bajas.'
+      :isHigher
+      ?'Las últimas campañas muestran volatilidad por encima del promedio histórico. Las opciones deberían estar relativamente caras.'
+      :'Las últimas campañas muestran volatilidad en línea con el promedio histórico.';
+    summary.innerHTML=`
+      <div style="background:var(--bg-2,#f5f5f0);border-radius:10px;padding:14px 18px;display:flex;align-items:flex-start;gap:12px;">
+        <span style="font-size:20px;">${emoji}</span>
+        <div>
+          <div style="font-size:12px;font-weight:700;color:${color};margin-bottom:4px;font-family:var(--font-head,'Plus Jakarta Sans',sans-serif);">
+            Vol. realizada reciente: ${dvFmt(recentAvg)}% vs promedio histórico: ${dvFmt(avgVol)}% (${diff>=0?'+':''}${dvFmt(diff)}%)
+          </div>
+          <div style="font-size:12px;color:var(--text-2);line-height:1.5;">${verdict}</div>
+        </div>
+      </div>`;
+  }else if(summary){summary.innerHTML='';}
 }
 
 // ── Auto-patch: make existing toggles hide desvio ──
