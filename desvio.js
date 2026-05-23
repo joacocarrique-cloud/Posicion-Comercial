@@ -66,6 +66,8 @@ function toggleDesvio(){
   else{dvRenderOverview();}
 }
 
+let dvFilterCrop='todos';
+
 function dvRenderOverview(){
   const container=document.getElementById('dv-overview-cards');
   if(!container)return;
@@ -74,7 +76,8 @@ function dvRenderOverview(){
   const syncNote=document.getElementById('dv-sync-note');
   if(syncNote)syncNote.textContent=ASST_FUTPOS.length+' registros cargados';
 
-  const items=[];
+  // Build key items (posiciones principales)
+  const keyItems=[];
   for(const crop of Object.keys(DV_KEY_POS)){
     DV_KEY_POS[crop].forEach(mes=>{
       if(!tree[crop]||!tree[crop][mes])return;
@@ -82,43 +85,89 @@ function dvRenderOverview(){
       const campKeys=Object.keys(campaigns).sort((a,b)=>b-a);
       if(!campKeys.length)return;
       const m=dvCalcMetrics(campaigns[campKeys[0]]);
-      if(m)items.push({crop,mes,campaigns,campKeys,latestKey:campKeys[0],m});
+      if(m)keyItems.push({crop,mes,campaigns,campKeys,latestKey:campKeys[0],m,isKey:true});
     });
   }
+  // Build other items
+  const otherItems=[];
   for(const crop of Object.keys(tree)){
     for(const mes of Object.keys(tree[crop])){
-      if(items.find(it=>it.crop===crop&&it.mes===mes))continue;
+      if(keyItems.find(it=>it.crop===crop&&it.mes===mes))continue;
       const campaigns=tree[crop][mes];
       const campKeys=Object.keys(campaigns).sort((a,b)=>b-a);
       if(!campKeys.length)continue;
       const m=dvCalcMetrics(campaigns[campKeys[0]]);
-      if(m)items.push({crop,mes,campaigns,campKeys,latestKey:campKeys[0],m});
+      if(m)otherItems.push({crop,mes,campaigns,campKeys,latestKey:campKeys[0],m,isKey:false});
     }
   }
-  if(!items.length){
+  otherItems.sort((a,b)=>b.m.cv-a.m.cv);
+
+  if(!keyItems.length&&!otherItems.length){
     container.innerHTML='<div style="padding:20px;color:var(--text-3);font-size:13px;">No hay datos cargados. Sincronizá A3 primero desde la barra de mercado.</div>';
     return;
   }
-  items.sort((a,b)=>b.m.cv-a.m.cv);
-  items.forEach(item=>{
-    const m=item.m;
-    const avgPct=m.rango>0?((m.avg-m.min)/m.rango)*100:50;
-    const cropLabel=item.crop.charAt(0).toUpperCase()+item.crop.slice(1);
-    const card=document.createElement('div');
-    card.className='dv-overview-card';
-    card.onclick=()=>{dvCrop=item.crop;dvPos=item.mes;dvEnterDetail();};
-    card.innerHTML=`
-      <div class="dv-ov-header"><div><span class="dv-ov-crop">${cropLabel}</span><span class="dv-ov-pos">${item.mes}</span></div><span class="dv-ov-camps">${item.campKeys.length} campañas</span></div>
-      <div class="dv-range-row"><span class="dv-range-min">${dvUSD(m.min)}</span><div class="dv-range-bar"><div class="dv-range-fill"></div><div class="dv-range-dot" style="left:${avgPct}%"></div></div><span class="dv-range-max">${dvUSD(m.max)}</span></div>
-      <div class="dv-ov-metrics">
-        <div class="dv-ov-metric"><div class="dv-ov-metric-lbl">Promedio</div><div class="dv-ov-metric-val">${dvUSD(m.avg)}</div></div>
-        <div class="dv-ov-metric"><div class="dv-ov-metric-lbl">Desv+</div><div class="dv-ov-metric-val" style="color:var(--es-green);">+${dvFmt(m.desvMaxPct)}%</div></div>
-        <div class="dv-ov-metric"><div class="dv-ov-metric-lbl">Desv−</div><div class="dv-ov-metric-val" style="color:var(--red);">−${dvFmt(m.desvMinPct)}%</div></div>
-        <div class="dv-ov-metric"><div class="dv-ov-metric-lbl">CV</div><div class="dv-ov-metric-val" style="color:var(--es-gold);">${dvFmt(m.cv)}%</div></div>
-      </div>
-      <div class="dv-ov-footer">Última campaña (${dvGetCampLabel(parseInt(item.latestKey))})</div>`;
-    container.appendChild(card);
+
+  // ── Filter chips ──
+  const allCrops=['todos',...new Set([...keyItems,...otherItems].map(i=>i.crop))];
+  const cropLabels={todos:'Todos',soja:'Soja',trigo:'Trigo',maiz:'Maíz',girasol:'Girasol',cebada:'Cebada',sorgo:'Sorgo'};
+  const filterBar=document.createElement('div');
+  filterBar.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;';
+  allCrops.forEach(c=>{
+    const btn=document.createElement('button');
+    const label=cropLabels[c]||(c.charAt(0).toUpperCase()+c.slice(1));
+    const isActive=dvFilterCrop===c;
+    btn.textContent=label;
+    btn.className='dv-chip'+(isActive?' active':'');
+    btn.style.cssText=isActive
+      ?'border-color:var(--es-green);color:var(--es-green);background:var(--es-green-bg,rgba(45,107,74,0.08));font-size:12px;padding:4px 12px;cursor:pointer;'
+      :'font-size:12px;padding:4px 12px;cursor:pointer;';
+    btn.onclick=()=>{dvFilterCrop=c;dvRenderOverview();};
+    filterBar.appendChild(btn);
   });
+  container.appendChild(filterBar);
+
+  // ── Filter logic ──
+  const filterFn=item=>dvFilterCrop==='todos'||item.crop===dvFilterCrop;
+  const filteredKey=keyItems.filter(filterFn);
+  const filteredOther=otherItems.filter(filterFn);
+
+  // ── Render key positions ──
+  if(filteredKey.length){
+    const sectionLabel=document.createElement('div');
+    sectionLabel.style.cssText='font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-3);margin-bottom:8px;padding-left:2px;';
+    sectionLabel.textContent='Posiciones principales';
+    container.appendChild(sectionLabel);
+    filteredKey.forEach(item=>container.appendChild(dvBuildCard(item)));
+  }
+
+  // ── Render other positions ──
+  if(filteredOther.length){
+    const sep=document.createElement('div');
+    sep.style.cssText='font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-3);margin:20px 0 8px 2px;padding-top:16px;border-top:1px solid var(--border,#dde0d5);';
+    sep.textContent='Otras posiciones';
+    container.appendChild(sep);
+    filteredOther.forEach(item=>container.appendChild(dvBuildCard(item)));
+  }
+}
+
+function dvBuildCard(item){
+  const m=item.m;
+  const avgPct=m.rango>0?((m.avg-m.min)/m.rango)*100:50;
+  const cropLabel=item.crop.charAt(0).toUpperCase()+item.crop.slice(1);
+  const card=document.createElement('div');
+  card.className='dv-overview-card';
+  card.onclick=()=>{dvCrop=item.crop;dvPos=item.mes;dvEnterDetail();};
+  card.innerHTML=`
+    <div class="dv-ov-header"><div><span class="dv-ov-crop">${cropLabel}</span><span class="dv-ov-pos">${item.mes}</span></div><span class="dv-ov-camps">${item.campKeys.length} campañas</span></div>
+    <div class="dv-range-row"><span class="dv-range-min">${dvUSD(m.min)}</span><div class="dv-range-bar"><div class="dv-range-fill"></div><div class="dv-range-dot" style="left:${avgPct}%"></div></div><span class="dv-range-max">${dvUSD(m.max)}</span></div>
+    <div class="dv-ov-metrics">
+      <div class="dv-ov-metric"><div class="dv-ov-metric-lbl">Promedio</div><div class="dv-ov-metric-val">${dvUSD(m.avg)}</div></div>
+      <div class="dv-ov-metric"><div class="dv-ov-metric-lbl">Desv+</div><div class="dv-ov-metric-val" style="color:var(--es-green);">+${dvFmt(m.desvMaxPct)}%</div></div>
+      <div class="dv-ov-metric"><div class="dv-ov-metric-lbl">Desv−</div><div class="dv-ov-metric-val" style="color:var(--red);">−${dvFmt(m.desvMinPct)}%</div></div>
+      <div class="dv-ov-metric"><div class="dv-ov-metric-lbl">CV</div><div class="dv-ov-metric-val" style="color:var(--es-gold);">${dvFmt(m.cv)}%</div></div>
+    </div>
+    <div class="dv-ov-footer">Última campaña (${dvGetCampLabel(parseInt(item.latestKey))})</div>`;
+  return card;
 }
 
 function dvEnterDetail(){
