@@ -160,17 +160,21 @@ function renderModules() {
   if (retMode)     idx = 1;
   if (paseMode)    idx = 2;
   if (spreadMode)  idx = 3;
-  if (theoryMode)  idx = 4;
+  if (typeof desvioMode !== 'undefined' && desvioMode) idx = 4;
+  if (typeof futOpcMode !== 'undefined' && futOpcMode)  idx = 5;
+  if (theoryMode)  idx = 6;
   if (pills[idx]) pills[idx].classList.add('active');
 }
 
 function switchToWorkspace() {
   theoryMode = false; retMode = false; paseMode = false; asstMode = false; spreadMode = false;
+  if (typeof futOpcMode !== 'undefined') futOpcMode = false;
   document.getElementById('workspace').style.display = 'block';
   document.getElementById('theory-space').style.display = 'none';
   document.getElementById('ret-space').style.display = 'none';
   document.getElementById('pase-space').style.display = 'none';
   document.getElementById('spreads-space').style.display = 'none';
+  if (document.getElementById('futopc-space')) document.getElementById('futopc-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'flex';
   document.getElementById('btn-update-primas').style.display = '';
   syncTopBar();
@@ -179,11 +183,13 @@ function switchToWorkspace() {
 
 function toggleTheory() {
   theoryMode = true; retMode = false; paseMode = false; asstMode = false; spreadMode = false;
+  if (typeof futOpcMode !== 'undefined') futOpcMode = false;
   document.getElementById('workspace').style.display = 'none';
   document.getElementById('theory-space').style.display = 'block';
   document.getElementById('ret-space').style.display = 'none';
   document.getElementById('pase-space').style.display = 'none';
   document.getElementById('spreads-space').style.display = 'none';
+  if (document.getElementById('futopc-space')) document.getElementById('futopc-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'none';
   renderTabs();
   renderModules();
@@ -191,11 +197,13 @@ function toggleTheory() {
 
 function toggleRetenciones() {
   retMode = true; theoryMode = false; paseMode = false; asstMode = false; spreadMode = false;
+  if (typeof futOpcMode !== 'undefined') futOpcMode = false;
   document.getElementById('workspace').style.display = 'none';
   document.getElementById('theory-space').style.display = 'none';
   document.getElementById('ret-space').style.display = 'block';
   document.getElementById('pase-space').style.display = 'none';
   document.getElementById('spreads-space').style.display = 'none';
+  if (document.getElementById('futopc-space')) document.getElementById('futopc-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'flex';
   document.getElementById('btn-update-primas').style.display = 'none';
   renderTabs();
@@ -207,11 +215,13 @@ function toggleRetenciones() {
 
 function switchTab(idx) {
   theoryMode = false; retMode = false; paseMode = false; asstMode = false; spreadMode = false;
+  if (typeof futOpcMode !== 'undefined') futOpcMode = false;
   document.getElementById('workspace').style.display = 'block';
   document.getElementById('theory-space').style.display = 'none';
   document.getElementById('ret-space').style.display = 'none';
   document.getElementById('pase-space').style.display = 'none';
   document.getElementById('spreads-space').style.display = 'none';
+  if (document.getElementById('futopc-space')) document.getElementById('futopc-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'flex';
   document.getElementById('btn-update-primas').style.display = '';
   activeTabIdx = idx;

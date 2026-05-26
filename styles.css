@@ -1418,3 +1418,187 @@ body {
   .dv-ov-metrics { grid-template-columns: 1fr 1fr; }
   .dv-kpi-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* ─── Futuros y Opciones ─── */
+.fo-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.fo-kpi {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+}
+.fo-kpi-lbl {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-3);
+  margin-bottom: 4px;
+}
+.fo-kpi-val {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+.fo-kpi-sub {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 2px;
+  font-weight: 500;
+}
+.fo-pnl-pos { color: var(--green); }
+.fo-pnl-neg { color: var(--red); }
+
+.fo-section {
+  margin-bottom: 24px;
+}
+.fo-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.fo-section-icon {
+  width: 30px; height: 30px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+  font-family: var(--mono);
+}
+.fo-icon-fut { background: #e0eef9; color: #2a6daa; }
+.fo-icon-opt { background: var(--es-gold-light); color: #8a6518; }
+.fo-section-title { font-size: 15px; font-weight: 700; }
+.fo-section-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+  background: var(--bg-input);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.fo-sub-tab {
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.fo-sub-tab.active {
+  background: var(--bg-card);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.fo-sub-tab:hover:not(.active) { color: var(--text-2); }
+
+.fo-table-wrap {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.fo-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.fo-table thead th {
+  background: var(--bg-input);
+  padding: 9px 14px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-3);
+  border-bottom: 1.5px solid var(--border);
+  white-space: nowrap;
+}
+.fo-table thead th.r { text-align: right; }
+.fo-table tbody td {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  font-weight: 500;
+}
+.fo-table tbody td.r { text-align: right; }
+.fo-table tbody td.m { font-family: var(--mono); font-size: 12px; }
+.fo-table tbody tr:last-child td { border-bottom: none; }
+.fo-table tbody tr:hover { background: var(--bg-input); }
+.fo-table .fo-summary td {
+  background: var(--bg-input) !important;
+  font-weight: 700 !important;
+  border-top: 2px solid var(--border-2);
+}
+
+.fo-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+}
+.fo-badge-v { background: #fde8e8; color: var(--red); }
+.fo-badge-c { background: var(--es-green-light); color: var(--es-green-dark); }
+.fo-badge-call { background: #e0eef9; color: #2a6daa; }
+.fo-badge-put { background: var(--es-gold-light); color: #8a6518; }
+
+.fo-especie-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 13px;
+}
+.fo-especie-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+}
+.fo-dot-soja { background: #e8b931; }
+.fo-dot-maiz { background: #e88c31; }
+.fo-dot-trigo { background: #8fb84a; }
+
+.fo-empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.fo-status {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 20px;
+  background: var(--es-green-light);
+  color: var(--es-green);
+}
+.fo-status.loading { background: var(--es-gold-light); color: var(--es-gold); }
+.fo-status.error { background: #fde8e8; color: var(--red); }
+
+@media (max-width: 768px) {
+  .fo-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .fo-kpi-val { font-size: 16px; }
+  .fo-table { font-size: 12px; }
+  .fo-table thead th, .fo-table tbody td { padding: 7px 10px; }
+}
