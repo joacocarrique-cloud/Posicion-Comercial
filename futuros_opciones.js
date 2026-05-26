@@ -231,14 +231,16 @@ function foRenderFutOpen(data) {
   if (!data.length) { el.innerHTML = '<div class="fo-empty">Sin posiciones abiertas en esta campaña</div>'; return; }
   let h = `<div class="fo-table-wrap"><table class="fo-table"><thead><tr>
     <th>Especie</th><th>Contrato</th><th>Dirección</th>
-    <th class="r">Tons netas</th><th class="r">Px prom venta</th><th class="r">Px prom compra</th><th class="r">Ops</th>
+    <th class="r">Tons netas</th><th class="r">Precio promedio</th><th class="r">Ops</th>
   </tr></thead><tbody>`;
   for (const r of data) {
-    const dir = r.neto < 0 ? '<span class="fo-badge fo-badge-v">VENDIDO</span>' : '<span class="fo-badge fo-badge-c">COMPRADO</span>';
+    const isShort = r.neto < 0;
+    const dir = isShort ? '<span class="fo-badge fo-badge-v">VENDIDO</span>' : '<span class="fo-badge fo-badge-c">COMPRADO</span>';
+    // Show price of the open side only: sells if net short, buys if net long
+    const openPrice = isShort ? r.avg_v : r.avg_c;
     h += `<tr><td>${foEspecieTag(r.esp)}</td><td class="m">${r.contrato}</td><td>${dir}</td>
       <td class="r m">${foFmtInt(Math.abs(r.neto))}</td>
-      <td class="r m">${r.avg_v > 0 ? '$ ' + foFmt(r.avg_v) : '—'}</td>
-      <td class="r m">${r.avg_c > 0 ? '$ ' + foFmt(r.avg_c) : '—'}</td>
+      <td class="r m">${openPrice > 0 ? '$ ' + foFmt(openPrice) : '—'}</td>
       <td class="r m">${r.trades}</td></tr>`;
   }
   h += '</tbody></table></div>';
