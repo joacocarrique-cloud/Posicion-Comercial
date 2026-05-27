@@ -30,8 +30,8 @@ function toggleFutOpc() {
   document.getElementById('tabs-container').style.display = 'none';
   try { document.getElementById('btn-update-primas').style.display = 'none'; } catch(e){}
 
-  renderTabs();
   renderModules();
+  document.getElementById('tabs-container').style.display = 'none';
 
   if (!foLoaded) foInit();
 }
