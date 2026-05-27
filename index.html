@@ -15,7 +15,7 @@
     <div class="header-logo">🌾</div>
     <div>
       <div class="header-title">Suite Comercial · Espartina S.A.</div>
-      <div class="header-subtitle">Coberturas · FAS & Retenciones · Pases & Tasas · Desvío de Precios · Futuros & Opciones</div>
+      <div class="header-subtitle">Coberturas · FAS & Retenciones · Pases & Tasas · Desvío de Precios · Inteligencia · Futuros & Opciones</div>
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:12px;">
@@ -26,6 +26,7 @@
       <button class="mod-pill" onclick="togglePases()">📊 Pases & Tasas</button>
       <button class="mod-pill" onclick="toggleSpreads()">📈 Spreads</button>
       <button class="mod-pill" onclick="toggleDesvio()">📉 Desvío</button>
+      <button class="mod-pill" onclick="toggleAlertas()">🧠 Inteligencia</button>
       <button class="mod-pill" onclick="toggleFutOpc()">📋 Fut & Opc</button>
       <button class="mod-pill" onclick="toggleTheory()">📙 Manual</button>
     </nav>
@@ -706,6 +707,8 @@
   </div>
 
   <!-- ═══ FUTUROS Y OPCIONES ═══ -->
+  <div id="alertas-space" style="display:none;"></div>
+
   <div id="futopc-space" style="display:none;">
     <!-- Toolbar -->
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap;">
@@ -781,6 +784,7 @@
 <script src="vol_greeks.js"></script>
 <script src="spreads.js"></script>
 <script src="desvio.js"></script>
+<script src="alertas.js"></script>
 <script src="futuros_opciones.js"></script>
 <script src="app.js"></script>
 </body>
