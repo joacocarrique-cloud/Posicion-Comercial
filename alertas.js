@@ -12,7 +12,7 @@ const AL_PCT_WARN_LO = 10;
 const AL_PCT_WARN_HI = 90;
 const AL_PCT_ALERT_LO = 5;
 const AL_PCT_ALERT_HI = 95;
-const AL_MIN_HIST_OBS = 10;
+const AL_MIN_HIST_OBS = 8;
 
 // ── Pares a monitorear ──────────────────────────────────────────
 const AL_INTRA_PAIRS = [
@@ -37,6 +37,7 @@ let alDetailChart = null;
 let alHistChart = null;
 let alCurrentAlerts = [];
 let alActiveFilter = 'all';
+let alDebugLog = [];
 
 // ═══════════════════════════════════════════════════════════════
 //  MODULE TOGGLE — same pattern as toggleDesvio()
@@ -59,7 +60,7 @@ function toggleAlertas(){
   document.getElementById('fob-bar').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'none';
 
-  if(ASST_FUTPOS.length === 0){
+  if(!window.ASST_FUTPOS || ASST_FUTPOS.length === 0){
     const container = document.getElementById('alertas-space');
     container.innerHTML = '<div style="padding:48px;text-align:center;font-family:var(--mono);color:var(--text-3);">⏳ Sincronizando datos históricos de A3...</div>';
     asstLoadDrive().then(() => { alRenderDashboard(); });
@@ -69,33 +70,40 @@ function toggleAlertas(){
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  DATA EXTRACTION
+//  DATA — uses same patterns as spreads.js
 // ═══════════════════════════════════════════════════════════════
 
+/**
+ * Build {cultivo → mes_label → { anio_pos → [{fecha(str), precio, dte}] }}
+ * Mirrors desvio.js dvGetAllPositions() exactly
+ */
 function alBuildTree(){
   const tree = {};
   if(!window.ASST_FUTPOS || !ASST_FUTPOS.length) return tree;
   ASST_FUTPOS.forEach(r => {
-    const c = (r.cultivo || '').toLowerCase().trim();
-    const m = (r.mes_label || '').toUpperCase().trim();
-    const a = typeof r.anio_pos === 'number' ? r.anio_pos : parseInt(r.anio_pos);
-    if(!c || !m || isNaN(a) || !r.precio) return;
-    if(!tree[c]) tree[c] = {};
-    if(!tree[c][m]) tree[c][m] = {};
-    if(!tree[c][m][a]) tree[c][m][a] = [];
-    tree[c][m][a].push({
-      fecha: r.fecha instanceof Date ? r.fecha : new Date(r.fecha),
-      precio: parseFloat(r.precio),
-      dias_vto: r.dias_vto != null ? parseInt(r.dias_vto) : null,
+    const crop = r.cultivo, mes = r.mes_label;
+    const anio = typeof r.anio_pos === 'number' ? r.anio_pos : parseInt(r.anio_pos);
+    if(!crop || !mes || !anio) return;
+    if(!tree[crop]) tree[crop] = {};
+    if(!tree[crop][mes]) tree[crop][mes] = {};
+    if(!tree[crop][mes][anio]) tree[crop][mes][anio] = [];
+    tree[crop][mes][anio].push({
+      fecha: String(r.fecha).slice(0,10),
+      precio: r.precio,
+      dte: r.dias_vto,
     });
   });
+  // Sort by fecha string (ISO-sortable)
   for(const c in tree)
     for(const m in tree[c])
       for(const a in tree[c][m])
-        tree[c][m][a].sort((x,y) => x.fecha - y.fecha);
+        tree[c][m][a].sort((x,y) => x.fecha.localeCompare(y.fecha));
   return tree;
 }
 
+/**
+ * Get latest data point for a cultivo + mes (across all anio_pos)
+ */
 function alGetLatest(tree, cultivo, mes){
   const branch = tree[cultivo] && tree[cultivo][mes];
   if(!branch) return null;
@@ -105,56 +113,100 @@ function alGetLatest(tree, cultivo, mes){
     if(!arr.length) continue;
     const last = arr[arr.length - 1];
     if(!best || last.fecha > best.fecha){
-      best = { ...last, anio: parseInt(anio) };
+      best = { fecha:last.fecha, precio:last.precio, dte:last.dte, anio:parseInt(anio) };
     }
   }
   return best;
 }
 
-function alBuildIntraDistribution(tree, cultivo, posA, posB, targetDTE){
+/**
+ * Build intra-cultivo spread series (same pattern as spreads.js spCalcSpread)
+ * Returns [{value, anio, dte, fecha}]
+ * targetDTE: if not null, filter to ±AL_DTE_WINDOW. If null, return all.
+ */
+function alBuildIntraSeries(tree, cultivo, posA, posB, targetDTE){
   const branchA = tree[cultivo] && tree[cultivo][posA];
   const branchB = tree[cultivo] && tree[cultivo][posB];
   if(!branchA || !branchB) return [];
+
   const results = [];
-  const years = Object.keys(branchA).filter(y => branchB[y]);
-  for(const y of years){
-    const seriesA = branchA[y];
-    const bByDate = {};
-    branchB[y].forEach(r => { bByDate[r.fecha.toISOString().slice(0,10)] = r; });
-    for(const a of seriesA){
-      if(a.dias_vto == null) continue;
-      if(targetDTE !== null && Math.abs(a.dias_vto - targetDTE) > AL_DTE_WINDOW) continue;
-      const b = bByDate[a.fecha.toISOString().slice(0,10)];
-      if(!b || !b.precio) continue;
-      results.push({ value: a.precio - b.precio, anio: parseInt(y), dias_vto: a.dias_vto, fecha: a.fecha });
+  const yearsA = Object.keys(branchA);
+
+  for(const yA of yearsA){
+    // For same-cultivo, look for matching year in posB
+    // Try same year, then +1, -1 (handles cross-year positions like Trigo DIC vs JUL)
+    for(const yBOff of [0, 1, -1]){
+      const yB = String(parseInt(yA) + yBOff);
+      if(!branchB[yB]) continue;
+
+      // Index posB by fecha
+      const bByDate = {};
+      branchB[yB].forEach(r => { bByDate[r.fecha] = r; });
+
+      let matched = 0;
+      for(const a of branchA[yA]){
+        const b = bByDate[a.fecha];
+        if(!b || !b.precio || !a.precio) continue;
+
+        const dte = a.dte;
+        // Apply DTE filter only if targetDTE specified AND dte is available
+        if(targetDTE !== null && dte != null && !isNaN(dte)){
+          if(Math.abs(dte - targetDTE) > AL_DTE_WINDOW) continue;
+        }
+
+        results.push({
+          value: a.precio - b.precio,
+          anio: parseInt(yA),
+          dte: dte,
+          fecha: a.fecha,
+        });
+        matched++;
+      }
+      if(matched > 0) break; // Found the right year mapping
     }
   }
   return results;
 }
 
-function alBuildInterDistribution(tree, culA, posA, culB, posB, targetDTE){
+/**
+ * Build inter-cultivo ratio series
+ * ratio = priceA / priceB
+ */
+function alBuildInterSeries(tree, culA, posA, culB, posB, targetDTE){
   const branchA = tree[culA] && tree[culA][posA];
   const branchB = tree[culB] && tree[culB][posB];
   if(!branchA || !branchB) return [];
+
   const results = [];
-  const allYearsA = Object.keys(branchA);
-  for(const yA of allYearsA){
-    const seriesA = branchA[yA];
-    for(const yBOffset of [0, -1, 1]){
-      const yB = (parseInt(yA) + yBOffset).toString();
+  const yearsA = Object.keys(branchA);
+
+  for(const yA of yearsA){
+    for(const yBOff of [0, -1, 1]){
+      const yB = String(parseInt(yA) + yBOff);
       if(!branchB[yB]) continue;
+
       const bByDate = {};
-      branchB[yB].forEach(r => { bByDate[r.fecha.toISOString().slice(0,10)] = r; });
-      let matchCount = 0;
-      for(const a of seriesA){
-        if(a.dias_vto == null) continue;
-        if(targetDTE !== null && Math.abs(a.dias_vto - targetDTE) > AL_DTE_WINDOW) continue;
-        const b = bByDate[a.fecha.toISOString().slice(0,10)];
-        if(!b || !b.precio || b.precio === 0) continue;
-        results.push({ value: a.precio / b.precio, anio: parseInt(yA), dias_vto: a.dias_vto, fecha: a.fecha });
-        matchCount++;
+      branchB[yB].forEach(r => { bByDate[r.fecha] = r; });
+
+      let matched = 0;
+      for(const a of branchA[yA]){
+        const b = bByDate[a.fecha];
+        if(!b || !b.precio || b.precio === 0 || !a.precio) continue;
+
+        const dte = a.dte;
+        if(targetDTE !== null && dte != null && !isNaN(dte)){
+          if(Math.abs(dte - targetDTE) > AL_DTE_WINDOW) continue;
+        }
+
+        results.push({
+          value: a.precio / b.precio,
+          anio: parseInt(yA),
+          dte: dte,
+          fecha: a.fecha,
+        });
+        matched++;
       }
-      if(matchCount > 0) break;
+      if(matched > 0) break;
     }
   }
   return results;
@@ -169,13 +221,12 @@ function alStats(values){
   const n = values.length;
   const sorted = [...values].sort((a,b) => a - b);
   const mean = values.reduce((s,v) => s + v, 0) / n;
-  const variance = values.reduce((s,v) => s + (v - mean)**2, 0) / n;
-  const std = Math.sqrt(variance);
+  const std = Math.sqrt(values.reduce((s,v) => s + (v - mean)**2, 0) / n);
   const median = n%2===0 ? (sorted[n/2-1]+sorted[n/2])/2 : sorted[Math.floor(n/2)];
   return {
     mean, std, median, n,
     min: sorted[0], max: sorted[n-1],
-    p5: sorted[Math.max(0, Math.floor(n*0.05))],
+    p5:  sorted[Math.max(0, Math.floor(n*0.05))],
     p10: sorted[Math.max(0, Math.floor(n*0.10))],
     p25: sorted[Math.max(0, Math.floor(n*0.25))],
     p75: sorted[Math.min(n-1, Math.floor(n*0.75))],
@@ -200,22 +251,53 @@ function alZScore(value, mean, std){
 
 function alRunEngine(){
   const tree = alBuildTree();
-  if(!Object.keys(tree).length) return [];
+  alDebugLog = [];
+  if(!Object.keys(tree).length){
+    alDebugLog.push('Tree vacío — ASST_FUTPOS sin datos parseables');
+    return [];
+  }
+  alDebugLog.push('Cultivos en tree: ' + Object.keys(tree).join(', '));
+
   const alerts = [];
 
   // ── Intra-cultivo spreads ──
   for(const pair of AL_INTRA_PAIRS){
     const latestA = alGetLatest(tree, pair.cultivo, pair.posA);
     const latestB = alGetLatest(tree, pair.cultivo, pair.posB);
-    if(!latestA || !latestB) continue;
-    if(Math.abs(latestA.fecha - latestB.fecha) / 86400000 > 5) continue;
+    if(!latestA || !latestB){
+      alDebugLog.push(`${pair.label}: sin datos (A=${!!latestA}, B=${!!latestB})`);
+      continue;
+    }
+
+    // Check dates are reasonably close
+    if(latestA.fecha !== latestB.fecha){
+      // Allow up to 5 days difference
+      const dA = new Date(latestA.fecha), dB = new Date(latestB.fecha);
+      if(Math.abs(dA - dB) / 86400000 > 5){
+        alDebugLog.push(`${pair.label}: fechas lejanas (${latestA.fecha} vs ${latestB.fecha})`);
+        continue;
+      }
+    }
 
     const currentSpread = latestA.precio - latestB.precio;
-    const currentDTE = latestA.dias_vto;
+    const currentDTE = latestA.dte;
     const currentYear = latestA.anio;
-    const hist = alBuildIntraDistribution(tree, pair.cultivo, pair.posA, pair.posB, currentDTE)
+
+    // Build distribution: use DTE filter if available, otherwise use all data
+    const hasDTE = currentDTE != null && !isNaN(currentDTE);
+    let hist = alBuildIntraSeries(tree, pair.cultivo, pair.posA, pair.posB, hasDTE ? currentDTE : null)
       .filter(r => r.anio !== currentYear);
-    if(hist.length < AL_MIN_HIST_OBS) continue;
+
+    // If DTE filter gave too few results, fallback to all data
+    if(hist.length < AL_MIN_HIST_OBS && hasDTE){
+      hist = alBuildIntraSeries(tree, pair.cultivo, pair.posA, pair.posB, null)
+        .filter(r => r.anio !== currentYear);
+    }
+
+    if(hist.length < AL_MIN_HIST_OBS){
+      alDebugLog.push(`${pair.label}: solo ${hist.length} obs históricas (min ${AL_MIN_HIST_OBS})`);
+      continue;
+    }
 
     const values = hist.map(r => r.value);
     const stats = alStats(values);
@@ -226,32 +308,56 @@ function alRunEngine(){
     if(pct <= AL_PCT_ALERT_LO || pct >= AL_PCT_ALERT_HI || Math.abs(z) >= AL_ZSCORE_ALERT) severity = 'alert';
     else if(pct <= AL_PCT_WARN_LO || pct >= AL_PCT_WARN_HI || Math.abs(z) >= AL_ZSCORE_WARN) severity = 'warn';
 
-    const fullHist = alBuildIntraDistribution(tree, pair.cultivo, pair.posA, pair.posB, null);
+    // Full series for charts (no DTE filter)
+    const fullHist = alBuildIntraSeries(tree, pair.cultivo, pair.posA, pair.posB, null);
+
     alerts.push({
       type:'intra', label:pair.label, metricLabel:'Spread (USD/tn)',
       cultA:pair.cultivo, posA:pair.posA, cultB:pair.cultivo, posB:pair.posB,
-      currentValue:currentSpread, currentDTE, currentYear,
+      currentValue:currentSpread, currentDTE:hasDTE ? currentDTE : null, currentYear,
       priceA:latestA.precio, priceB:latestB.precio,
       stats, pct, z, severity,
       hist: fullHist.filter(r => r.anio !== currentYear),
       current: fullHist.filter(r => r.anio === currentYear),
       histAtDTE: hist,
     });
+    alDebugLog.push(`${pair.label}: OK — ${hist.length} obs, P${pct.toFixed(0)}, z${z.toFixed(2)} → ${severity}`);
   }
 
   // ── Inter-cultivo ratios ──
   for(const pair of AL_INTER_PAIRS){
     const latestA = alGetLatest(tree, pair.culA, pair.posA);
     const latestB = alGetLatest(tree, pair.culB, pair.posB);
-    if(!latestA || !latestB || latestB.precio === 0) continue;
-    if(Math.abs(latestA.fecha - latestB.fecha) / 86400000 > 5) continue;
+    if(!latestA || !latestB || latestB.precio === 0){
+      alDebugLog.push(`${pair.label}: sin datos (A=${!!latestA}, B=${!!latestB})`);
+      continue;
+    }
+
+    if(latestA.fecha !== latestB.fecha){
+      const dA = new Date(latestA.fecha), dB = new Date(latestB.fecha);
+      if(Math.abs(dA - dB) / 86400000 > 5){
+        alDebugLog.push(`${pair.label}: fechas lejanas (${latestA.fecha} vs ${latestB.fecha})`);
+        continue;
+      }
+    }
 
     const currentRatio = latestA.precio / latestB.precio;
-    const currentDTE = latestA.dias_vto;
+    const currentDTE = latestA.dte;
     const currentYear = latestA.anio;
-    const hist = alBuildInterDistribution(tree, pair.culA, pair.posA, pair.culB, pair.posB, currentDTE)
+    const hasDTE = currentDTE != null && !isNaN(currentDTE);
+
+    let hist = alBuildInterSeries(tree, pair.culA, pair.posA, pair.culB, pair.posB, hasDTE ? currentDTE : null)
       .filter(r => r.anio !== currentYear);
-    if(hist.length < AL_MIN_HIST_OBS) continue;
+
+    if(hist.length < AL_MIN_HIST_OBS && hasDTE){
+      hist = alBuildInterSeries(tree, pair.culA, pair.posA, pair.culB, pair.posB, null)
+        .filter(r => r.anio !== currentYear);
+    }
+
+    if(hist.length < AL_MIN_HIST_OBS){
+      alDebugLog.push(`${pair.label}: solo ${hist.length} obs históricas (min ${AL_MIN_HIST_OBS})`);
+      continue;
+    }
 
     const values = hist.map(r => r.value);
     const stats = alStats(values);
@@ -262,17 +368,19 @@ function alRunEngine(){
     if(pct <= AL_PCT_ALERT_LO || pct >= AL_PCT_ALERT_HI || Math.abs(z) >= AL_ZSCORE_ALERT) severity = 'alert';
     else if(pct <= AL_PCT_WARN_LO || pct >= AL_PCT_WARN_HI || Math.abs(z) >= AL_ZSCORE_WARN) severity = 'warn';
 
-    const fullHist = alBuildInterDistribution(tree, pair.culA, pair.posA, pair.culB, pair.posB, null);
+    const fullHist = alBuildInterSeries(tree, pair.culA, pair.posA, pair.culB, pair.posB, null);
+
     alerts.push({
       type:'inter', label:pair.label, metricLabel:'Ratio',
       cultA:pair.culA, posA:pair.posA, cultB:pair.culB, posB:pair.posB,
-      currentValue:currentRatio, currentDTE, currentYear,
+      currentValue:currentRatio, currentDTE:hasDTE ? currentDTE : null, currentYear,
       priceA:latestA.precio, priceB:latestB.precio,
       stats, pct, z, severity,
       hist: fullHist.filter(r => r.anio !== currentYear),
       current: fullHist.filter(r => r.anio === currentYear),
       histAtDTE: hist,
     });
+    alDebugLog.push(`${pair.label}: OK — ${hist.length} obs, P${pct.toFixed(0)}, z${z.toFixed(2)} → ${severity}`);
   }
 
   const sevOrder = {alert:0, warn:1, normal:2};
@@ -294,6 +402,10 @@ function alRenderDashboard(){
   const alertCount = alerts.filter(a => a.severity==='alert').length;
   const warnCount = alerts.filter(a => a.severity==='warn').length;
   const normalCount = alerts.filter(a => a.severity==='normal').length;
+
+  // Debug info for console
+  console.log('[Inteligencia] Debug log:', alDebugLog);
+  console.log('[Inteligencia] Alerts found:', alerts.length);
 
   container.innerHTML = `
     <div style="padding:4px 0;">
@@ -343,7 +455,11 @@ function alRenderDashboard(){
       <!-- Alert Cards Grid -->
       <div id="al-cards-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;margin-bottom:24px;">
         ${alerts.length === 0
-          ? '<div style="grid-column:1/-1;padding:40px;text-align:center;color:var(--text-3);font-size:14px;">Sin datos suficientes para evaluar. Sincronizá A3 primero.</div>'
+          ? `<div style="grid-column:1/-1;padding:30px;text-align:left;color:var(--text-3);font-size:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;">
+               <div style="font-weight:700;margin-bottom:8px;font-size:14px;color:var(--text);">🔍 Sin resultados</div>
+               <div style="margin-bottom:6px;">El motor evaluó ${AL_INTRA_PAIRS.length + AL_INTER_PAIRS.length} pares pero ninguno generó alertas.</div>
+               <div style="font-family:var(--mono);font-size:11px;background:var(--bg);padding:10px;border-radius:6px;max-height:200px;overflow-y:auto;white-space:pre-wrap;">${alDebugLog.join('\n')}</div>
+             </div>`
           : alerts.map((a,i) => alRenderCard(a,i)).join('')}
       </div>
 
@@ -353,13 +469,13 @@ function alRenderDashboard(){
           <div id="al-detail-title" style="font-size:16px;font-weight:700;color:var(--text);"></div>
           <button onclick="alCloseDetail()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-3);padding:4px 8px;">✕</button>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;" id="al-charts-row">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
           <div>
             <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:8px;">Estacionalidad por DTE</div>
             <div style="position:relative;height:280px;"><canvas id="al-chart-seasonal"></canvas></div>
           </div>
           <div>
-            <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:8px;">Distribución histórica al DTE actual</div>
+            <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:8px;">Distribución histórica</div>
             <div style="position:relative;height:280px;"><canvas id="al-chart-hist"></canvas></div>
           </div>
         </div>
@@ -373,7 +489,7 @@ function alRenderDashboard(){
     syncEl.textContent = ASST_FUTPOS.length.toLocaleString() + ' registros · A3';
   }
 
-  // Render sparklines
+  // Render sparklines after DOM paint
   requestAnimationFrame(() => {
     alerts.forEach((a,i) => {
       const canvas = document.getElementById('al-spark-'+i);
@@ -383,7 +499,7 @@ function alRenderDashboard(){
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  CARD RENDERING
+//  CARD
 // ═══════════════════════════════════════════════════════════════
 
 function alRenderCard(alert, index){
@@ -393,10 +509,10 @@ function alRenderCard(alert, index){
     normal: { bg:'#eef7f0', border:'#27ae60', icon:'🟢', text:'#27ae60' },
   }[alert.severity];
 
-  const isRatio = alert.type === 'inter';
-  const valFmt = isRatio ? alert.currentValue.toFixed(3) : (alert.currentValue >= 0 ? '+' : '') + alert.currentValue.toFixed(1);
-  const meanFmt = isRatio ? alert.stats.mean.toFixed(3) : (alert.stats.mean >= 0 ? '+' : '') + alert.stats.mean.toFixed(1);
-  const unit = isRatio ? '' : ' USD/tn';
+  const isR = alert.type === 'inter';
+  const valFmt = isR ? alert.currentValue.toFixed(3) : (alert.currentValue >= 0 ? '+' : '') + alert.currentValue.toFixed(1);
+  const meanFmt = isR ? alert.stats.mean.toFixed(3) : (alert.stats.mean >= 0 ? '+' : '') + alert.stats.mean.toFixed(1);
+  const unit = isR ? '' : ' USD/tn';
   const dir = alert.currentValue > alert.stats.mean ? '↑' : '↓';
   const diffPct = alert.stats.mean !== 0
     ? (((alert.currentValue - alert.stats.mean) / Math.abs(alert.stats.mean)) * 100).toFixed(1) : '—';
@@ -410,7 +526,7 @@ function alRenderCard(alert, index){
         <div>
           <div style="font-size:13px;font-weight:700;color:var(--text);">${sev.icon} ${alert.label}</div>
           <div style="font-size:11px;color:var(--text-3);margin-top:2px;">
-            ${isRatio ? 'Ratio' : 'Spread'} · DTE ${alert.currentDTE || '—'} · ${alert.stats.n} obs
+            ${isR ? 'Ratio' : 'Spread'} · ${alert.currentDTE != null ? 'DTE '+alert.currentDTE : 'Sin DTE'} · ${alert.stats.n} obs
           </div>
         </div>
         <div style="text-align:right;">
@@ -437,23 +553,33 @@ function alRenderSparkline(canvas, alert){
   const w = canvas.parentElement.clientWidth - 32;
   const dpr = window.devicePixelRatio || 1;
   canvas.width = w * dpr;
-  canvas.height = 80 * dpr / 2;
+  canvas.height = 80;
   canvas.style.width = w + 'px';
   canvas.style.height = '40px';
-  ctx.scale(dpr, dpr / 2);
+  ctx.scale(dpr, dpr * 40 / 80);
 
-  const currentPts = alert.current.filter(r => r.dias_vto != null).sort((a,b) => b.dias_vto - a.dias_vto);
-  if(currentPts.length < 2) return;
+  // Plot current year by DTE if available, else by index
+  const currentPts = alert.current.filter(r => r.dte != null && !isNaN(r.dte)).sort((a,b) => b.dte - a.dte);
+  const useDTE = currentPts.length >= 2;
+  const plotPts = useDTE ? currentPts : alert.current.slice(-60); // fallback: last 60 data points by date
 
-  const vals = currentPts.map(r => r.value);
+  if(plotPts.length < 2) return;
+
+  const vals = plotPts.map(r => r.value);
   const minV = Math.min(...vals, alert.stats.p10);
   const maxV = Math.max(...vals, alert.stats.p90);
   const range = maxV - minV || 1;
   const pad = 4, plotW = w - pad*2, plotH = 40 - pad*2;
-  const dteMin = currentPts[currentPts.length-1].dias_vto;
-  const dteMax = currentPts[0].dias_vto;
-  const dteRange = dteMax - dteMin || 1;
-  const toX = dte => pad + (1 - (dte - dteMin) / dteRange) * plotW;
+
+  let toX;
+  if(useDTE){
+    const dteMin = plotPts[plotPts.length-1].dte;
+    const dteMax = plotPts[0].dte;
+    const dteRange = dteMax - dteMin || 1;
+    toX = (_, idx) => pad + (1 - (plotPts[idx].dte - dteMin) / dteRange) * plotW;
+  } else {
+    toX = (_, idx) => pad + (idx / (plotPts.length - 1)) * plotW;
+  }
   const toY = v => pad + (1 - (v - minV) / range) * plotH;
 
   // P25-P75 band
@@ -470,22 +596,21 @@ function alRenderSparkline(canvas, alert){
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Series line
+  // Series
   const sevCol = {alert:'#c0392b', warn:'#e67e22', normal:'#1a6b3c'};
   ctx.strokeStyle = sevCol[alert.severity];
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  currentPts.forEach((p,i) => {
-    const x = toX(p.dias_vto), y = toY(p.value);
+  plotPts.forEach((p,i) => {
+    const x = toX(p,i), y = toY(p.value);
     i === 0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
   });
   ctx.stroke();
 
-  // Current dot
-  const last = currentPts[currentPts.length-1];
+  // Last dot
   ctx.fillStyle = sevCol[alert.severity];
   ctx.beginPath();
-  ctx.arc(toX(last.dias_vto), toY(last.value), 3, 0, Math.PI*2);
+  ctx.arc(toX(plotPts[plotPts.length-1], plotPts.length-1), toY(plotPts[plotPts.length-1].value), 3, 0, Math.PI*2);
   ctx.fill();
 }
 
@@ -523,12 +648,12 @@ function alShowDetail(index){
   panel.style.display = 'block';
   panel.scrollIntoView({behavior:'smooth', block:'start'});
 
-  const isRatio = alert.type === 'inter';
-  const fmt = v => isRatio ? v.toFixed(3) : v.toFixed(1);
+  const isR = alert.type === 'inter';
+  const fmt = v => isR ? v.toFixed(3) : v.toFixed(1);
   const sevCol = {alert:'#c0392b', warn:'#e67e22', normal:'#1a6b3c'};
 
   document.getElementById('al-detail-title').innerHTML = `
-    ${alert.label} — ${isRatio ? 'Ratio' : 'Spread'}
+    ${alert.label} — ${isR ? 'Ratio' : 'Spread'}
     <span style="font-size:12px;font-weight:400;color:var(--text-3);margin-left:8px;">
       Actual: <strong style="color:${sevCol[alert.severity]}">${fmt(alert.currentValue)}</strong>
       · Prom: ${fmt(alert.stats.mean)} · P${alert.pct.toFixed(0)} · z${alert.z >= 0 ? '+' : ''}${alert.z.toFixed(2)}
@@ -546,68 +671,66 @@ function alCloseDetail(){
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  SEASONAL CHART (scatter by DTE, one line per campaign)
+//  SEASONAL CHART
 // ═══════════════════════════════════════════════════════════════
 
 function alRenderSeasonalChart(alert){
   if(alDetailChart) alDetailChart.destroy();
   const ctx = document.getElementById('al-chart-seasonal').getContext('2d');
-  const isRatio = alert.type === 'inter';
+  const isR = alert.type === 'inter';
 
-  // Group by year
+  // Check if DTE data exists
+  const hasDTEData = alert.hist.some(r => r.dte != null && !isNaN(r.dte));
+
   const yearGroups = {};
   alert.hist.forEach(r => {
-    if(r.dias_vto == null) return;
+    if(hasDTEData && (r.dte == null || isNaN(r.dte))) return;
     if(!yearGroups[r.anio]) yearGroups[r.anio] = [];
     yearGroups[r.anio].push(r);
   });
 
   const datasets = [];
 
-  // Historical years (grey, thin)
+  // Historical years
   Object.keys(yearGroups).sort().forEach(yr => {
-    const pts = yearGroups[yr].sort((a,b) => b.dias_vto - a.dias_vto);
+    const pts = hasDTEData
+      ? yearGroups[yr].sort((a,b) => b.dte - a.dte).map(p => ({x:p.dte, y:p.value}))
+      : yearGroups[yr].map((p,i) => ({x:i, y:p.value}));
     datasets.push({
-      label: yr,
-      data: pts.map(p => ({x:p.dias_vto, y:p.value})),
-      borderColor: '#bdc3b788',
-      borderWidth: 1,
-      pointRadius: 0,
-      tension: 0.3,
-      order: 2,
+      label: yr, data: pts,
+      borderColor: '#bdc3b788', borderWidth: 1,
+      pointRadius: 0, tension: 0.3, order: 2,
     });
   });
 
-  // Current year (bold)
-  const currentPts = alert.current.filter(r => r.dias_vto != null).sort((a,b) => b.dias_vto - a.dias_vto);
+  // Current year
+  const currentFiltered = hasDTEData
+    ? alert.current.filter(r => r.dte != null && !isNaN(r.dte))
+    : alert.current;
+  const currentPts = hasDTEData
+    ? currentFiltered.sort((a,b) => b.dte - a.dte).map(p => ({x:p.dte, y:p.value}))
+    : currentFiltered.map((p,i) => ({x:i, y:p.value}));
+
   if(currentPts.length){
     const sevCol = {alert:'#c0392b', warn:'#e67e22', normal:'#1a6b3c'};
     datasets.push({
-      label: alert.currentYear + ' (actual)',
-      data: currentPts.map(p => ({x:p.dias_vto, y:p.value})),
-      borderColor: sevCol[alert.severity],
-      borderWidth: 2.5,
-      pointRadius: 0,
-      pointHoverRadius: 4,
-      tension: 0.3,
-      order: 0,
+      label: alert.currentYear + ' (actual)', data: currentPts,
+      borderColor: sevCol[alert.severity], borderWidth: 2.5,
+      pointRadius: 0, pointHoverRadius: 4, tension: 0.3, order: 0,
     });
   }
 
   // Mean line
   datasets.push({
     label: 'Promedio ('+alert.stats.n+' obs)',
-    data: [{x:400,y:alert.stats.mean},{x:0,y:alert.stats.mean}],
-    borderColor: '#1a6b3c55',
-    borderWidth: 1.5,
-    borderDash: [6,4],
-    pointRadius: 0,
-    order: 1,
+    data: hasDTEData
+      ? [{x:400,y:alert.stats.mean},{x:0,y:alert.stats.mean}]
+      : [{x:0,y:alert.stats.mean},{x:300,y:alert.stats.mean}],
+    borderColor: '#1a6b3c55', borderWidth: 1.5, borderDash: [6,4], pointRadius: 0, order: 1,
   });
 
   alDetailChart = new Chart(ctx, {
-    type: 'line',
-    data: {datasets},
+    type: 'line', data: {datasets},
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: {mode:'nearest', intersect:false},
@@ -615,23 +738,23 @@ function alRenderSeasonalChart(alert){
         legend: {display:false},
         tooltip: {
           callbacks: {
-            title: items => 'DTE ' + items[0].raw.x,
-            label: item => item.dataset.label + ': ' + (isRatio ? item.raw.y.toFixed(3) : item.raw.y.toFixed(1)),
+            title: items => hasDTEData ? 'DTE ' + items[0].raw.x : 'Punto ' + items[0].raw.x,
+            label: item => item.dataset.label + ': ' + (isR ? item.raw.y.toFixed(3) : item.raw.y.toFixed(1)),
           },
         },
       },
       scales: {
         x: {
-          type:'linear', reverse:true,
-          title: {display:true, text:'Días al vencimiento', font:{size:11}},
-          ticks: {font:{family:'var(--mono)',size:9}, color:'var(--text-3)'},
+          type:'linear', reverse:hasDTEData,
+          title: {display:true, text:hasDTEData ? 'Días al vencimiento' : 'Observación', font:{size:11}},
+          ticks: {font:{size:9}, color:'var(--text-3)'},
           grid: {color:'#dde0d522'},
         },
         y: {
           title: {display:true, text:alert.metricLabel, font:{size:11}},
           ticks: {
-            font:{family:'var(--mono)',size:10}, color:'var(--text-3)',
-            callback: v => isRatio ? v.toFixed(2) : v.toFixed(0),
+            font:{size:10}, color:'var(--text-3)',
+            callback: v => isR ? v.toFixed(2) : v.toFixed(0),
           },
           grid: {color:'#dde0d544'},
         },
@@ -641,19 +764,19 @@ function alRenderSeasonalChart(alert){
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  HISTOGRAM CHART (distribution at current DTE)
+//  HISTOGRAM
 // ═══════════════════════════════════════════════════════════════
 
 function alRenderHistogramChart(alert){
   if(alHistChart) alHistChart.destroy();
   const ctx = document.getElementById('al-chart-hist').getContext('2d');
-  const isRatio = alert.type === 'inter';
+  const isR = alert.type === 'inter';
   const values = alert.histAtDTE.map(r => r.value);
 
   if(values.length < 3){
-    ctx.font = '12px var(--mono)';
-    ctx.fillStyle = 'var(--text-3)';
-    ctx.fillText('Datos insuficientes al DTE actual', 10, 130);
+    ctx.font = '12px sans-serif';
+    ctx.fillStyle = '#7e8574';
+    ctx.fillText('Datos insuficientes', 10, 130);
     return;
   }
 
@@ -664,7 +787,7 @@ function alRenderHistogramChart(alert){
   const binLabels = [];
 
   for(let i = 0; i < nBins; i++){
-    binLabels.push(isRatio ? (min + i*binWidth).toFixed(3) : (min + i*binWidth).toFixed(1));
+    binLabels.push(isR ? (min + i*binWidth).toFixed(3) : (min + i*binWidth).toFixed(1));
   }
   values.forEach(v => {
     let idx = Math.floor((v - min) / binWidth);
@@ -678,50 +801,33 @@ function alRenderHistogramChart(alert){
 
   alHistChart = new Chart(ctx, {
     type: 'bar',
-    data: {
-      labels: binLabels,
-      datasets: [{data:bins, backgroundColor:bgColors, borderRadius:3}],
-    },
+    data: { labels: binLabels, datasets: [{data:bins, backgroundColor:bgColors, borderRadius:3}] },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: {
         legend: {display:false},
         tooltip: {
           callbacks: {
-            title: items => {
-              const i = items[0].dataIndex;
-              const lo = min + i*binWidth, hi = lo + binWidth;
-              const d = isRatio ? 3 : 1;
-              return lo.toFixed(d) + ' – ' + hi.toFixed(d);
-            },
-            label: item => item.raw + ' observaciones',
+            title: items => { const i = items[0].dataIndex; const lo = min+i*binWidth; return lo.toFixed(isR?3:1)+' – '+(lo+binWidth).toFixed(isR?3:1); },
+            label: item => item.raw + ' obs',
           },
         },
       },
       scales: {
-        x: {ticks:{font:{family:'var(--mono)',size:8},color:'var(--text-3)',maxRotation:45}, grid:{display:false}},
-        y: {ticks:{font:{family:'var(--mono)',size:10},color:'var(--text-3)',stepSize:1}, grid:{color:'#dde0d533'}},
+        x: {ticks:{font:{size:8},color:'var(--text-3)',maxRotation:45}, grid:{display:false}},
+        y: {ticks:{font:{size:10},color:'var(--text-3)',stepSize:1}, grid:{color:'#dde0d533'}},
       },
     },
     plugins: [{
       id: 'alCurrentLine',
       afterDraw(chart){
-        const {ctx, chartArea, scales} = chart;
-        const xPos = scales.x.left + ((alert.currentValue - min) / (max - min)) * (scales.x.right - scales.x.left);
-        if(xPos >= chartArea.left && xPos <= chartArea.right){
-          ctx.save();
-          ctx.strokeStyle = '#c0392b';
-          ctx.lineWidth = 2;
-          ctx.setLineDash([5,3]);
-          ctx.beginPath();
-          ctx.moveTo(xPos, chartArea.top);
-          ctx.lineTo(xPos, chartArea.bottom);
-          ctx.stroke();
-          ctx.fillStyle = '#c0392b';
-          ctx.font = 'bold 10px var(--mono)';
-          ctx.textAlign = 'center';
-          ctx.fillText('HOY', xPos, chartArea.top - 4);
-          ctx.restore();
+        const {ctx:c, chartArea:ca, scales:sc} = chart;
+        const xPos = sc.x.left + ((alert.currentValue - min) / (max - min)) * (sc.x.right - sc.x.left);
+        if(xPos >= ca.left && xPos <= ca.right){
+          c.save(); c.strokeStyle='#c0392b'; c.lineWidth=2; c.setLineDash([5,3]);
+          c.beginPath(); c.moveTo(xPos,ca.top); c.lineTo(xPos,ca.bottom); c.stroke();
+          c.fillStyle='#c0392b'; c.font='bold 10px sans-serif'; c.textAlign='center';
+          c.fillText('HOY',xPos,ca.top-4); c.restore();
         }
       },
     }],
@@ -729,13 +835,13 @@ function alRenderHistogramChart(alert){
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  DETAIL STATS & INSIGHT
+//  DETAIL STATS
 // ═══════════════════════════════════════════════════════════════
 
 function alRenderDetailStats(alert){
   const s = alert.stats;
-  const isRatio = alert.type === 'inter';
-  const fmt = v => isRatio ? v.toFixed(3) : v.toFixed(1);
+  const isR = alert.type === 'inter';
+  const fmt = v => isR ? v.toFixed(3) : v.toFixed(1);
   const sevCol = {alert:'#c0392b', warn:'#e67e22', normal:'#1a6b3c'};
   const sevBg = {alert:'#fdf0ef', warn:'#fef7ed', normal:'#eef7f0'};
 
@@ -744,7 +850,7 @@ function alRenderDetailStats(alert){
       <div style="background:var(--bg);padding:10px;border-radius:6px;">
         <div style="color:var(--text-3);margin-bottom:4px;">Actual</div>
         <div style="font-size:16px;font-weight:700;color:var(--text);">${fmt(alert.currentValue)}</div>
-        <div style="color:var(--text-3);font-size:10px;">${alert.posA} ${isRatio ? '/' : '−'} ${alert.posB}</div>
+        <div style="color:var(--text-3);font-size:10px;">${alert.posA} ${isR?'/':'−'} ${alert.posB}</div>
       </div>
       <div style="background:var(--bg);padding:10px;border-radius:6px;">
         <div style="color:var(--text-3);margin-bottom:4px;">Promedio</div>
@@ -759,47 +865,41 @@ function alRenderDetailStats(alert){
       <div style="background:var(--bg);padding:10px;border-radius:6px;">
         <div style="color:var(--text-3);margin-bottom:4px;">Percentil</div>
         <div style="font-size:16px;font-weight:700;color:${sevCol[alert.severity]};">P${alert.pct.toFixed(0)}</div>
-        <div style="color:var(--text-3);font-size:10px;">z-score: ${alert.z >= 0 ? '+' : ''}${alert.z.toFixed(2)}</div>
+        <div style="color:var(--text-3);font-size:10px;">z: ${alert.z >= 0?'+':''}${alert.z.toFixed(2)}</div>
       </div>
       <div style="background:var(--bg);padding:10px;border-radius:6px;">
         <div style="color:var(--text-3);margin-bottom:4px;">DTE</div>
-        <div style="font-size:16px;font-weight:700;">${alert.currentDTE || '—'}</div>
-        <div style="color:var(--text-3);font-size:10px;">ventana ±${AL_DTE_WINDOW}d</div>
+        <div style="font-size:16px;font-weight:700;">${alert.currentDTE != null ? alert.currentDTE : '—'}</div>
+        <div style="color:var(--text-3);font-size:10px;">${alert.currentDTE != null ? 'ventana ±'+AL_DTE_WINDOW+'d' : 'sin filtro DTE'}</div>
       </div>
       <div style="background:var(--bg);padding:10px;border-radius:6px;">
         <div style="color:var(--text-3);margin-bottom:4px;">Observaciones</div>
         <div style="font-size:16px;font-weight:700;">${s.n}</div>
-        <div style="color:var(--text-3);font-size:10px;">al DTE ±${AL_DTE_WINDOW}</div>
+        <div style="color:var(--text-3);font-size:10px;">históricas</div>
       </div>
     </div>
     <div style="margin-top:12px;padding:12px;background:${sevBg[alert.severity]};border-radius:8px;font-size:12px;color:var(--text);line-height:1.6;">
-      <strong>${alert.severity === 'alert' ? '⚠️ Alerta' : alert.severity === 'warn' ? '👁 Atención' : '✅ Normal'}:</strong>
+      <strong>${alert.severity==='alert'?'⚠️ Alerta':alert.severity==='warn'?'👁 Atención':'✅ Normal'}:</strong>
       ${alInsight(alert)}
     </div>
     <div style="margin-top:10px;display:flex;gap:16px;font-size:11px;color:var(--text-3);">
       <span>${alert.cultA}/${alert.posA}: <strong style="color:var(--text);">${alert.priceA.toFixed(1)}</strong> USD/tn</span>
-      <span>${alert.cultB || alert.cultA}/${alert.posB}: <strong style="color:var(--text);">${alert.priceB.toFixed(1)}</strong> USD/tn</span>
+      <span>${(alert.cultB||alert.cultA)}/${alert.posB}: <strong style="color:var(--text);">${alert.priceB.toFixed(1)}</strong> USD/tn</span>
     </div>`;
 }
 
 function alInsight(a){
-  const isRatio = a.type === 'inter';
-  const fmt = v => isRatio ? v.toFixed(3) : v.toFixed(1);
-  const unit = isRatio ? '' : ' USD/tn';
+  const isR = a.type==='inter';
+  const fmt = v => isR ? v.toFixed(3) : v.toFixed(1);
+  const unit = isR ? '' : ' USD/tn';
   const diff = a.currentValue - a.stats.mean;
   const dir = diff > 0 ? 'por encima' : 'por debajo';
 
-  if(a.severity === 'alert'){
-    return `El ${isRatio ? 'ratio' : 'spread'} <strong>${a.label}</strong> está en <strong>${fmt(a.currentValue)}${unit}</strong>, 
-      ${dir} del promedio histórico (${fmt(a.stats.mean)}${unit}) con un desvío de <strong>${fmt(Math.abs(diff))}${unit}</strong> (z=${a.z.toFixed(2)}). 
-      Percentil <strong>${a.pct.toFixed(0)}</strong> — fuera del rango habitual P5–P95 a ${a.currentDTE} DTE. 
-      Posible oportunidad de arbitraje o señal de dislocación.`;
-  } else if(a.severity === 'warn'){
-    return `El ${isRatio ? 'ratio' : 'spread'} <strong>${a.label}</strong> en ${fmt(a.currentValue)}${unit}, 
-      ${dir} del promedio (${fmt(a.stats.mean)}${unit}). Percentil ${a.pct.toFixed(0)} — zona de atención. Monitorear evolución.`;
-  }
-  return `El ${isRatio ? 'ratio' : 'spread'} <strong>${a.label}</strong> en ${fmt(a.currentValue)}${unit}, 
-    alineado con el promedio histórico (${fmt(a.stats.mean)}${unit}). Sin anomalía detectada.`;
+  if(a.severity==='alert')
+    return `El ${isR?'ratio':'spread'} <strong>${a.label}</strong> está en <strong>${fmt(a.currentValue)}${unit}</strong>, ${dir} del promedio histórico (${fmt(a.stats.mean)}${unit}). Desvío de <strong>${fmt(Math.abs(diff))}${unit}</strong> (z=${a.z.toFixed(2)}). Percentil <strong>${a.pct.toFixed(0)}</strong> — fuera del rango P5–P95. Posible oportunidad de arbitraje o señal de dislocación.`;
+  if(a.severity==='warn')
+    return `El ${isR?'ratio':'spread'} <strong>${a.label}</strong> en ${fmt(a.currentValue)}${unit}, ${dir} del promedio (${fmt(a.stats.mean)}${unit}). Percentil ${a.pct.toFixed(0)} — zona de atención. Monitorear evolución.`;
+  return `El ${isR?'ratio':'spread'} <strong>${a.label}</strong> en ${fmt(a.currentValue)}${unit}, alineado con el promedio histórico (${fmt(a.stats.mean)}${unit}). Sin anomalía detectada.`;
 }
 
 // ═══════════════════════════════════════════════════════════════
