@@ -27,6 +27,7 @@ function toggleFutOpc() {
   document.getElementById('futopc-space').style.display = 'block';
   document.getElementById('mkt-bar').style.display = 'none';
   document.getElementById('fob-bar').style.display = 'none';
+  document.getElementById('tabs-container').style.display = 'none';
   try { document.getElementById('btn-update-primas').style.display = 'none'; } catch(e){}
 
   renderTabs();

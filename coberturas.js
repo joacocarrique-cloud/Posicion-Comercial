@@ -176,6 +176,8 @@ function switchToWorkspace() {
   document.getElementById('spreads-space').style.display = 'none';
   if (document.getElementById('futopc-space')) document.getElementById('futopc-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'flex';
+  document.getElementById('fob-bar').style.display = 'flex';
+  document.getElementById('tabs-container').style.display = 'flex';
   document.getElementById('btn-update-primas').style.display = '';
   syncTopBar();
   renderAll();
@@ -223,6 +225,8 @@ function switchTab(idx) {
   document.getElementById('spreads-space').style.display = 'none';
   if (document.getElementById('futopc-space')) document.getElementById('futopc-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'flex';
+  document.getElementById('fob-bar').style.display = 'flex';
+  document.getElementById('tabs-container').style.display = 'flex';
   document.getElementById('btn-update-primas').style.display = '';
   activeTabIdx = idx;
   syncTopBar();
