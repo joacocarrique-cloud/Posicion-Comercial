@@ -150,7 +150,7 @@ function asstGetChain(){const ch=[];asstChainRows.forEach(r=>{if(r.k>0&&r.pp>0)c
 function asstAnalyze(chain,F,T,crop){
   const r=.05,mes=new Date().getMonth()+1;
   const perc=ASST_VI_PERC.find(v=>v.cultivo===crop&&v.mes===mes);
-  return chain.map(o=>{
+  const out=chain.map(o=>{
     const vi=asstIV(o.prima,F,o.strike,T,r,o.type);if(isNaN(vi))return null;
     const viP=vi*100,g=asstGreeks(F,o.strike,T,r,vi,o.type),mn=(o.strike/F-1)*100;
     const sk=ASST_SKEW.find(s=>s.cultivo===crop&&mn>=s.mMin&&mn<s.mMax);
@@ -158,6 +158,13 @@ function asstAnalyze(chain,F,T,crop){
     let val='neutral';if(sk&&!isNaN(viP)){if(viP>sk.viP75)val='expensive';else if(viP<sk.viP25)val='cheap';else if(viP<sk.viMedian&&cpd<o.prima*.6)val='cheap';}
     return{...o,vi:viP,greeks:g,moneyness:mn,costPerDelta:cpd,floor:o.type==='put'?o.strike-o.prima:null,value:val};
   }).filter(Boolean);
+  // VI plana → serie ilíquida con primas de ajuste modeladas a una sola vol.
+  // No hay sonrisa real, así que las señales de valor relativo (barato/caro) no son confiables.
+  const vis=out.map(o=>o.vi);
+  if(vis.length>1 && (Math.max(...vis)-Math.min(...vis))<0.5){
+    out.forEach(o=>{o.value='neutral';o.viFlat=true;});
+  }
+  return out;
 }
 
 function asstGenStrategies(analyzed,F,T,vision,tol,crop,vol){
@@ -176,6 +183,15 @@ function asstGenStrategies(analyzed,F,T,vision,tol,crop,vol){
   // Calls para vender techo: OTM (strike > futuro +1%) — ya filtrado en collar/gaviota
   const hedgePuts = puts.filter(p => p.strike <= F * 1.02);
   const upsideCalls = calls.filter(c => c.strike >= F * 0.98);
+
+  // VI plana en la cadena (serie ilíquida, primas de ajuste modeladas a una sola vol):
+  // el skew no es confiable, así que las reglas de valor relativo no deben puntuar.
+  const _vis = analyzed.map(o => o.vi);
+  const viFlat = _vis.length > 1 && (Math.max(..._vis) - Math.min(..._vis)) < 0.5;
+
+  // Ventana de suba mínima útil para considerar una estructura "cobertura" y no una
+  // venta de futuro disfrazada. Si el techo está pegado al precio de venta, no sirve.
+  const MIN_UPSIDE = Math.max(F * 0.03, 5);
 
   // ─── 1. PUT SECO (best value) ───
   for(const p of hedgePuts.slice(0,3)){
@@ -252,6 +268,11 @@ function asstGenStrategies(analyzed,F,T,vision,tol,crop,vol){
   // Ambos calls DEBEN ser ATM u OTM para que el spread dé participación real en suba
   if(upsideCalls.length>=2) for(let i=0;i<Math.min(upsideCalls.length-1,2);i++){
     const cb=upsideCalls[i],cs=upsideCalls[i+1];if(cs.strike-cb.strike<3)continue;
+    // El call comprado debe estar EN o ARRIBA del precio de venta del futuro (participar por
+    // debajo de donde ya vendiste no participa en nada), y el call vendido (techo) debe dejar
+    // una ventana de suba útil sobre el futuro. Si no, es una venta de futuro disfrazada.
+    if(cb.strike<F-0.5)continue;
+    if(cs.strike<F*1.03)continue;
     const cost=cb.prima-cs.prima;
     const legs=[{dir:'sell',type:'Futuro',strike:F,prima:0,vi:0},{dir:'buy',type:'Call',strike:cb.strike,prima:cb.prima,vi:cb.vi},{dir:'sell',type:'Call',strike:cs.strike,prima:cs.prima,vi:cs.vi}];
     const gCb=gk(F,cb.strike,T,r,cb.vi,'call'),gCs=gk(F,cs.strike,T,r,cs.vi,'call');
@@ -334,11 +355,16 @@ function asstGenStrategies(analyzed,F,T,vision,tol,crop,vol){
       else if(s.tipo==='put_spread'){sc+=5;bd.r4=`+5 · R4 Visión "Neutral": Spread cubre rango definido.`;}
     }
 
-    // R5: Eficiencia de strike por skew
-    let skB=0;
-    s.legs.filter(l=>l.dir==='buy'&&l.vi>0).forEach(l=>{const mn=(l.strike/F-1)*100;const sk=ASST_SKEW.find(x=>x.cultivo===crop&&mn>=x.mMin&&mn<x.mMax);if(sk&&l.vi<sk.viP25)skB+=5;});
-    s.legs.filter(l=>l.dir==='sell'&&l.vi>0).forEach(l=>{const mn=(l.strike/F-1)*100;const sk=ASST_SKEW.find(x=>x.cultivo===crop&&mn>=x.mMin&&mn<x.mMax);if(sk&&l.vi>sk.viP75)skB+=5;});
-    if(skB>0){sc+=skB;bd.r5=`+${skB} · R5 Skew: Strikes con VI favorable vs historia (comprando barato y/o vendiendo caro).`;}
+    // R5: Eficiencia de strike por skew — solo si la cadena tiene sonrisa real.
+    // Con VI plana (serie ilíquida) no hay valor relativo que capturar: no puntúa.
+    if(viFlat){
+      bd.r5=`0 · R5 Skew: VI plana en la cadena (serie ilíquida, primas de ajuste a una sola vol). Sin señal de valor relativo confiable.`;
+    } else {
+      let skB=0;
+      s.legs.filter(l=>l.dir==='buy'&&l.vi>0).forEach(l=>{const mn=(l.strike/F-1)*100;const sk=ASST_SKEW.find(x=>x.cultivo===crop&&mn>=x.mMin&&mn<x.mMax);if(sk&&l.vi<sk.viP25)skB+=5;});
+      s.legs.filter(l=>l.dir==='sell'&&l.vi>0).forEach(l=>{const mn=(l.strike/F-1)*100;const sk=ASST_SKEW.find(x=>x.cultivo===crop&&mn>=x.mMin&&mn<x.mMax);if(sk&&l.vi>sk.viP75)skB+=5;});
+      if(skB>0){sc+=skB;bd.r5=`+${skB} · R5 Skew: Strikes con VI favorable vs historia (comprando barato y/o vendiendo caro).`;}
+    }
 
     // R6: Días al vencimiento
     const dte=T*365;
@@ -363,10 +389,25 @@ function asstGenStrategies(analyzed,F,T,vision,tol,crop,vol){
     else if(s.floor&&s.floor>F*.9){sc+=4;bd.piso=`+4 · Piso: ${(s.floor/F*100).toFixed(0)}% del futuro. Razonable.`;}
     else if(s.floor&&s.floor<=F*.85){sc-=5;bd.piso=`-5 · Piso: ${(s.floor/F*100).toFixed(0)}% del futuro. Protección débil.`;}
 
+    // R9: Upside retenido — sesgo coberturista. La suba abierta es lo que querés conservar;
+    // un techo pegado al precio de venta no es cobertura, es una venta de futuro con pasos de más.
+    if(!s.ceiling){
+      sc+=8;bd.r9=`+8 · R9 Upside: sin techo, participación total en la suba.`;
+    } else {
+      const room=s.ceiling-F;
+      if(room>=MIN_UPSIDE){const b=Math.min(4,Math.round(room/F*100));sc+=b;bd.r9=`+${b} · R9 Upside: techo a +${(room/F*100).toFixed(0)}% del futuro, deja margen de suba.`;}
+      else{sc-=15;bd.r9=`-15 · R9 Upside: techo a +${(room/F*100).toFixed(0)}% — pegado al precio de venta, mata la suba.`;}
+    }
+
     s.score=Math.max(0,Math.min(100,Math.round(sc)));
     s.scoreBreakdown=bd;
   });
-  strats.sort((a,b)=>b.score-a.score);return strats.slice(0,4);
+  // R8 (filtro duro): descartar estructuras con techo pegado al precio de venta —
+  // ventana de suba inútil = venta de futuro disfrazada. Si no sobrevive ninguna, se
+  // mantiene la lista original para no dejar al usuario sin recomendaciones.
+  const useful=strats.filter(s=>!s.ceiling||(s.ceiling-F)>=MIN_UPSIDE);
+  const finalStrats=useful.length?useful:strats;
+  finalStrats.sort((a,b)=>b.score-a.score);return finalStrats.slice(0,4);
 }
 
 // Rendering

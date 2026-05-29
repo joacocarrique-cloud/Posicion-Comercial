@@ -16,6 +16,11 @@ const PRESETS = [
       { dir:'buy', type:'put', ratio:1, strike: Math.round(s * 0.98), prima: 6 },
       { dir:'sell', type:'put', ratio:1, strike: Math.round(s * 0.94), prima: 2 }
     ]},
+  { name: 'Piso Eficiente', desc: 'Piso alto y barato, sin techo. Buen delta y suba ilimitada.',
+    legs: s => [
+      { dir:'buy', type:'put', ratio:1, strike: Math.round(s * 0.99), prima: 6 },
+      { dir:'sell', type:'put', ratio:1, strike: Math.round(s * 0.88), prima: 2 }
+    ]},
   { name: 'Collar', desc: 'Túnel de rentabilidad. Costo ~cero, con techo.',
     legs: s => [
       { dir:'buy', type:'put', ratio:1, strike: Math.round(s * 0.97), prima: 5 },
