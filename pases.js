@@ -55,12 +55,18 @@ function paseUpdatePositions() {
     const sel = document.getElementById(id);
     const prevVal = sel.value;
     
+    // Opción Disponible (spot de hoy) — siempre presente, precio manual
+    const dispOpt = '<option value="DISP" data-precio="">Disponible (spot hoy)</option>';
+    
     if (!positions || positions.length === 0) {
-      sel.innerHTML = '<option value="">⚠ Sincronizar A3</option>';
+      sel.innerHTML = dispOpt + '<option value="">⚠ Sincronizar A3</option>';
+      if (prevVal && Array.from(sel.options).some(o => o.value === prevVal)) {
+        sel.value = prevVal;
+      }
       return;
     }
     
-    sel.innerHTML = positions.map(p => 
+    sel.innerHTML = dispOpt + positions.map(p => 
       `<option value="${p.posCode}" data-precio="${p.precio || ''}">${p.label}${p.precio ? ' — ' + p.precio.toFixed(1) + ' u$s' : ''}</option>`
     ).join('');
     
@@ -74,16 +80,18 @@ function paseUpdatePositions() {
     const sel2 = document.getElementById('pase-p2-sel');
     const sel3 = document.getElementById('pase-p3-sel');
     
+    // +1 en los índices porque la opción "Disponible" ocupa el índice 0.
+    // Así los defaults siguen apuntando a los futuros reales (igual que antes).
     if (!document.getElementById('pase-p1-price').value) {
-      sel1.selectedIndex = 0;
+      sel1.selectedIndex = 1;
       paseOnPosChange(1);
     }
     if (!document.getElementById('pase-p2-price').value) {
-      sel2.selectedIndex = Math.min(1, positions.length - 1);
+      sel2.selectedIndex = Math.min(2, positions.length);
       paseOnPosChange(2);
     }
     if (!document.getElementById('pase-p3-price').value && positions.length >= 3) {
-      sel3.selectedIndex = Math.min(2, positions.length - 1);
+      sel3.selectedIndex = Math.min(3, positions.length);
       paseOnPosChange(3);
     }
   }
@@ -95,6 +103,19 @@ function paseOnPosChange(posNum) {
   const dateInput = document.getElementById('pase-p' + posNum + '-date');
   
   if (!sel.value) return;
+  
+  // ─── Disponible (spot): fecha = hoy, precio cargado a mano ───
+  if (sel.value === 'DISP') {
+    const hoy = new Date();
+    const yyyy = hoy.getFullYear();
+    const mm = String(hoy.getMonth() + 1).padStart(2, '0');
+    const dd = String(hoy.getDate()).padStart(2, '0');
+    dateInput.value = `${yyyy}-${mm}-${dd}`;
+    priceInput.value = '';   // limpio para que cargues el disponible real
+    priceInput.focus();
+    paseCalc();
+    return;
+  }
   
   const opt = sel.selectedOptions[0];
   const precio = parseFloat(opt.dataset.precio);
@@ -146,6 +167,7 @@ function paseToggleP3() {
 
 function pasePosLabel(posNum) {
   const sel = document.getElementById('pase-p' + posNum + '-sel');
+  if (sel && sel.value === 'DISP') return 'Disponible';
   if (sel && sel.selectedOptions[0] && sel.value) {
     return sel.selectedOptions[0].textContent.split(' — ')[0].trim();
   }
