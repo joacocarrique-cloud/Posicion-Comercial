@@ -197,11 +197,13 @@ function paseGetInputs() {
   const caucionUSD = parseFloat(document.getElementById('pase-tasa-caucion-usd').value) || 0;
   const caucionARS = parseFloat(document.getElementById('pase-tasa-caucion-ars').value) || 0;
   const lecap = parseFloat(document.getElementById('pase-tasa-lecap').value) || 0;
+  const chequesEl = document.getElementById('pase-tasa-cheques');
+  const cheques = chequesEl ? (parseFloat(chequesEl.value) || 0) : 0;
   const almacenaje = parseFloat(document.getElementById('pase-almacenaje').value) || 0;
   const creditoUSD = parseFloat(document.getElementById('pase-tasa-credito-usd').value) || 0;
   const creditoARS = parseFloat(document.getElementById('pase-tasa-credito-ars').value) || 0;
 
-  return { p1, p2, p3, tcSpot, tcFut2, tcFut3, caucionUSD, caucionARS, lecap, almacenaje, creditoUSD, creditoARS };
+  return { p1, p2, p3, tcSpot, tcFut2, tcFut3, caucionUSD, caucionARS, lecap, cheques, almacenaje, creditoUSD, creditoARS };
 }
 
 function paseDaysBetween(d1, d2) {
@@ -375,21 +377,21 @@ function paseCalcStrategies(pair, inp, calc) {
   }
 
   // ALT 7: Vender forward + descontar cheques
-  if (inp.lecap > 0 && pair.tcTo > 0 && inp.tcSpot > 0) {
+  if (inp.cheques > 0 && pair.tcTo > 0 && inp.tcSpot > 0) {
     const cobroFuturoARS = pair.to.price * pair.tcTo;
-    const descuento = 1 + (inp.lecap / 100) * (days / 365);
+    const descuento = 1 + (inp.cheques / 100) * (days / 365);
     const pesosHoy = cobroFuturoARS / descuento;
     const usdHoy = pesosHoy / inp.tcSpot;
     const costoDesc = cobroFuturoARS - pesosHoy;
     strats.push({
       name: '⑦ Forward + descuento cheques',
-      desc: `Vender forward ${pair.to.name}, descontar cheques al ${inp.lecap}% TNA.`,
+      desc: `Vender forward ${pair.to.name}, descontar cheques al ${inp.cheques}% TNA.`,
       resultUSD: usdHoy,
       resultARS: pesosHoy,
       riskTC: false, // TC fijado en el forward
       riskPrecio: false,
       category: 'ars',
-      detail: `Venta forward: ${pair.to.price.toFixed(1)} u$s × TC ${pair.tcTo} = $${cobroFuturoARS.toLocaleString('es',{maximumFractionDigits:0})} en ${days}d. Descuento al ${inp.lecap}% TNA: -$${costoDesc.toLocaleString('es',{maximumFractionDigits:0})}. Cobro hoy: $${pesosHoy.toLocaleString('es',{maximumFractionDigits:0})} (≈ ${usdHoy.toFixed(1)} u$s al TC spot).`
+      detail: `Venta forward: ${pair.to.price.toFixed(1)} u$s × TC ${pair.tcTo} = $${cobroFuturoARS.toLocaleString('es',{maximumFractionDigits:0})} en ${days}d. Descuento al ${inp.cheques}% TNA: -$${costoDesc.toLocaleString('es',{maximumFractionDigits:0})}. Cobro hoy: $${pesosHoy.toLocaleString('es',{maximumFractionDigits:0})} (≈ ${usdHoy.toFixed(1)} u$s al TC spot).`
     });
   }
 
