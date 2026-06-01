@@ -273,17 +273,27 @@ function paseCalcStrategies(pair, inp, calc) {
 
   // ═══ MODO USD: comparaciones en dólares puros ═══
 
-  // BENCHMARK: Vender cercana hoy, cobro USD
+  // Costo de capital USD (hurdle): tasa a la que se aplica la plata si vendés hoy
+  // (cancelar deuda / colocar). Elegido: crédito USD; fallback caución; si no, sin ajuste.
+  const rOppUSD = inp.creditoUSD > 0 ? inp.creditoUSD : (inp.caucionUSD > 0 ? inp.caucionUSD : 0);
+  const fvOppUSD = 1 + (rOppUSD / 100) * (days / 365);
+  const ventaHoyFV = pair.from.price * fvOppUSD;
+
+  // BENCHMARK: Vender cercana hoy y aplicar la plata al costo de capital
   strats.push({
-    name: '① Vender hoy (spot)',
-    desc: `Vender ${pair.from.name} a ${pair.from.price.toFixed(1)} u$s. Cobro inmediato.`,
-    resultUSD: pair.from.price,
-    resultARS: pair.from.price * inp.tcSpot,
+    name: rOppUSD > 0 ? '① Vender hoy + aplicar costo de capital' : '① Vender hoy (spot)',
+    desc: rOppUSD > 0
+      ? `Vender ${pair.from.name} a ${pair.from.price.toFixed(1)} u$s y aplicar al ${rOppUSD}% (cancelar deuda / colocar) ${days}d.`
+      : `Vender ${pair.from.name} a ${pair.from.price.toFixed(1)} u$s. Cobro inmediato.`,
+    resultUSD: ventaHoyFV,
+    resultARS: ventaHoyFV * inp.tcSpot,
     riskTC: false,
     riskPrecio: false,
     isBase: true,
     category: 'usd',
-    detail: `Precio: ${pair.from.price.toFixed(1)} u$s/tn. Sin costos adicionales. Sin riesgo.`
+    detail: rOppUSD > 0
+      ? `Cobro hoy: ${pair.from.price.toFixed(1)} u$s. Aplicado al ${rOppUSD}% (costo de capital) ${days}d: +${(ventaHoyFV - pair.from.price).toFixed(1)} u$s → equivale a ${ventaHoyFV.toFixed(1)} u$s a la fecha de ${pair.to.name}. Es el piso que cualquier retención tiene que superar.`
+      : `Precio: ${pair.from.price.toFixed(1)} u$s/tn. Sin costos adicionales. Sin riesgo.`
   });
 
   // ALT 1: Retener + vender futura (carry puro USD)
@@ -411,6 +421,29 @@ function paseCalcStrategies(pair, inp, calc) {
       riskPrecio: false,
       category: 'ars_riesgo',
       detail: `Venta: $${pesosHoy.toLocaleString('es',{maximumFractionDigits:0})}. LECAP ${days}d: $${pesosFinal.toLocaleString('es',{maximumFractionDigits:0})}. Al TC futuro ${pair.tcTo}: ≈ ${usdAlFinal.toFixed(1)} u$s. ⚠️ RIESGO TC: si el dólar sube más de ${beDeva.toFixed(0)}% (TC > ${beTC.toFixed(0)}), perdés vs vender en USD. Breakeven: TC ${beTC.toFixed(0)}.`
+    });
+  }
+
+  // ALT 9: Vender hoy + colocar en pesos + comprar dólar futuro (tasa en USD sintética, TC cubierto)
+  // La decisión se reduce a: tasa de colocación ARS vs. devaluación implícita en el futuro.
+  const rPeso = Math.max(inp.lecap, inp.caucionARS);
+  const rPesoName = inp.caucionARS > inp.lecap ? 'caución ARS' : 'LECAP/PF';
+  if (rPeso > 0 && pair.tcTo > 0 && inp.tcSpot > 0) {
+    const pesosHoy = pair.from.price * inp.tcSpot;
+    const pesosFinal = pesosHoy * (1 + (rPeso / 100) * (days / 365));
+    const usdFinal = pesosFinal / pair.tcTo; // conversión asegurada al comprar el futuro
+    const devaImpl = ((pair.tcTo / inp.tcSpot) - 1) * (365 / days) * 100; // deva implícita del futuro
+    const spread = rPeso - devaImpl; // tasa colocación − deva implícita
+    const tnaUSDsint = ((usdFinal / pair.from.price) - 1) * (365 / days) * 100; // rendimiento en USD anualizado
+    strats.push({
+      name: '⑨ Vender + tasa ARS + dólar futuro (cubierto)',
+      desc: `Vender ${pair.from.name}, colocar pesos al ${rPeso}% (${rPesoName}) y comprar dólar futuro a ${pair.tcTo}.`,
+      resultUSD: usdFinal,
+      resultARS: pesosFinal,
+      riskTC: false, // TC fijado al comprar el futuro
+      riskPrecio: false, // mercadería ya vendida
+      category: 'ars',
+      detail: `Vendés a ${pair.from.price.toFixed(1)} u$s → $${pesosHoy.toLocaleString('es',{maximumFractionDigits:0})}. Colocás ${days}d al ${rPeso}% (${rPesoName}): $${pesosFinal.toLocaleString('es',{maximumFractionDigits:0})}. Comprás dólar futuro a ${pair.tcTo} y cubrís el TC. Resultado asegurado: ${usdFinal.toFixed(1)} u$s. Tasa colocación ${rPeso}% − deva implícita ${devaImpl.toFixed(1)}% = spread ${spread >= 0 ? '+' : ''}${spread.toFixed(1)}pp → ${spread >= 0 ? 'ganás tasa en dólares' : 'la deva implícita se come la tasa, no conviene'} (${tnaUSDsint >= 0 ? '+' : ''}${tnaUSDsint.toFixed(1)}% TNA en u$s).`
     });
   }
 
