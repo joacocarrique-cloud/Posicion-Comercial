@@ -101,9 +101,71 @@ const DEFAULT_TABS = [
 const RET_DEFAULTS = {
   soja: { fob: 417, ret: 24, fobbing: 12, fasObj: 323, positions: [] },
   maiz: { fob: 208, ret: 8.5, fobbing: 11, fasObj: 185, fob2: 200, fasObj2: 175, positions: [] },
-  trigo: { fob: 234, ret: 7.5, fobbing: 13, fasObj: 216, fob2: 225, fasObj2: 210, positions: [] },
+  trigo: { fob: 234, ret: 5.5, fobbing: 13, fasObj: 216, fob2: 225, fasObj2: 210, positions: [] },
   girasol: { fob: 520, ret: 4.5, fobbing: 14, fasObj: 475, positions: [] }
 };
+
+// ─── Retenciones: cronograma por fecha de posición (baja DEx 2026–2028) ───
+// Cada cultivo es una lista de quiebres {y, m, ret} = "desde el mes m del año y rige ret%".
+// getRetencion(cultivo, año, mes) devuelve la alícuota vigente para esa fecha.
+// Fuente: anuncio 21/05/2026 + cronograma Caputo (La Nación / Perfil / Ruralnet).
+// ⚠️ Día/mes exacto de cada escalón a confirmar contra el boletín oficial cuando salga la resolución.
+const RET_SCHEDULE = {
+  // Trigo y cebada: 7,5% → 5,5% inmediato desde junio 2026
+  trigo:  [ {y:0,m:0,ret:7.5}, {y:2026,m:6,ret:5.5} ],
+  cebada: [ {y:0,m:0,ret:7.5}, {y:2026,m:6,ret:5.5} ],
+  // Maíz (y sorgo): baja trimestral desde ene-2027, cierra en 5,5% a fin de 2028
+  maiz: [
+    {y:0,m:0,ret:8.5},
+    {y:2027,m:1,ret:8.25}, {y:2027,m:4,ret:8.0}, {y:2027,m:7,ret:7.75}, {y:2027,m:10,ret:7.5},
+    {y:2028,m:1,ret:7.0},  {y:2028,m:4,ret:6.5}, {y:2028,m:7,ret:6.0},  {y:2028,m:10,ret:5.5}
+  ],
+  // Girasol: baja semestral (marzo / septiembre), de 4,5% a 3% en 2028
+  girasol: [
+    {y:0,m:0,ret:4.5},
+    {y:2027,m:3,ret:4.25}, {y:2027,m:9,ret:4.0},
+    {y:2028,m:3,ret:3.5},  {y:2028,m:9,ret:3.0}
+  ],
+  // Soja (poroto): 0,25 pp/mes en 2027 (24%→21%) y 0,5 pp/mes en 2028 (21%→15%). Se genera abajo.
+  soja: []
+};
+
+// Genera los 24 quiebres mensuales de soja (ene-2027 a dic-2028)
+(function buildSojaSchedule(){
+  const s = [{y:0, m:0, ret:24}];
+  for (let m = 1; m <= 12; m++) s.push({ y:2027, m, ret:+(24 - 0.25 * m).toFixed(2) }); // 23,75 … 21,00
+  for (let m = 1; m <= 12; m++) s.push({ y:2028, m, ret:+(21 - 0.50 * m).toFixed(2) }); // 20,50 … 15,00
+  RET_SCHEDULE.soja = s;
+})();
+
+// Alícuota vigente para (cultivo, año, mes). null si el cultivo no está en el cronograma.
+function getRetencion(cultivo, year, month) {
+  const sched = RET_SCHEDULE[(cultivo || '').toLowerCase()];
+  if (!sched || !sched.length) return null;
+  let val = sched[0].ret;
+  for (const bp of sched) {
+    if (year > bp.y || (year === bp.y && month >= bp.m)) val = bp.ret;
+    else break;
+  }
+  return val;
+}
+
+// Parsea etiqueta de posición tipo 'MAY27' / 'NOV26' / 'DIS26' → {year, month}
+function parsePosLabel(label) {
+  const m = String(label || '').trim().toUpperCase().match(/^([A-Z]{3})\s*'?(\d{2})$/);
+  if (!m) return null;
+  const mes = (m[1] === 'DIS') ? 12 : ASST_MES[m[1]];
+  if (!mes) return null;
+  return { year: 2000 + parseInt(m[2], 10), month: mes };
+}
+
+// Atajo: alícuota para una posición por su etiqueta. Si no parsea, usa la fecha de hoy.
+function getRetencionForPos(cultivo, label) {
+  const p = parsePosLabel(label);
+  const now = new Date();
+  return p ? getRetencion(cultivo, p.year, p.month)
+           : getRetencion(cultivo, now.getFullYear(), now.getMonth() + 1);
+}
 
 // ─── Asistente constants ───
 const ASST_DRIVE_SHEET = '1XBwsmTKJl_Vp9_4kLF_K6NS-eOFBLT9z3hme1w7n2ug';
