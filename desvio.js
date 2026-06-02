@@ -436,7 +436,7 @@ function dvRenderSeasonChart(campaigns){
       label:'Promedio',
       data:avgPts,
       showLine:true,
-      borderColor:'#d97706',
+      borderColor:'#C8A44A',
       borderWidth:2.5,
       pointRadius:0,
       tension:0.4,

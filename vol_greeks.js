@@ -489,16 +489,16 @@ function vgRenderDeltaChart(pos) {
       animation: { duration: 0 },
       plugins: {
         tooltip: { mode: 'index', intersect: false },
-        legend: { display: stratDatasets.length > 0, labels: { font: { family: 'DM Sans', size: 10 }, usePointStyle: true } }
+        legend: { display: stratDatasets.length > 0, labels: { font: { family: 'Montserrat', size: 10 }, usePointStyle: true } }
       },
       scales: {
         x: {
-          title: { display: true, text: 'Precio del Futuro (u$s)', font: { family: 'DM Sans', size: 10, weight: '600' }, color: '#505845' },
+          title: { display: true, text: 'Precio del Futuro (u$s)', font: { family: 'Montserrat', size: 10, weight: '600' }, color: '#505845' },
           grid: { color: 'rgba(0,0,0,.04)' },
           ticks: { font: { family: 'JetBrains Mono', size: 9 }, color: '#7e8574', maxTicksLimit: 10 }
         },
         y: {
-          title: { display: true, text: 'Delta', font: { family: 'DM Sans', size: 10, weight: '600' }, color: '#505845' },
+          title: { display: true, text: 'Delta', font: { family: 'Montserrat', size: 10, weight: '600' }, color: '#505845' },
           grid: { color: 'rgba(0,0,0,.04)' },
           ticks: { font: { family: 'JetBrains Mono', size: 9 }, color: '#7e8574' }
         }
@@ -560,8 +560,8 @@ function vgRenderThetaChart(pos) {
         {
           label: 'Valor temporal (u$s/tn)',
           data: posValues,
-          borderColor: '#2563eb',
-          backgroundColor: 'rgba(37,99,235,0.06)',
+          borderColor: '#1A6B3C',
+          backgroundColor: 'rgba(26,107,60,0.06)',
           borderWidth: 2.5,
           pointRadius: 0,
           tension: 0.3,
@@ -585,23 +585,23 @@ function vgRenderThetaChart(pos) {
       animation: { duration: 0 },
       plugins: {
         tooltip: { mode: 'index', intersect: false },
-        legend: { labels: { font: { family: 'DM Sans', size: 10 }, usePointStyle: true, pointStyle: 'line' } }
+        legend: { labels: { font: { family: 'Montserrat', size: 10 }, usePointStyle: true, pointStyle: 'line' } }
       },
       scales: {
         x: {
-          title: { display: true, text: 'Días al vencimiento', font: { family: 'DM Sans', size: 10, weight: '600' }, color: '#505845' },
+          title: { display: true, text: 'Días al vencimiento', font: { family: 'Montserrat', size: 10, weight: '600' }, color: '#505845' },
           grid: { color: 'rgba(0,0,0,.04)' },
           ticks: { font: { family: 'JetBrains Mono', size: 9 }, color: '#7e8574', maxTicksLimit: 10 }
         },
         y: {
           position: 'left',
-          title: { display: true, text: 'Valor (u$s)', font: { family: 'DM Sans', size: 10, weight: '600' }, color: '#2563eb' },
+          title: { display: true, text: 'Valor (u$s)', font: { family: 'Montserrat', size: 10, weight: '600' }, color: '#1A6B3C' },
           grid: { color: 'rgba(0,0,0,.04)' },
-          ticks: { font: { family: 'JetBrains Mono', size: 9 }, color: '#2563eb' }
+          ticks: { font: { family: 'JetBrains Mono', size: 9 }, color: '#1A6B3C' }
         },
         y1: {
           position: 'right',
-          title: { display: true, text: 'Theta (u$s/día)', font: { family: 'DM Sans', size: 10, weight: '600' }, color: '#c43030' },
+          title: { display: true, text: 'Theta (u$s/día)', font: { family: 'Montserrat', size: 10, weight: '600' }, color: '#c43030' },
           grid: { drawOnChartArea: false },
           ticks: { font: { family: 'JetBrains Mono', size: 9 }, color: '#c43030' }
         }

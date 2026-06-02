@@ -179,7 +179,7 @@ function spCalcSpread(){
     labels:filtered.map(s=>s.fecha),
     datasets:[
       {label:spMode==='basis'?'Basis':'Relación',data:filtered.map(s=>spMode==='basis'?s.basis:s.ratio),borderColor:'#1A6B3C',backgroundColor:'rgba(26,107,60,.06)',fill:true,borderWidth:1.5,pointRadius:0,tension:0.3},
-      {label:'Promedio',data:filtered.map(()=>avg),borderColor:'#d97706',borderWidth:1,borderDash:[5,5],pointRadius:0}
+      {label:'Promedio',data:filtered.map(()=>avg),borderColor:'#C8A44A',borderWidth:1,borderDash:[5,5],pointRadius:0}
     ]
   },options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{font:{size:9},boxWidth:12}},tooltip:{mode:'index',intersect:false}},
     scales:{x:{ticks:{maxTicksToRender:8,font:{size:9}},grid:{display:false}},y:{min:yMin,max:yMax,ticks:{font:{size:10,family:'JetBrains Mono'}}}}}});
@@ -216,7 +216,7 @@ function spCalcSpread(){
   const sAxisMin=yMinInput!==''?parseFloat(yMinInput):Math.floor((sYMin-sPad)*10)/10;
   const sAxisMax=yMaxInput!==''?parseFloat(yMaxInput):Math.ceil((sYMax+sPad)*10)/10;
   if(avgPts.length>1){
-    sDatasets.push({label:'Promedio',data:avgPts,showLine:true,borderColor:'#d97706',borderWidth:2.5,
+    sDatasets.push({label:'Promedio',data:avgPts,showLine:true,borderColor:'#C8A44A',borderWidth:2.5,
       pointRadius:0,tension:0.4,borderDash:[6,3],backgroundColor:'rgba(217,119,6,.08)',fill:true});
   }
   spChartSeason=new Chart(ctxS,{type:'scatter',data:{datasets:sDatasets},options:{responsive:true,maintainAspectRatio:false,

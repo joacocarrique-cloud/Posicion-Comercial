@@ -100,7 +100,7 @@ async function asstInit(){
 
 async function asstLoadDrive(){
   const bar=document.getElementById('asst-sync-bar');
-  bar.style.display='block';bar.style.background='#dbeafe';bar.style.borderColor='#2563eb';
+  bar.style.display='block';bar.style.background='var(--bg-input)';bar.style.borderColor='var(--border-2)';
   bar.innerHTML='⏳ Sincronizando datos históricos desde Google Drive...';
   const loaders=[
     {key:'vi_percentiles',fn:r=>{ASST_VI_PERC=r.map(x=>({cultivo:x.cultivo,mes:x.mes_cal,p10:x.vi_p10,p25:x.vi_p25,p50:x.vi_p50,p75:x.vi_p75,p90:x.vi_p90,mean:x.vi_mean}));}},
@@ -115,7 +115,7 @@ async function asstLoadDrive(){
     bar.style.background='var(--es-green-light)';bar.style.borderColor='var(--es-green)';
     bar.innerHTML=`✅ Datos sincronizados — ${ASST_VI_PERC.length} percentiles, ${ASST_SKEW.length} skew, ${ASST_SERIE.length} días VI, ${ASST_VIVHV.length} VI/HV, ${ASST_FUTPOS.length} futuros/posición`;
   } else {
-    bar.style.background='#fff3cd';bar.style.borderColor='#ffc107';
+    bar.style.background='var(--es-gold-light)';bar.style.borderColor='var(--es-gold)';
     bar.innerHTML=`⚠️ Error en: ${errs.join(', ')}`;
   }
   asstShowContext();
@@ -427,7 +427,7 @@ function asstRenderInsights(analyzed,crop,F){
 }
 
 function asstRenderCard(s,idx){
-  const best=idx===0,clr=s.score>=80?'var(--es-green)':s.score>=60?'#2563eb':'#d97706';
+  const best=idx===0,clr=s.score>=80?'var(--es-green)':s.score>=60?'var(--es-gold)':'var(--text-3)';
   const vol=parseFloat(document.getElementById('asst-vol').value)||5000;
   const F=parseFloat(document.getElementById('asst-fwd').value)||300;
   const crop=document.getElementById('asst-crop').value;
@@ -438,7 +438,7 @@ function asstRenderCard(s,idx){
   h+=`<div style="display:flex;align-items:center;gap:8px;margin:10px 16px;padding:8px 12px;background:var(--bg-input);border-radius:8px;"><span style="font-size:10px;font-weight:700;color:var(--text-3);">SCORE</span><div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;"><div style="height:100%;width:${s.score}%;background:${clr};border-radius:3px;"></div></div><span style="font-size:14px;font-weight:700;font-family:var(--mono);color:${clr};">${s.score}</span></div>`;
   
   // Legs
-  h+=`<div style="padding:0 16px;margin-bottom:10px;">`;s.legs.forEach(l=>{h+=`<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;border-bottom:1px solid var(--border);"><span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;background:${l.dir==='buy'?'#dbeafe':'#fde8e8'};color:${l.dir==='buy'?'#2563eb':'var(--red)'};">${l.dir==='buy'?'COMPRA':'VENTA'}</span><span style="font-weight:600;">${l.type} ${l.strike}</span><span style="font-family:var(--mono);font-size:11px;color:var(--text-2);margin-left:auto;">${l.prima.toFixed(1)} u$s · VI ${l.vi.toFixed(1)}%</span></div>`;});h+=`</div>`;
+  h+=`<div style="padding:0 16px;margin-bottom:10px;">`;s.legs.forEach(l=>{h+=`<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;border-bottom:1px solid var(--border);"><span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;background:${l.dir==='buy'?'var(--es-green-light)':'#fde8e8'};color:${l.dir==='buy'?'var(--es-green)':'var(--red)'};">${l.dir==='buy'?'COMPRA':'VENTA'}</span><span style="font-weight:600;">${l.type} ${l.strike}</span><span style="font-family:var(--mono);font-size:11px;color:var(--text-2);margin-left:auto;">${l.prima.toFixed(1)} u$s · VI ${l.vi.toFixed(1)}%</span></div>`;});h+=`</div>`;
   
   // Greeks
   h+=`<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1px;margin:0 16px 12px;background:var(--border);border-radius:8px;overflow:hidden;">`;

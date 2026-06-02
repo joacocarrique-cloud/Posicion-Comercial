@@ -156,13 +156,17 @@ function renderTabs() {
 function renderModules() {
   const pills = document.querySelectorAll('.mod-pill');
   pills.forEach(p => p.classList.remove('active'));
+  // Índices alineados al orden de las pills en index.html:
+  // 0 Coberturas · 1 FAS&Ret · 2 Pases · 3 Spreads · 4 Desvío · 5 Inteligencia · 6 Fut&Opc · 7 Manual
   let idx = 0;
   if (retMode)     idx = 1;
   if (paseMode)    idx = 2;
   if (spreadMode)  idx = 3;
   if (typeof desvioMode !== 'undefined' && desvioMode) idx = 4;
-  if (typeof futOpcMode !== 'undefined' && futOpcMode)  idx = 5;
-  if (theoryMode)  idx = 6;
+  const alSpace = document.getElementById('alertas-space');
+  if (alSpace && alSpace.style.display === 'block') idx = 5;
+  if (typeof futOpcMode !== 'undefined' && futOpcMode)  idx = 6;
+  if (theoryMode)  idx = 7;
   if (pills[idx]) pills[idx].classList.add('active');
 }
 

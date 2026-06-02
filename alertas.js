@@ -421,7 +421,7 @@ function alRenderDashboard(){
         <div style="display:flex;gap:8px;align-items:center;">
           <span id="al-sync-note" style="font-size:11px;color:var(--text-3);font-family:var(--mono);"></span>
           <div style="display:flex;gap:6px;">
-            ${alertCount > 0 ? `<span style="background:#c0392b;color:#fff;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;">${alertCount} alerta${alertCount>1?'s':''}</span>` : ''}
+            ${alertCount > 0 ? `<span style="background:#c43030;color:#fff;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;">${alertCount} alerta${alertCount>1?'s':''}</span>` : ''}
             ${warnCount > 0 ? `<span style="background:#e67e22;color:#fff;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;">${warnCount} atención</span>` : ''}
             <span style="background:#27ae60;color:#fff;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;">${normalCount} normal${normalCount!==1?'es':''}</span>
           </div>
@@ -435,7 +435,7 @@ function alRenderDashboard(){
           Todos (${alerts.length})
         </button>
         ${alertCount > 0 ? `<button onclick="alFilter('alert')" class="al-tab" data-f="alert"
-          style="padding:6px 14px;border-radius:6px;border:1px solid #c0392b;background:transparent;color:#c0392b;font-size:12px;font-weight:600;cursor:pointer;">
+          style="padding:6px 14px;border-radius:6px;border:1px solid #c43030;background:transparent;color:#c43030;font-size:12px;font-weight:600;cursor:pointer;">
           🔴 Alertas (${alertCount})
         </button>` : ''}
         ${warnCount > 0 ? `<button onclick="alFilter('warn')" class="al-tab" data-f="warn"
@@ -504,7 +504,7 @@ function alRenderDashboard(){
 
 function alRenderCard(alert, index){
   const sev = {
-    alert:  { bg:'#fdf0ef', border:'#c0392b', icon:'🔴', text:'#c0392b' },
+    alert:  { bg:'#fdf0ef', border:'#c43030', icon:'🔴', text:'#c43030' },
     warn:   { bg:'#fef7ed', border:'#e67e22', icon:'🟡', text:'#e67e22' },
     normal: { bg:'#eef7f0', border:'#27ae60', icon:'🟢', text:'#27ae60' },
   }[alert.severity];
@@ -597,7 +597,7 @@ function alRenderSparkline(canvas, alert){
   ctx.setLineDash([]);
 
   // Series
-  const sevCol = {alert:'#c0392b', warn:'#e67e22', normal:'#1a6b3c'};
+  const sevCol = {alert:'#c43030', warn:'#e67e22', normal:'#1a6b3c'};
   ctx.strokeStyle = sevCol[alert.severity];
   ctx.lineWidth = 1.5;
   ctx.beginPath();
@@ -650,7 +650,7 @@ function alShowDetail(index){
 
   const isR = alert.type === 'inter';
   const fmt = v => isR ? v.toFixed(3) : v.toFixed(1);
-  const sevCol = {alert:'#c0392b', warn:'#e67e22', normal:'#1a6b3c'};
+  const sevCol = {alert:'#c43030', warn:'#e67e22', normal:'#1a6b3c'};
 
   document.getElementById('al-detail-title').innerHTML = `
     ${alert.label} — ${isR ? 'Ratio' : 'Spread'}
@@ -712,7 +712,7 @@ function alRenderSeasonalChart(alert){
     : currentFiltered.map((p,i) => ({x:i, y:p.value}));
 
   if(currentPts.length){
-    const sevCol = {alert:'#c0392b', warn:'#e67e22', normal:'#1a6b3c'};
+    const sevCol = {alert:'#c43030', warn:'#e67e22', normal:'#1a6b3c'};
     datasets.push({
       label: alert.currentYear + ' (actual)', data: currentPts,
       borderColor: sevCol[alert.severity], borderWidth: 2.5,
@@ -797,7 +797,7 @@ function alRenderHistogramChart(alert){
   });
 
   const currentBin = Math.min(Math.max(Math.floor((alert.currentValue - min) / binWidth), 0), nBins - 1);
-  const bgColors = bins.map((_,i) => i === currentBin ? '#c0392bee' : '#1a6b3c44');
+  const bgColors = bins.map((_,i) => i === currentBin ? '#c43030ee' : '#1a6b3c44');
 
   alHistChart = new Chart(ctx, {
     type: 'bar',
@@ -824,9 +824,9 @@ function alRenderHistogramChart(alert){
         const {ctx:c, chartArea:ca, scales:sc} = chart;
         const xPos = sc.x.left + ((alert.currentValue - min) / (max - min)) * (sc.x.right - sc.x.left);
         if(xPos >= ca.left && xPos <= ca.right){
-          c.save(); c.strokeStyle='#c0392b'; c.lineWidth=2; c.setLineDash([5,3]);
+          c.save(); c.strokeStyle='#c43030'; c.lineWidth=2; c.setLineDash([5,3]);
           c.beginPath(); c.moveTo(xPos,ca.top); c.lineTo(xPos,ca.bottom); c.stroke();
-          c.fillStyle='#c0392b'; c.font='bold 10px sans-serif'; c.textAlign='center';
+          c.fillStyle='#c43030'; c.font='bold 10px sans-serif'; c.textAlign='center';
           c.fillText('HOY',xPos,ca.top-4); c.restore();
         }
       },
@@ -842,7 +842,7 @@ function alRenderDetailStats(alert){
   const s = alert.stats;
   const isR = alert.type === 'inter';
   const fmt = v => isR ? v.toFixed(3) : v.toFixed(1);
-  const sevCol = {alert:'#c0392b', warn:'#e67e22', normal:'#1a6b3c'};
+  const sevCol = {alert:'#c43030', warn:'#e67e22', normal:'#1a6b3c'};
   const sevBg = {alert:'#fdf0ef', warn:'#fef7ed', normal:'#eef7f0'};
 
   document.getElementById('al-detail-stats').innerHTML = `
