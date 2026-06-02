@@ -136,7 +136,12 @@ function loadPreset(idx) {
 
 function renderTabs() {
   const container = document.getElementById('tabs-container');
-  if (theoryMode || retMode || paseMode) {
+  const alSpace = document.getElementById('alertas-space');
+  const inOtherModule = theoryMode || retMode || paseMode || spreadMode
+    || (typeof desvioMode !== 'undefined' && desvioMode)
+    || (typeof futOpcMode !== 'undefined' && futOpcMode)
+    || (alSpace && alSpace.style.display === 'block');
+  if (inOtherModule) {
     container.style.display = 'none';
     return;
   }
@@ -173,11 +178,14 @@ function renderModules() {
 function switchToWorkspace() {
   theoryMode = false; retMode = false; paseMode = false; asstMode = false; spreadMode = false;
   if (typeof futOpcMode !== 'undefined') futOpcMode = false;
+  if (typeof desvioMode !== 'undefined') desvioMode = false;
   document.getElementById('workspace').style.display = 'block';
   document.getElementById('theory-space').style.display = 'none';
   document.getElementById('ret-space').style.display = 'none';
   document.getElementById('pase-space').style.display = 'none';
   document.getElementById('spreads-space').style.display = 'none';
+  if (document.getElementById('desvio-space')) document.getElementById('desvio-space').style.display = 'none';
+  if (document.getElementById('alertas-space')) document.getElementById('alertas-space').style.display = 'none';
   if (document.getElementById('futopc-space')) document.getElementById('futopc-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'flex';
   document.getElementById('fob-bar').style.display = 'flex';
@@ -222,11 +230,14 @@ function toggleRetenciones() {
 function switchTab(idx) {
   theoryMode = false; retMode = false; paseMode = false; asstMode = false; spreadMode = false;
   if (typeof futOpcMode !== 'undefined') futOpcMode = false;
+  if (typeof desvioMode !== 'undefined') desvioMode = false;
   document.getElementById('workspace').style.display = 'block';
   document.getElementById('theory-space').style.display = 'none';
   document.getElementById('ret-space').style.display = 'none';
   document.getElementById('pase-space').style.display = 'none';
   document.getElementById('spreads-space').style.display = 'none';
+  if (document.getElementById('desvio-space')) document.getElementById('desvio-space').style.display = 'none';
+  if (document.getElementById('alertas-space')) document.getElementById('alertas-space').style.display = 'none';
   if (document.getElementById('futopc-space')) document.getElementById('futopc-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'flex';
   document.getElementById('fob-bar').style.display = 'flex';

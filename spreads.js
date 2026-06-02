@@ -3,13 +3,19 @@
 // ═══════════════════════════════════════════════════
 
 function toggleSpreads(){
-  spreadMode=true;theoryMode=false;retMode=false;paseMode=false;asstMode=false; spreadMode=true;
+  spreadMode=true;theoryMode=false;retMode=false;paseMode=false;asstMode=false;
+  if(typeof futOpcMode!=='undefined') futOpcMode=false;
+  if(typeof desvioMode!=='undefined') desvioMode=false;
   document.getElementById('workspace').style.display='none';
   document.getElementById('theory-space').style.display='none';
   document.getElementById('ret-space').style.display='none';
   document.getElementById('pase-space').style.display='none';
+  if(document.getElementById('desvio-space')) document.getElementById('desvio-space').style.display='none';
+  if(document.getElementById('alertas-space')) document.getElementById('alertas-space').style.display='none';
+  if(document.getElementById('futopc-space')) document.getElementById('futopc-space').style.display='none';
   document.getElementById('spreads-space').style.display='block';
   document.getElementById('mkt-bar').style.display='none';
+  document.getElementById('fob-bar').style.display='none';
   renderTabs();renderModules();
   if(ASST_FUTPOS.length===0){asstLoadDrive().then(()=>{spInit();});}else{spInit();}
 }
