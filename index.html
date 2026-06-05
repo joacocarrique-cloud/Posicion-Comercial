@@ -21,14 +21,15 @@
   <div style="display:flex;align-items:center;gap:12px;">
     <span class="save-indicator" id="save-indicator"></span>
     <nav id="mod-pills" style="display:flex;gap:4px;">
-      <button class="mod-pill active" onclick="switchToWorkspace()">◈ Coberturas</button>
-      <button class="mod-pill" onclick="toggleRetenciones()">🌾 FAS & Ret.</button>
-      <button class="mod-pill" onclick="togglePases()">📊 Pases & Tasas</button>
-      <button class="mod-pill" onclick="toggleSpreads()">📈 Spreads</button>
-      <button class="mod-pill" onclick="toggleDesvio()">📉 Desvío</button>
-      <button class="mod-pill" onclick="toggleAlertas()">🧠 Inteligencia</button>
-      <button class="mod-pill" onclick="toggleFutOpc()">📋 Fut & Opc</button>
-      <button class="mod-pill" onclick="toggleTheory()">📙 Manual</button>
+      <button class="mod-pill active" onclick="asesorRestoreUI(); switchToWorkspace()">◈ Coberturas</button>
+      <button class="mod-pill" onclick="asesorRestoreUI(); toggleRetenciones()">🌾 FAS & Ret.</button>
+      <button class="mod-pill" onclick="asesorRestoreUI(); togglePases()">📊 Pases & Tasas</button>
+      <button class="mod-pill" onclick="asesorRestoreUI(); toggleSpreads()">📈 Spreads</button>
+      <button class="mod-pill" onclick="asesorRestoreUI(); toggleDesvio()">📉 Desvío</button>
+      <button class="mod-pill" onclick="asesorRestoreUI(); toggleAlertas()">🧠 Inteligencia</button>
+      <button class="mod-pill" onclick="asesorRestoreUI(); toggleFutOpc()">📋 Fut & Opc</button>
+      <button class="mod-pill" onclick="asesorRestoreUI(); toggleTheory()">📙 Manual</button>
+      <button class="mod-pill" id="pill-asesor-ia" onclick="toggleAsesorIA()">🤖 Asesor IA</button>
     </nav>
   </div>
 </header>
@@ -791,6 +792,54 @@
     </div>
   </div>
 
+<!-- ═══ ASESOR COMERCIAL IA ═══ -->
+<div id="asesor-ia-space" style="display:none;">
+  <div class="asesor-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="font-size:28px;">🤖</span>
+      <div>
+        <div style="font-size:18px;font-weight:700;color:var(--text);">Asesor Comercial IA</div>
+        <div style="font-size:12px;color:var(--text-2);">Análisis de mercado · Fundamentos · Macro · Clima · Posicionamiento</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="font-size:11px;color:var(--text-3);font-weight:600;">Modelo:</span>
+      <div class="asesor-model-tabs" id="asesor-model-tabs">
+        <button class="asesor-model-btn active" data-model="claude-sonnet-4-20250514" onclick="asesorSetModel(this)">Sonnet 4 <span style="font-size:10px;opacity:.7;">· Rápido</span></button>
+        <button class="asesor-model-btn" data-model="claude-opus-4-5" onclick="asesorSetModel(this)">Opus 4 <span style="font-size:10px;opacity:.7;">· Profundo</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="asesor-context-bar" id="asesor-context-bar"></div>
+
+  <div class="asesor-messages" id="asesor-messages">
+    <div class="asesor-welcome" id="asesor-welcome">
+      <div class="asesor-welcome-icon">🌾</div>
+      <div class="asesor-welcome-title">Asesor Comercial IA</div>
+      <div class="asesor-welcome-sub">Analizá el mercado de granos: fundamentos, macro, clima y posicionamiento. Buscá datos en tiempo real con fuentes verificables.</div>
+      <div class="asesor-suggestions" id="asesor-suggestions"></div>
+    </div>
+  </div>
+
+  <div class="asesor-input-area">
+    <div class="asesor-input-wrap">
+      <textarea
+        id="asesor-input"
+        class="asesor-textarea"
+        placeholder="¿Por qué podría bajar la soja? ¿Cómo está la demanda china? ¿Qué hace el petróleo con el girasol?..."
+        rows="1"
+        onkeydown="asesorHandleKey(event)"
+        oninput="asesorAutoResize(this)"
+      ></textarea>
+      <button class="asesor-send-btn" id="asesor-send-btn" onclick="asesorSend()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <div class="asesor-input-hint">Enter para enviar · Shift+Enter para nueva línea</div>
+  </div>
+</div>
+
 <!-- ═══ FOOTER DE IMPRESIÓN (oculto en pantalla, visible al imprimir) ═══ -->
 <div id="print-footer" style="display:none;">
   <span class="pf-left">Espartina S.A. · Suite Comercial de Coberturas · Precios indicativos</span>
@@ -834,5 +883,6 @@ window.addEventListener('beforeprint', function() {
 <script src="alertas.js"></script>
 <script src="futuros_opciones.js"></script>
 <script src="app.js"></script>
+<script src="asesor_comercial.js"></script>
 </body>
 </html>
