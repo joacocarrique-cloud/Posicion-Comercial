@@ -505,6 +505,18 @@ function calcAutoHeight(numStrats) {
   return Math.min(CHART_HEIGHT_MAX, Math.max(CHART_HEIGHT_MIN, CHART_HEIGHT_BASE + extra));
 }
 
+function alignChartToFirstStrat() {
+  // Alinea el tope del gráfico con la primera tarjeta de estrategia,
+  // desplazándolo hacia abajo la altura del toolbar (+ Nueva Estrategia / Plantilla) + el gap.
+  const section = document.querySelector('.chart-section');
+  const list = document.querySelector('.strats-list');
+  const toolbar = document.querySelector('.strats-toolbar');
+  if (!section || !list || !toolbar) return;
+  const gap = parseFloat(getComputedStyle(list).rowGap) || 16;
+  const offset = toolbar.offsetHeight + gap;
+  section.style.marginTop = offset + 'px';
+}
+
 function applyChartHeight() {
   const wrapper = document.getElementById('main-chart-wrap');
   if (!wrapper) return;
@@ -519,6 +531,8 @@ function applyChartHeight() {
   wrapper.style.setProperty('height', h + 'px', 'important');
   // Actualizar placeholder del input para mostrar el auto calculado
   if (manualInput) manualInput.placeholder = autoH;
+  // Alinear el gráfico con la primera estrategia
+  alignChartToFirstStrat();
   // Avisar a Chart.js que el contenedor cambió de tamaño (si el chart ya existe)
   if (typeof chart !== 'undefined' && chart) {
     requestAnimationFrame(() => chart.resize());
