@@ -296,11 +296,6 @@ body {
 }
 .strats-list { display: flex; flex-direction: column; gap: 16px; }
 
-/* print-right-col: transparente en pantalla, actúa como contenedor pasivo */
-#print-right-col {
-  display: contents;
-}
-
 /* ─── Strategy Card ─── */
 .strat-card {
   background: var(--bg-card);
@@ -1610,24 +1605,23 @@ body {
 
 /* ═══════════════════════════════════════════════════
    ─── @media print — Exportación PDF / Ctrl+P ───
-   Layout landscape: estrategias izquierda | gráfico+tabla derecha
+   Landscape A4: estrategias izquierda | gráfico+análisis derecha
+   SIN tocar el layout de pantalla
    ═══════════════════════════════════════════════════ */
 
 @media print {
 
-  /* ─── Orientación y márgenes de hoja ─── */
   @page {
     size: A4 landscape;
-    margin: 12mm 14mm;
+    margin: 10mm 12mm;
   }
 
-  /* ─── Asegurar que los colores se impriman ─── */
   * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
-  /* ─── Ocultar todo lo que no es contenido útil ─── */
+  /* ─── Ocultar todo lo que no es contenido ─── */
   .app-header,
   #mod-pills,
   .save-indicator,
@@ -1640,14 +1634,14 @@ body {
   .strat-footer,
   .fas-info-bar,
   #vg-panel,
-  #asst-sync-bar,
-  #asst-vi-context,
   details,
   #asst-mode1,
   #asst-mode2,
   #asst-vision-wrap,
   #asst-chain-inputs,
   #asst-results,
+  #asst-sync-bar,
+  #asst-vi-context,
   .theory-section,
   .ret-section,
   .pase-section,
@@ -1655,19 +1649,17 @@ body {
   #desvio-space,
   #alertas-space,
   #futopc-space,
-  .preset-wrapper,
-  .btn-danger,
-  .leg-row button {
+  .leg-row button,
+  .btn-danger {
     display: none !important;
   }
 
-  /* ─── Mostrar header y footer solo al imprimir ─── */
+  /* ─── Mostrar header y footer de impresión ─── */
   #print-header,
   #print-footer {
     display: block !important;
   }
 
-  /* ─── Reset de fondo y layout general ─── */
   body {
     background: #fff !important;
     padding: 0 !important;
@@ -1679,17 +1671,13 @@ body {
     margin: 0 !important;
   }
 
-  #workspace {
-    display: block !important;
-  }
-
-  /* ─── HEADER DE IMPRESIÓN ─── */
+  /* ─── PRINT HEADER ─── */
   #print-header {
     background: #1A6B3C !important;
     padding: 10px 16px 8px !important;
-    border-radius: 0 !important;
+    margin-bottom: 10px;
     position: relative;
-    margin-bottom: 12px;
+    border-radius: 6px 6px 0 0;
   }
   #print-header::after {
     content: '';
@@ -1710,35 +1698,37 @@ body {
     gap: 8px;
   }
   #print-header .ph-logo {
-    width: 26px; height: 26px;
+    width: 24px; height: 24px;
     background: rgba(255,255,255,0.15);
     border: 1px solid rgba(255,255,255,0.2);
     border-radius: 5px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 14px;
+    font-size: 13px;
   }
   #print-header .ph-name {
     color: #fff;
     font-weight: 700;
-    font-size: 13px;
+    font-size: 12px;
     font-family: 'Montserrat', sans-serif;
+    display: block;
   }
   #print-header .ph-date {
     color: rgba(255,255,255,0.6);
     font-size: 9px;
     font-family: 'Montserrat', sans-serif;
+    display: block;
   }
   #print-header .ph-title {
     color: #fff;
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 700;
     font-family: 'Montserrat', sans-serif;
     margin-bottom: 5px;
+    display: block;
   }
   #print-header .ph-chips {
     display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
+    gap: 5px;
   }
   #print-header .ph-chip {
     background: rgba(255,255,255,0.15);
@@ -1746,163 +1736,154 @@ body {
     color: rgba(255,255,255,0.9);
     font-size: 9px;
     font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 10px;
+    padding: 2px 7px;
+    border-radius: 8px;
     font-family: 'Montserrat', sans-serif;
-  }
-  #print-header .ph-chip.gold {
-    background: rgba(200,164,74,0.25);
-    border-color: rgba(200,164,74,0.4);
-    color: #f0d078;
+    display: inline-block;
   }
 
-  /* ─── LAYOUT PRINCIPAL: 2 columnas ─── */
-  .builder-area {
+  /* ─── LAYOUT: workspace como grid de 2 columnas ─── */
+  /* El truco: convertimos #workspace en un grid de 2 cols
+     y usamos `order` para reubicar los hijos sin mover el HTML */
+  #workspace {
     display: grid !important;
     grid-template-columns: 195mm 1fr !important;
-    gap: 14px !important;
-    margin-bottom: 0 !important;
+    grid-template-rows: auto auto !important;
+    gap: 12px !important;
     align-items: start !important;
   }
 
-  /* #print-right-col: en print actúa como columna derecha real */
-  #print-right-col {
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 12px !important;
+  /* Columna izquierda: solo estrategias */
+  .builder-area {
+    grid-column: 1 !important;
+    grid-row: 1 / 3 !important;
+    display: block !important;
+    margin-bottom: 0 !important;
   }
 
-  /* bottom-area queda adentro de la columna derecha */
+  /* Columna derecha fila 1: gráfico */
+  .chart-section {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    height: auto !important;
+    min-height: 180px !important;
+    max-height: 240px !important;
+    padding: 10px !important;
+    box-shadow: none !important;
+    border: 1px solid #e0e2d8 !important;
+    border-radius: 7px !important;
+    break-inside: avoid;
+    /* Sacamos el chart-section del builder-area en pantalla — en print lo subimos */
+  }
+
+  .chart-wrap {
+    flex: 1 !important;
+    height: 200px !important;
+  }
+
+  /* Columna derecha fila 2: tabla + winner */
   .bottom-area {
+    grid-column: 2 !important;
+    grid-row: 2 !important;
     display: grid !important;
     grid-template-columns: 1fr 1fr !important;
     gap: 10px !important;
     margin-bottom: 0 !important;
   }
 
-  /* Gráfico a la derecha */
-  .chart-section {
-    height: auto !important;
-    min-height: 200px !important;
-    max-height: 260px !important;
-    padding: 12px !important;
-    box-shadow: none !important;
-    border: 1px solid #e0e2d8 !important;
-    border-radius: 8px !important;
-    break-inside: avoid;
+  /* ─── Estrategias: solo strats-list, sin toolbar ─── */
+  .builder-area .strats-list {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
   }
 
-  .chart-wrap {
-    flex: 1 !important;
-    height: 210px !important;
-  }
-
-  /* ─── Strategy cards ─── */
   .strat-card {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
-    margin-bottom: 8px !important;
     box-shadow: none !important;
     border: 1px solid #e0e2d8 !important;
+    margin-bottom: 0 !important;
   }
+  .strat-card:hover { box-shadow: none !important; }
 
-  .strat-card:hover {
-    box-shadow: none !important;
-  }
-
-  /* ─── Leg rows: ocultar controles, solo texto ─── */
+  /* ─── Leg rows: ocultar controles de edición ─── */
   .leg-row select,
   .leg-row input[type="number"] {
-    appearance: none !important;
     -webkit-appearance: none !important;
+    appearance: none !important;
     border: none !important;
     background: transparent !important;
     pointer-events: none !important;
     font-family: 'JetBrains Mono', monospace !important;
     font-size: 10px !important;
-    padding: 0 !important;
+    padding: 0 2px !important;
     color: #1c2118 !important;
     font-weight: 600 !important;
+    width: auto !important;
   }
-
   .leg-row {
     background: #f8f9f6 !important;
-    padding: 5px 8px !important;
+    padding: 5px 7px !important;
     gap: 4px !important;
   }
+  .w-dir { flex: 2 !important; }
+  .w-type { flex: 2 !important; }
+  .w-num { flex: 1.5 !important; }
 
-  /* ─── KPI grid dentro de cada estrategia ─── */
+  .strat-name {
+    border-bottom: none !important;
+    font-size: 12px !important;
+    pointer-events: none !important;
+  }
+
   .kpi-grid {
-    grid-template-columns: repeat(3, 1fr) !important;
-    gap: 6px !important;
-    padding-top: 8px !important;
-    margin-top: 8px !important;
+    gap: 5px !important;
+    padding-top: 7px !important;
+    margin-top: 7px !important;
   }
-
-  .kpi-card {
-    padding: 6px 4px !important;
-  }
-
-  .kpi-card .k-val {
-    font-size: 11px !important;
-  }
+  .kpi-card { padding: 5px 4px !important; }
+  .kpi-card .k-val { font-size: 10px !important; }
+  .kpi-card .k-lbl { font-size: 8px !important; }
 
   /* ─── Tabla de escenarios ─── */
   .table-section {
     box-shadow: none !important;
-    padding: 12px !important;
+    padding: 10px !important;
     border: 1px solid #e0e2d8 !important;
-    border-radius: 8px !important;
+    border-radius: 7px !important;
     overflow: visible !important;
     break-inside: avoid !important;
   }
-
-  .table-section h2 {
-    font-size: 12px !important;
-    margin-bottom: 8px !important;
-  }
-
+  .table-section h2 { font-size: 11px !important; margin-bottom: 7px !important; }
   .comp-table th,
   .comp-table td {
-    padding: 5px 8px !important;
-    font-size: 10px !important;
+    padding: 4px 7px !important;
+    font-size: 9px !important;
   }
 
-  /* ─── Winner section ─── */
+  /* ─── Winner / Rango de Dominancia ─── */
   .winner-section {
     box-shadow: none !important;
-    padding: 12px !important;
+    padding: 10px !important;
     border: 1px solid #e0e2d8 !important;
-    border-radius: 8px !important;
+    border-radius: 7px !important;
     break-inside: avoid !important;
   }
-
-  .winner-section h2 {
-    font-size: 12px !important;
-    margin-bottom: 8px !important;
-  }
-
+  .winner-section h2 { font-size: 11px !important; margin-bottom: 7px !important; }
   .winner-box {
-    padding: 7px 10px !important;
-    margin-bottom: 6px !important;
-  }
-
-  .winner-box:hover {
+    padding: 6px 9px !important;
+    margin-bottom: 5px !important;
     transform: none !important;
   }
+  .winner-box:hover { transform: none !important; }
+  .winner-range { font-size: 9px !important; }
+  .winner-name { font-size: 11px !important; }
 
-  .winner-range {
-    font-size: 10px !important;
-  }
-
-  .winner-name {
-    font-size: 12px !important;
-  }
-
-  /* ─── FOOTER DE IMPRESIÓN ─── */
+  /* ─── PRINT FOOTER ─── */
   #print-footer {
-    margin-top: 10px;
-    padding: 7px 14px;
+    margin-top: 8px;
+    padding: 6px 14px;
     background: #f4f5f0 !important;
     border-top: 1px solid #e0e2d8;
     border-radius: 0 0 6px 6px;
@@ -1911,20 +1892,13 @@ body {
     align-items: center;
   }
   #print-footer .pf-left {
-    font-size: 9px;
+    font-size: 8px;
     color: #7e8574;
     font-family: 'Montserrat', sans-serif;
   }
   #print-footer .pf-right {
-    font-size: 9px;
+    font-size: 8px;
     color: #7e8574;
     font-family: 'JetBrains Mono', monospace;
-  }
-
-  /* ─── Strat name input: que se vea como texto ─── */
-  .strat-name {
-    border-bottom: none !important;
-    font-size: 13px !important;
-    pointer-events: none !important;
   }
 }

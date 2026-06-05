@@ -124,20 +124,19 @@
         </div>
         <div id="strats-container"></div>
       </div>
-      <div id="print-right-col">
-        <div class="chart-section">
-          <div class="chart-wrap"><canvas id="main-chart"></canvas></div>
-        </div>
-        <div class="bottom-area">
-          <div class="table-section">
-            <h2>Análisis de Escenarios</h2>
-            <table class="comp-table" id="scenario-table"></table>
-          </div>
-          <div class="winner-section">
-            <h2>Rango de Dominancia</h2>
-            <div id="winner-container"></div>
-          </div>
-        </div>
+      <div class="chart-section">
+        <div class="chart-wrap"><canvas id="main-chart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="bottom-area">
+      <div class="table-section">
+        <h2>Análisis de Escenarios</h2>
+        <table class="comp-table" id="scenario-table"></table>
+      </div>
+      <div class="winner-section">
+        <h2>Rango de Dominancia</h2>
+        <div id="winner-container"></div>
       </div>
     </div>
 
@@ -799,36 +798,25 @@
 </div>
 
 <script>
-// Llenar datos del header justo antes de imprimir
 window.addEventListener('beforeprint', function() {
   try {
     var t = (typeof getActiveTab === 'function') ? getActiveTab() : null;
-
-    // Título = nombre del tab
     var title = (t && t.name) ? t.name : 'Comparativa de Coberturas';
     document.getElementById('print-title').textContent = title;
-
-    // Chips: cultivo, posición, spot
     var chips = [];
-    if (t) {
-      var cropNames = { soja: 'Soja', maiz: 'Maíz', trigo: 'Trigo', girasol: 'Girasol' };
-      chips.push(cropNames[t.assetVal] || t.assetVal || '');
-    }
+    var cropNames = { soja: 'Soja', maiz: 'Maíz', trigo: 'Trigo', girasol: 'Girasol' };
+    if (t) chips.push(cropNames[t.assetVal] || t.assetVal || '');
     var posEl = document.getElementById('mkt-pos-select');
     if (posEl && posEl.value) chips.push(posEl.value);
     if (t && t.spot) chips.push('Spot: u$s ' + t.spot.toFixed(1));
-
-    var chipsHtml = chips.filter(Boolean).map(function(c) {
+    document.getElementById('print-chips').innerHTML = chips.filter(Boolean).map(function(c) {
       return '<span class="ph-chip">' + c + '</span>';
     }).join('');
-    document.getElementById('print-chips').innerHTML = chipsHtml;
-
-    // Fecha
     var now = new Date();
-    var dateStr = now.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    var timeStr = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
-    document.getElementById('print-date').textContent = dateStr;
-    document.getElementById('print-footer-date').textContent = 'Generado: ' + dateStr + ' ' + timeStr;
+    var d = now.toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' });
+    var h = now.toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit' });
+    document.getElementById('print-date').textContent = d;
+    document.getElementById('print-footer-date').textContent = 'Generado: ' + d + ' ' + h;
   } catch(e) {}
 });
 </script>
