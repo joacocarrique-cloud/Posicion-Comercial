@@ -21,15 +21,14 @@
   <div style="display:flex;align-items:center;gap:12px;">
     <span class="save-indicator" id="save-indicator"></span>
     <nav id="mod-pills" style="display:flex;gap:4px;">
-      <button class="mod-pill active" onclick="asesorRestoreUI(); switchToWorkspace()">◈ Coberturas</button>
-      <button class="mod-pill" onclick="asesorRestoreUI(); toggleRetenciones()">🌾 FAS & Ret.</button>
-      <button class="mod-pill" onclick="asesorRestoreUI(); togglePases()">📊 Pases & Tasas</button>
-      <button class="mod-pill" onclick="asesorRestoreUI(); toggleSpreads()">📈 Spreads</button>
-      <button class="mod-pill" onclick="asesorRestoreUI(); toggleDesvio()">📉 Desvío</button>
-      <button class="mod-pill" onclick="asesorRestoreUI(); toggleAlertas()">🧠 Inteligencia</button>
-      <button class="mod-pill" onclick="asesorRestoreUI(); toggleFutOpc()">📋 Fut & Opc</button>
-      <button class="mod-pill" onclick="asesorRestoreUI(); toggleTheory()">📙 Manual</button>
-      <button class="mod-pill" id="pill-asesor-ia" onclick="toggleAsesorIA()">🤖 Asesor IA</button>
+      <button class="mod-pill active" onclick="switchToWorkspace()">◈ Coberturas</button>
+      <button class="mod-pill" onclick="toggleRetenciones()">🌾 FAS & Ret.</button>
+      <button class="mod-pill" onclick="togglePases()">📊 Pases & Tasas</button>
+      <button class="mod-pill" onclick="toggleSpreads()">📈 Spreads</button>
+      <button class="mod-pill" onclick="toggleDesvio()">📉 Desvío</button>
+      <button class="mod-pill" onclick="toggleAlertas()">🧠 Inteligencia</button>
+      <button class="mod-pill" onclick="toggleFutOpc()">📋 Fut & Opc</button>
+      <button class="mod-pill" onclick="toggleTheory()">📙 Manual</button>
     </nav>
   </div>
 </header>
@@ -89,6 +88,7 @@
       <div class="field"><label>Precio Spot (u$s)</label><input type="number" id="spot" step="0.1" oninput="updateGlobalInputs()"></div>
       <div class="field"><label>Eje X Mín</label><input type="number" id="chart-min" step="0.1" oninput="updateGlobalInputs()"></div>
       <div class="field"><label>Eje X Máx</label><input type="number" id="chart-max" step="0.1" oninput="updateGlobalInputs()"></div>
+      <div class="field"><label>Alto gráfico</label><input type="number" id="chart-height" min="240" max="600" step="20" placeholder="auto" title="Dejar vacío = automático según cantidad de estrategias" oninput="applyChartHeight()"></div>
       <div class="field"><label>Nombre Solapa</label><input type="text" id="tab-name-input" oninput="updateTabName(this.value)" style="font-family:var(--font); width: 160px;"></div>
       <button class="btn btn-outline" id="btn-update-primas" onclick="autoFillAllPrimas()" style="white-space:nowrap; font-size:11px;" title="Actualiza todas las primas de las estrategias con datos del mercado">🔄 Actualizar primas</button>
     </div>
@@ -126,7 +126,7 @@
         <div id="strats-container"></div>
       </div>
       <div class="chart-section">
-        <div class="chart-wrap"><canvas id="main-chart"></canvas></div>
+        <div class="chart-wrap" id="main-chart-wrap" style="position:relative;height:280px;"><canvas id="main-chart"></canvas></div>
       </div>
     </div>
 
@@ -154,114 +154,6 @@
       <div id="vg-content"></div>
     </div>
 
-    <!-- ═══ ASISTENTE INTELIGENTE (dentro de Coberturas) ═══ -->
-    <div style="margin-top:30px;border-top:3px solid var(--es-green);padding-top:24px;">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-        <span style="font-size:28px;">🧠</span>
-        <div>
-          <div style="font-size:18px;font-weight:700;color:var(--text);">Asistente Inteligente de Coberturas</div>
-          <div style="font-size:12px;color:var(--text-2);">Motor Black-76 · Griegas · Análisis de valor relativo con datos históricos MATBA</div>
-        </div>
-      </div>
-
-      <div id="asst-sync-bar" style="display:none;padding:8px 16px;border-radius:8px;margin-bottom:10px;border:1px solid var(--border);font-size:12px;"></div>
-      <div id="asst-vi-context" style="padding:6px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;margin-bottom:14px;font-family:var(--mono);font-size:11px;min-height:28px;"></div>
-
-      <!-- Explicación de Griegas -->
-      <details style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;margin-bottom:16px;box-shadow:var(--shadow);">
-        <summary style="padding:14px 18px;cursor:pointer;font-weight:700;font-size:13px;color:var(--es-green);list-style:none;display:flex;align-items:center;gap:8px;">
-          <span style="font-size:16px;">📐</span> ¿Qué significan las letras griegas? <span style="margin-left:auto;font-size:10px;color:var(--text-3);">Click para expandir</span>
-        </summary>
-        <div style="padding:0 18px 18px;font-size:12px;line-height:1.7;color:var(--text-2);">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px;">
-            <div style="padding:14px;background:var(--bg-input);border-radius:8px;">
-              <div style="font-weight:700;color:var(--text);font-size:14px;margin-bottom:6px;">Δ Delta</div>
-              <div><strong>¿Qué mide?</strong> Cuánto cambia el precio de la opción por cada u$s que se mueve el futuro.</div>
-              <div style="margin-top:6px;"><strong>Ejemplo:</strong> Delta -0.31 significa que si el futuro baja 1 u$s, tu put gana 0.31 u$s. Es tu "velocidad" de cobertura.</div>
-              <div style="margin-top:6px;"><strong>Cómo se lee:</strong> Delta cercano a -1 = protección casi total (muy ITM). Delta cercano a 0 = protección lejana (muy OTM). Para calls vendidos, delta positivo reduce tu cobertura neta.</div>
-              <div style="margin-top:6px;font-family:var(--mono);font-size:10px;color:var(--text-3);">Fórmula: Δ = e^(-rT) · N(d1) para calls, -e^(-rT) · N(-d1) para puts</div>
-            </div>
-            <div style="padding:14px;background:var(--bg-input);border-radius:8px;">
-              <div style="font-weight:700;color:var(--text);font-size:14px;margin-bottom:6px;">Γ Gamma</div>
-              <div><strong>¿Qué mide?</strong> Cuánto cambia el Delta por cada u$s que se mueve el futuro. Es la "aceleración".</div>
-              <div style="margin-top:6px;"><strong>Ejemplo:</strong> Gamma 0.012 significa que si el futuro baja 1 u$s, tu delta pasa de -0.31 a -0.322. Tu protección se hace más fuerte a medida que el precio cae.</div>
-              <div style="margin-top:6px;"><strong>Cómo se lee:</strong> Gamma alto = la opción reacciona rápido a los movimientos. Las opciones ATM tienen el gamma más alto. Compradores de opciones se benefician del gamma.</div>
-              <div style="margin-top:6px;font-family:var(--mono);font-size:10px;color:var(--text-3);">Fórmula: Γ = e^(-rT) · N'(d1) / (F · σ · √T)</div>
-            </div>
-            <div style="padding:14px;background:var(--bg-input);border-radius:8px;">
-              <div style="font-weight:700;color:var(--text);font-size:14px;margin-bottom:6px;">Θ Theta</div>
-              <div><strong>¿Qué mide?</strong> Cuánto pierde la opción de valor por cada día que pasa (time decay).</div>
-              <div style="margin-top:6px;"><strong>Ejemplo:</strong> Theta -0.04 significa que tu opción pierde 0.04 u$s por día solo por el paso del tiempo, sin que el futuro se mueva. Es el "costo de esperar".</div>
-              <div style="margin-top:6px;"><strong>Cómo se lee:</strong> Theta siempre es negativo para el comprador de opciones. Se acelera las últimas semanas antes del vencimiento. En un spread, theta se reduce porque vendés time decay.</div>
-              <div style="margin-top:6px;font-family:var(--mono);font-size:10px;color:var(--text-3);">Fórmula: Θ = -F · e^(-rT) · N'(d1) · σ / (2√T) / 365</div>
-            </div>
-            <div style="padding:14px;background:var(--bg-input);border-radius:8px;">
-              <div style="font-weight:700;color:var(--text);font-size:14px;margin-bottom:6px;">ν Vega</div>
-              <div><strong>¿Qué mide?</strong> Cuánto cambia el precio de la opción por cada 1% que sube la volatilidad implícita.</div>
-              <div style="margin-top:6px;"><strong>Ejemplo:</strong> Vega +0.31 significa que si la VI sube de 15% a 16%, tu opción gana 0.31 u$s. Si compraste protección antes de un weather market y la VI sube, ganás por vega.</div>
-              <div style="margin-top:6px;"><strong>Cómo se lee:</strong> Vega positivo = te beneficia la suba de volatilidad (compradores). Vega negativo = te perjudica (vendedores). En un spread, vega se reduce parcialmente.</div>
-              <div style="margin-top:6px;font-family:var(--mono);font-size:10px;color:var(--text-3);">Fórmula: ν = F · e^(-rT) · N'(d1) · √T / 100</div>
-            </div>
-          </div>
-          <div style="margin-top:14px;padding:12px;background:var(--es-gold-light);border-radius:8px;border:1px solid var(--es-gold);">
-            <strong style="color:var(--text);">💡 Tip de trading:</strong> La combinación clave es Delta + Theta. Un delta alto te da protección fuerte pero un theta alto te la cobra todos los días. El "costo por punto de delta" (u$s/Δ) que muestra el motor es exactamente esa relación: cuánta protección comprás por cada dólar de prima que pagás.
-          </div>
-        </div>
-      </details>
-
-      <!-- Mode selector -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;">
-        <div id="asst-mode1" onclick="asstSetMode(1)" style="background:var(--bg-card);border:2px solid var(--es-green);border-radius:14px;padding:20px;cursor:pointer;">
-          <div style="font-size:24px;margin-bottom:8px;">🧭</div>
-          <div style="font-size:15px;font-weight:700;">¿Qué hago?</div>
-          <div style="font-size:12px;color:var(--text-2);">Tengo una visión y quiero que me sugiera la mejor estructura.</div>
-        </div>
-        <div id="asst-mode2" onclick="asstSetMode(2)" style="background:var(--bg-card);border:2px solid var(--border);border-radius:14px;padding:20px;cursor:pointer;">
-          <div style="font-size:24px;margin-bottom:8px;">🔍</div>
-          <div style="font-size:15px;font-weight:700;">¿Cuánto me cuesta?</div>
-          <div style="font-size:12px;color:var(--text-2);">Ya decidí cubrir. Quiero comparar y encontrar el mejor valor.</div>
-        </div>
-      </div>
-
-      <!-- Wizard inputs -->
-      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:20px;box-shadow:var(--shadow);margin-bottom:16px;">
-        <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">
-          <div class="field"><label>Cultivo</label><select id="asst-crop" onchange="asstUpdatePos()" style="font-family:var(--mono);font-size:13px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);width:120px;"><option value="soja">Soja</option><option value="maiz">Maíz</option><option value="trigo">Trigo</option></select></div>
-          <div class="field"><label>Posición</label><select id="asst-pos" onchange="asstUpdateVto()" style="font-family:var(--mono);font-size:13px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);width:170px;"></select></div>
-          <div class="field"><label>Futuro (u$s)</label><input type="number" id="asst-fwd" step="0.5" style="font-family:var(--mono);font-size:13px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);width:90px;"></div>
-          <div class="field"><label>Volumen (tn)</label><input type="number" id="asst-vol" value="5000" style="font-family:var(--mono);font-size:13px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);width:90px;"></div>
-          <div class="field" id="asst-tol-wrap"><label>Tolerancia prima</label><select id="asst-tol" style="font-family:var(--mono);font-size:13px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);width:150px;"><option value="low">Mínima (≤2 u$s)</option><option value="med" selected>Moderada (3-6 u$s)</option><option value="high">Sin restricción</option></select></div>
-          <div style="margin-left:auto;" id="asst-vto-display"></div>
-        </div>
-        <div id="asst-vision-wrap" style="margin-top:14px;">
-          <label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-3);letter-spacing:0.6px;display:block;margin-bottom:8px;">Visión de Mercado</label>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;" id="asst-vision-chips">
-            <button class="btn btn-outline" data-v="bearish" onclick="asstVision(this)" style="font-size:12px;">📉 Bajista</button>
-            <button class="btn btn-outline" data-v="neutral" onclick="asstVision(this)" style="font-size:12px;">↔️ Neutral</button>
-            <button class="btn" data-v="floor" onclick="asstVision(this)" style="font-size:12px;background:var(--es-green);color:#fff;">🔒 Quiero piso</button>
-            <button class="btn btn-outline" data-v="bullish" onclick="asstVision(this)" style="font-size:12px;">🌤️ Alcista con protección</button>
-            <button class="btn btn-outline" data-v="highvol" onclick="asstVision(this)" style="font-size:12px;">🌪️ Alta vol esperada</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Chain input -->
-      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:20px;box-shadow:var(--shadow);margin-bottom:16px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <div style="font-size:14px;font-weight:700;">📋 Cadena de Opciones</div>
-          <div id="asst-sync-note"></div>
-        </div>
-        <div style="font-size:12px;color:var(--text-2);margin-bottom:12px;">Cargá strikes y primas del mercado, o sincronizá A3 arriba para llenar automáticamente.</div>
-        <div id="asst-chain-inputs"></div>
-        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
-          <button class="btn btn-outline" onclick="asstAddRow()" style="font-size:12px;">+ Agregar strike</button>
-          <button class="btn btn-outline" onclick="asstLoadSample()" style="font-size:12px;border-color:var(--es-gold);color:var(--es-gold);">📊 Cargar ejemplo</button>
-          <button class="btn" onclick="asstGenerate()" style="font-size:13px;background:var(--es-green);color:#fff;">⚡ <span id="asst-btn-label">Generar recomendaciones</span></button>
-        </div>
-      </div>
-
-      <div id="asst-results"></div>
-    </div>
   </div>
 
   <div id="theory-space" class="theory-section">
@@ -792,54 +684,6 @@
     </div>
   </div>
 
-<!-- ═══ ASESOR COMERCIAL IA ═══ -->
-<div id="asesor-ia-space" style="display:none;">
-  <div class="asesor-header">
-    <div style="display:flex;align-items:center;gap:12px;">
-      <span style="font-size:28px;">🤖</span>
-      <div>
-        <div style="font-size:18px;font-weight:700;color:var(--text);">Asesor Comercial IA</div>
-        <div style="font-size:12px;color:var(--text-2);">Análisis de mercado · Fundamentos · Macro · Clima · Posicionamiento</div>
-      </div>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px;">
-      <span style="font-size:11px;color:var(--text-3);font-weight:600;">Modelo:</span>
-      <div class="asesor-model-tabs" id="asesor-model-tabs">
-        <button class="asesor-model-btn active" data-model="claude-sonnet-4-20250514" onclick="asesorSetModel(this)">Sonnet 4 <span style="font-size:10px;opacity:.7;">· Rápido</span></button>
-        <button class="asesor-model-btn" data-model="claude-opus-4-5" onclick="asesorSetModel(this)">Opus 4 <span style="font-size:10px;opacity:.7;">· Profundo</span></button>
-      </div>
-    </div>
-  </div>
-
-  <div class="asesor-context-bar" id="asesor-context-bar"></div>
-
-  <div class="asesor-messages" id="asesor-messages">
-    <div class="asesor-welcome" id="asesor-welcome">
-      <div class="asesor-welcome-icon">🌾</div>
-      <div class="asesor-welcome-title">Asesor Comercial IA</div>
-      <div class="asesor-welcome-sub">Analizá el mercado de granos: fundamentos, macro, clima y posicionamiento. Buscá datos en tiempo real con fuentes verificables.</div>
-      <div class="asesor-suggestions" id="asesor-suggestions"></div>
-    </div>
-  </div>
-
-  <div class="asesor-input-area">
-    <div class="asesor-input-wrap">
-      <textarea
-        id="asesor-input"
-        class="asesor-textarea"
-        placeholder="¿Por qué podría bajar la soja? ¿Cómo está la demanda china? ¿Qué hace el petróleo con el girasol?..."
-        rows="1"
-        onkeydown="asesorHandleKey(event)"
-        oninput="asesorAutoResize(this)"
-      ></textarea>
-      <button class="asesor-send-btn" id="asesor-send-btn" onclick="asesorSend()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
-    </div>
-    <div class="asesor-input-hint">Enter para enviar · Shift+Enter para nueva línea</div>
-  </div>
-</div>
-
 <!-- ═══ FOOTER DE IMPRESIÓN (oculto en pantalla, visible al imprimir) ═══ -->
 <div id="print-footer" style="display:none;">
   <span class="pf-left">Espartina S.A. · Suite Comercial de Coberturas · Precios indicativos</span>
@@ -883,6 +727,5 @@ window.addEventListener('beforeprint', function() {
 <script src="alertas.js"></script>
 <script src="futuros_opciones.js"></script>
 <script src="app.js"></script>
-<script src="asesor_comercial.js"></script>
 </body>
 </html>
