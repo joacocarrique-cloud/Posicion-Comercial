@@ -288,6 +288,7 @@ function syncTopBar() {
   document.getElementById('chart-min').value = t.min;
   document.getElementById('chart-max').value = t.max;
   document.getElementById('tab-name-input').value = t.name;
+  applyChartHeight();
   renderTabs();
   if (retData.fasCTP !== null) {
     const retCultivo = retData.cultivo;
@@ -491,6 +492,36 @@ function renderStrats() {
   });
 }
 
+// ─── Altura del gráfico ───────────────────────────────────────────────────
+// Auto-scale: 280px base + 40px por cada estrategia adicional (desde la 2ª).
+// Si el usuario fijó un valor manual en #chart-height, ese tiene prioridad.
+const CHART_HEIGHT_BASE = 280;
+const CHART_HEIGHT_PER_STRAT = 40;
+const CHART_HEIGHT_MIN = 240;
+const CHART_HEIGHT_MAX = 600;
+
+function calcAutoHeight(numStrats) {
+  const extra = Math.max(0, numStrats - 1) * CHART_HEIGHT_PER_STRAT;
+  return Math.min(CHART_HEIGHT_MAX, Math.max(CHART_HEIGHT_MIN, CHART_HEIGHT_BASE + extra));
+}
+
+function applyChartHeight() {
+  const wrapper = document.getElementById('main-chart-wrap');
+  if (!wrapper) return;
+  const manualInput = document.getElementById('chart-height');
+  const manualVal = manualInput ? parseInt(manualInput.value) : NaN;
+  const t = getActiveTab();
+  const numStrats = (t && t.strategies) ? t.strategies.length : 1;
+  const autoH = calcAutoHeight(numStrats);
+  const h = (!isNaN(manualVal) && manualVal >= CHART_HEIGHT_MIN && manualVal <= CHART_HEIGHT_MAX)
+    ? manualVal
+    : autoH;
+  wrapper.style.height = h + 'px';
+  // Actualizar placeholder del input para mostrar el auto calculado
+  if (manualInput) manualInput.placeholder = autoH;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function renderChart() {
   const t = getActiveTab(); const prices = [];
   for (let p = t.min; p <= t.max; p += 2) prices.push(p);
@@ -515,6 +546,22 @@ function renderChart() {
       tension: 0
     });
   });
+
+  // ─── Calcular rango Y dinámico con padding ────────────────────────────────
+  let allPayoffs = [];
+  prices.forEach(p => {
+    allPayoffs.push(p); // línea Mercado
+    t.strategies.forEach(s => allPayoffs.push(calcPayoff(s, p)));
+  });
+  const rawMin = Math.min(...allPayoffs);
+  const rawMax = Math.max(...allPayoffs);
+  const pad = (rawMax - rawMin) * 0.07 || t.spot * 0.05;
+  const yMin = Math.floor((rawMin - pad) / 5) * 5;
+  const yMax = Math.ceil((rawMax + pad) / 5) * 5;
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Ajustar altura del wrapper antes de crear/recrear el chart
+  applyChartHeight();
 
   const spotAnnotation = {
     type: 'line',
@@ -551,6 +598,8 @@ function renderChart() {
           ticks: { font: { family: 'JetBrains Mono', size: 10 }, color: '#7e8574' }
         },
         y: {
+          min: yMin,
+          max: yMax,
           title: { display: true, text: 'Precio Neto de Venta (u$s)', font: { family: 'Montserrat', size: 12, weight: '600' }, color: '#505845' },
           grid: { color: 'rgba(0,0,0,.05)' },
           ticks: { font: { family: 'JetBrains Mono', size: 10 }, color: '#7e8574' }
