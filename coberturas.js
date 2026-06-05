@@ -519,6 +519,8 @@ function applyChartHeight() {
   wrapper.style.height = h + 'px';
   // Actualizar placeholder del input para mostrar el auto calculado
   if (manualInput) manualInput.placeholder = autoH;
+  // Avisar a Chart.js que el contenedor cambió de tamaño (si el chart ya existe)
+  if (typeof chart !== 'undefined' && chart) chart.resize();
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
