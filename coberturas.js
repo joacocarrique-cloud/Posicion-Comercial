@@ -516,11 +516,13 @@ function applyChartHeight() {
   const h = (!isNaN(manualVal) && manualVal >= CHART_HEIGHT_MIN && manualVal <= CHART_HEIGHT_MAX)
     ? manualVal
     : autoH;
-  wrapper.style.height = h + 'px';
+  wrapper.style.setProperty('height', h + 'px', 'important');
   // Actualizar placeholder del input para mostrar el auto calculado
   if (manualInput) manualInput.placeholder = autoH;
   // Avisar a Chart.js que el contenedor cambió de tamaño (si el chart ya existe)
-  if (typeof chart !== 'undefined' && chart) chart.resize();
+  if (typeof chart !== 'undefined' && chart) {
+    requestAnimationFrame(() => chart.resize());
+  }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
