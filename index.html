@@ -52,6 +52,22 @@
     <span id="mkt-status" style="font-size:11px; color:var(--text-3); font-style:italic;">Sin datos — pulsar Sincronizar A3</span>
   </div>
 
+  <!-- ═══ HEADER DE IMPRESIÓN (oculto en pantalla, visible al imprimir) ═══ -->
+  <div id="print-header" style="display:none;">
+    <div class="ph-top">
+      <div class="ph-brand">
+        <div class="ph-logo">🌾</div>
+        <div>
+          <div class="ph-name">Espartina S.A.</div>
+          <div class="ph-date">Suite Comercial de Coberturas</div>
+        </div>
+      </div>
+      <div class="ph-date" id="print-date"></div>
+    </div>
+    <div class="ph-title" id="print-title">Comparativa de Coberturas</div>
+    <div class="ph-chips" id="print-chips"></div>
+  </div>
+
   <div id="workspace">
     <div class="top-bar">
       <div class="field">
@@ -108,19 +124,20 @@
         </div>
         <div id="strats-container"></div>
       </div>
-      <div class="chart-section">
-        <div class="chart-wrap"><canvas id="main-chart"></canvas></div>
-      </div>
-    </div>
-
-    <div class="bottom-area">
-      <div class="table-section">
-        <h2>Análisis de Escenarios</h2>
-        <table class="comp-table" id="scenario-table"></table>
-      </div>
-      <div class="winner-section">
-        <h2>Rango de Dominancia</h2>
-        <div id="winner-container"></div>
+      <div id="print-right-col">
+        <div class="chart-section">
+          <div class="chart-wrap"><canvas id="main-chart"></canvas></div>
+        </div>
+        <div class="bottom-area">
+          <div class="table-section">
+            <h2>Análisis de Escenarios</h2>
+            <table class="comp-table" id="scenario-table"></table>
+          </div>
+          <div class="winner-section">
+            <h2>Rango de Dominancia</h2>
+            <div id="winner-container"></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -774,6 +791,47 @@
       <div id="fo-opt-closed" style="display:none;"></div>
     </div>
   </div>
+
+<!-- ═══ FOOTER DE IMPRESIÓN (oculto en pantalla, visible al imprimir) ═══ -->
+<div id="print-footer" style="display:none;">
+  <span class="pf-left">Espartina S.A. · Suite Comercial de Coberturas · Precios indicativos</span>
+  <span class="pf-right" id="print-footer-date"></span>
+</div>
+
+<script>
+// Llenar datos del header justo antes de imprimir
+window.addEventListener('beforeprint', function() {
+  try {
+    var t = (typeof getActiveTab === 'function') ? getActiveTab() : null;
+
+    // Título = nombre del tab
+    var title = (t && t.name) ? t.name : 'Comparativa de Coberturas';
+    document.getElementById('print-title').textContent = title;
+
+    // Chips: cultivo, posición, spot
+    var chips = [];
+    if (t) {
+      var cropNames = { soja: 'Soja', maiz: 'Maíz', trigo: 'Trigo', girasol: 'Girasol' };
+      chips.push(cropNames[t.assetVal] || t.assetVal || '');
+    }
+    var posEl = document.getElementById('mkt-pos-select');
+    if (posEl && posEl.value) chips.push(posEl.value);
+    if (t && t.spot) chips.push('Spot: u$s ' + t.spot.toFixed(1));
+
+    var chipsHtml = chips.filter(Boolean).map(function(c) {
+      return '<span class="ph-chip">' + c + '</span>';
+    }).join('');
+    document.getElementById('print-chips').innerHTML = chipsHtml;
+
+    // Fecha
+    var now = new Date();
+    var dateStr = now.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    var timeStr = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+    document.getElementById('print-date').textContent = dateStr;
+    document.getElementById('print-footer-date').textContent = 'Generado: ' + dateStr + ' ' + timeStr;
+  } catch(e) {}
+});
+</script>
 
 <script src="globals.js"></script>
 <script src="storage.js"></script>

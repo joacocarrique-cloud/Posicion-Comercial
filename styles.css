@@ -296,6 +296,11 @@ body {
 }
 .strats-list { display: flex; flex-direction: column; gap: 16px; }
 
+/* print-right-col: transparente en pantalla, actúa como contenedor pasivo */
+#print-right-col {
+  display: contents;
+}
+
 /* ─── Strategy Card ─── */
 .strat-card {
   background: var(--bg-card);
@@ -1601,4 +1606,325 @@ body {
   .fo-kpi-val { font-size: 16px; }
   .fo-table { font-size: 12px; }
   .fo-table thead th, .fo-table tbody td { padding: 7px 10px; }
+}
+
+/* ═══════════════════════════════════════════════════
+   ─── @media print — Exportación PDF / Ctrl+P ───
+   Layout landscape: estrategias izquierda | gráfico+tabla derecha
+   ═══════════════════════════════════════════════════ */
+
+@media print {
+
+  /* ─── Orientación y márgenes de hoja ─── */
+  @page {
+    size: A4 landscape;
+    margin: 12mm 14mm;
+  }
+
+  /* ─── Asegurar que los colores se impriman ─── */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* ─── Ocultar todo lo que no es contenido útil ─── */
+  .app-header,
+  #mod-pills,
+  .save-indicator,
+  .tabs-bar,
+  #fob-bar,
+  #mkt-bar,
+  .top-bar,
+  .strats-toolbar,
+  .strat-header button,
+  .strat-footer,
+  .fas-info-bar,
+  #vg-panel,
+  #asst-sync-bar,
+  #asst-vi-context,
+  details,
+  #asst-mode1,
+  #asst-mode2,
+  #asst-vision-wrap,
+  #asst-chain-inputs,
+  #asst-results,
+  .theory-section,
+  .ret-section,
+  .pase-section,
+  #spreads-space,
+  #desvio-space,
+  #alertas-space,
+  #futopc-space,
+  .preset-wrapper,
+  .btn-danger,
+  .leg-row button {
+    display: none !important;
+  }
+
+  /* ─── Mostrar header y footer solo al imprimir ─── */
+  #print-header,
+  #print-footer {
+    display: block !important;
+  }
+
+  /* ─── Reset de fondo y layout general ─── */
+  body {
+    background: #fff !important;
+    padding: 0 !important;
+  }
+
+  .container {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  #workspace {
+    display: block !important;
+  }
+
+  /* ─── HEADER DE IMPRESIÓN ─── */
+  #print-header {
+    background: #1A6B3C !important;
+    padding: 10px 16px 8px !important;
+    border-radius: 0 !important;
+    position: relative;
+    margin-bottom: 12px;
+  }
+  #print-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #C8A44A, #f9f3e3, #C8A44A);
+  }
+  #print-header .ph-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  #print-header .ph-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  #print-header .ph-logo {
+    width: 26px; height: 26px;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 5px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  #print-header .ph-name {
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    font-family: 'Montserrat', sans-serif;
+  }
+  #print-header .ph-date {
+    color: rgba(255,255,255,0.6);
+    font-size: 9px;
+    font-family: 'Montserrat', sans-serif;
+  }
+  #print-header .ph-title {
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    font-family: 'Montserrat', sans-serif;
+    margin-bottom: 5px;
+  }
+  #print-header .ph-chips {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  #print-header .ph-chip {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.9);
+    font-size: 9px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-family: 'Montserrat', sans-serif;
+  }
+  #print-header .ph-chip.gold {
+    background: rgba(200,164,74,0.25);
+    border-color: rgba(200,164,74,0.4);
+    color: #f0d078;
+  }
+
+  /* ─── LAYOUT PRINCIPAL: 2 columnas ─── */
+  .builder-area {
+    display: grid !important;
+    grid-template-columns: 195mm 1fr !important;
+    gap: 14px !important;
+    margin-bottom: 0 !important;
+    align-items: start !important;
+  }
+
+  /* #print-right-col: en print actúa como columna derecha real */
+  #print-right-col {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  /* bottom-area queda adentro de la columna derecha */
+  .bottom-area {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+    margin-bottom: 0 !important;
+  }
+
+  /* Gráfico a la derecha */
+  .chart-section {
+    height: auto !important;
+    min-height: 200px !important;
+    max-height: 260px !important;
+    padding: 12px !important;
+    box-shadow: none !important;
+    border: 1px solid #e0e2d8 !important;
+    border-radius: 8px !important;
+    break-inside: avoid;
+  }
+
+  .chart-wrap {
+    flex: 1 !important;
+    height: 210px !important;
+  }
+
+  /* ─── Strategy cards ─── */
+  .strat-card {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin-bottom: 8px !important;
+    box-shadow: none !important;
+    border: 1px solid #e0e2d8 !important;
+  }
+
+  .strat-card:hover {
+    box-shadow: none !important;
+  }
+
+  /* ─── Leg rows: ocultar controles, solo texto ─── */
+  .leg-row select,
+  .leg-row input[type="number"] {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    border: none !important;
+    background: transparent !important;
+    pointer-events: none !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 10px !important;
+    padding: 0 !important;
+    color: #1c2118 !important;
+    font-weight: 600 !important;
+  }
+
+  .leg-row {
+    background: #f8f9f6 !important;
+    padding: 5px 8px !important;
+    gap: 4px !important;
+  }
+
+  /* ─── KPI grid dentro de cada estrategia ─── */
+  .kpi-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 6px !important;
+    padding-top: 8px !important;
+    margin-top: 8px !important;
+  }
+
+  .kpi-card {
+    padding: 6px 4px !important;
+  }
+
+  .kpi-card .k-val {
+    font-size: 11px !important;
+  }
+
+  /* ─── Tabla de escenarios ─── */
+  .table-section {
+    box-shadow: none !important;
+    padding: 12px !important;
+    border: 1px solid #e0e2d8 !important;
+    border-radius: 8px !important;
+    overflow: visible !important;
+    break-inside: avoid !important;
+  }
+
+  .table-section h2 {
+    font-size: 12px !important;
+    margin-bottom: 8px !important;
+  }
+
+  .comp-table th,
+  .comp-table td {
+    padding: 5px 8px !important;
+    font-size: 10px !important;
+  }
+
+  /* ─── Winner section ─── */
+  .winner-section {
+    box-shadow: none !important;
+    padding: 12px !important;
+    border: 1px solid #e0e2d8 !important;
+    border-radius: 8px !important;
+    break-inside: avoid !important;
+  }
+
+  .winner-section h2 {
+    font-size: 12px !important;
+    margin-bottom: 8px !important;
+  }
+
+  .winner-box {
+    padding: 7px 10px !important;
+    margin-bottom: 6px !important;
+  }
+
+  .winner-box:hover {
+    transform: none !important;
+  }
+
+  .winner-range {
+    font-size: 10px !important;
+  }
+
+  .winner-name {
+    font-size: 12px !important;
+  }
+
+  /* ─── FOOTER DE IMPRESIÓN ─── */
+  #print-footer {
+    margin-top: 10px;
+    padding: 7px 14px;
+    background: #f4f5f0 !important;
+    border-top: 1px solid #e0e2d8;
+    border-radius: 0 0 6px 6px;
+    display: flex !important;
+    justify-content: space-between;
+    align-items: center;
+  }
+  #print-footer .pf-left {
+    font-size: 9px;
+    color: #7e8574;
+    font-family: 'Montserrat', sans-serif;
+  }
+  #print-footer .pf-right {
+    font-size: 9px;
+    color: #7e8574;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ─── Strat name input: que se vea como texto ─── */
+  .strat-name {
+    border-bottom: none !important;
+    font-size: 13px !important;
+    pointer-events: none !important;
+  }
 }
