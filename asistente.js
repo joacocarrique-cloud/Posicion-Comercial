@@ -43,7 +43,8 @@ function asstSyncFromBuilder() {
   // Sync forward price
   const futData = (sheetData.futuros[crop] || []).find(f => f.pos === pos);
   if (futData && futData.precio > 0) {
-    document.getElementById('asst-fwd').value = futData.precio;
+    const asstFwdEl = document.getElementById('asst-fwd');
+    if (asstFwdEl) asstFwdEl.value = futData.precio;
   }
 
   // Update vencimiento display
@@ -134,7 +135,7 @@ function asstShowContext(){
 function asstSetMode(n){asstModeNum=n;document.getElementById('asst-mode1').style.borderColor=n===1?'var(--es-green)':'var(--border)';document.getElementById('asst-mode2').style.borderColor=n===2?'var(--es-green)':'var(--border)';document.getElementById('asst-vision-wrap').style.display=n===1?'block':'none';document.getElementById('asst-tol-wrap').style.display=n===1?'':'none';document.getElementById('asst-btn-label').textContent=n===1?'Generar recomendaciones':'Analizar cadena';}
 function asstVision(el){document.querySelectorAll('#asst-vision-chips button').forEach(b=>{b.className='btn btn-outline';b.style.background='';b.style.color='';});el.className='btn';el.style.background='var(--es-green)';el.style.color='#fff';asstVisionSel=el.dataset.v;}
 function asstUpdatePos(){const c=document.getElementById('asst-crop').value,sel=document.getElementById('asst-pos');sel.innerHTML=(ASST_POS[c]||[]).map(p=>`<option value="${p}">${p}</option>`).join('');document.getElementById('asst-fwd').value=ASST_FWD[c]||300;asstUpdateVto();}
-function asstUpdateVto(){const p=document.getElementById('asst-pos').value,exp=asstExpiry(p),dias=exp?asstDays(new Date(),exp):0;document.getElementById('asst-vto-display').innerHTML=exp?`<div style="background:var(--bg-input);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;font-family:var(--mono);">📅 Vto: <strong style="color:var(--es-green);">${exp.getDate().toString().padStart(2,'0')}/${ASST_MNAMES[exp.getMonth()+1]}/${exp.getFullYear()}</strong> · ${dias}d</div>`:'';}
+function asstUpdateVto(){const posEl=document.getElementById('asst-pos');const dispEl=document.getElementById('asst-vto-display');if(!posEl||!dispEl)return;const p=posEl.value,exp=asstExpiry(p),dias=exp?asstDays(new Date(),exp):0;dispEl.innerHTML=exp?`<div style="background:var(--bg-input);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;font-family:var(--mono);">📅 Vto: <strong style="color:var(--es-green);">${exp.getDate().toString().padStart(2,'0')}/${ASST_MNAMES[exp.getMonth()+1]}/${exp.getFullYear()}</strong> · ${dias}d</div>`:'';}
 
 function asstRenderChain(){
   const c=document.getElementById('asst-chain-inputs');
