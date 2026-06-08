@@ -622,7 +622,8 @@ function applyMarketData() {
   if (futuro && futuro.ajuste) {
     const t = getActiveTab();
     t.spot = futuro.ajuste;
-    document.getElementById('spot').value = futuro.ajuste;
+    const spotEl = document.getElementById('spot');
+    if (spotEl) spotEl.value = futuro.ajuste;
   }
-  renderAll();
+  if (typeof renderAll === 'function') renderAll();
 }
