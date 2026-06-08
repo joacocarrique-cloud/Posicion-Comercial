@@ -9,6 +9,11 @@ const PC_CROPS = [
   'SOJA ARR.', 'SOJA', 'TRIGO'
 ];
 
+// Cultivos que suman al portfolio consolidado:
+// · MAÍZ TEMP. y MAÍZ TARDÍO quedan fuera (ya están en MAÍZ)
+// · SOJA ARR. queda fuera (arrendamientos, no producción propia)
+const PC_PORTFOLIO = ['COLZA', 'CEBADA', 'GI OLEICO', 'GIRASOL', 'MAÍZ', 'SOJA', 'TRIGO'];
+
 const PC_STORAGE_KEY = 'espartina_pc_2627_v2';
 
 const PC_SEEDS = {
@@ -246,33 +251,45 @@ function pcRefreshCalcs() {
 }
 
 function pcKpiTotals() {
-  let totTn = 0, totVendidasTn = 0, totVrealizadas = 0, totVproyectadas = 0, totResProye = 0;
-  PC_CROPS.forEach(c => {
+  let totTn = 0, totVendidasTn = 0;
+  let totResComercial = 0, totResProye = 0;
+
+  PC_PORTFOLIO.forEach(c => {
     const k = pcCalc(c);
     const d = c === 'MAÍZ' ? pcMaizVals() : PC_DATA[c];
     totTn          += d.tnTotales || 0;
     totVendidasTn  += (d.tnFijadas || 0) + (d.tnFuturos || 0);
-    totVrealizadas += k.ventasRealizadas;
-    totVproyectadas+= k.ventasProyectadas;
-    totResProye    += k.resultadoProyectado;
+    totResComercial += k.resultadoComercial;
+    totResProye     += k.resultadoProyectado;
   });
-  const cobPct = totTn ? totVendidasTn / totTn : 0;
-  return { totTn, totVendidasTn, cobPct, totVrealizadas, totVproyectadas, totResProye };
+
+  // Promedios ponderados por TN
+  const ppvVsPppPond   = totVendidasTn ? totResComercial  / totVendidasTn : 0;
+  const pxFinalVsPppPond = totTn       ? totResProye      / totTn         : 0;
+  const cobPct           = totTn       ? totVendidasTn    / totTn         : 0;
+
+  return { totTn, totVendidasTn, cobPct,
+           totResComercial, ppvVsPppPond,
+           totResProye, pxFinalVsPppPond };
 }
 
 function pcUpdateKpis() {
   const k = pcKpiTotals();
+  const col = v => v > 0 ? '#1A6B3C' : v < 0 ? '#c43030' : 'var(--text-1,#111)';
   const set = (id, txt, color) => {
     const el = document.getElementById(id);
-    if (el) { el.textContent = txt; if (color) el.style.color = color; }
+    if (!el) return;
+    el.textContent = txt;
+    if (color !== undefined) el.style.color = color;
   };
-  set('pck-vrealizadas', pcFmtTotal(k.totVrealizadas));
-  set('pck-vproyectadas', pcFmtTotal(k.totVproyectadas));
-  set('pck-resproye', pcFmtTotal(k.totResProye),
-    k.totResProye > 0 ? '#1A6B3C' : k.totResProye < 0 ? '#c43030' : '');
-  set('pck-cobertura', pcFmtPct(k.cobPct));
-  set('pck-tntotales', pcFmtTn(k.totTn));
-  set('pck-tnvendidas', pcFmtTn(k.totVendidasTn));
+  set('pck-rescomercial',     pcFmtTotal(k.totResComercial),   col(k.totResComercial));
+  set('pck-rescomercial-sub', pcFmtDiff(k.ppvVsPppPond) + '/tn prom.');
+  set('pck-ppvppp',           pcFmtDiff(k.ppvVsPppPond),       col(k.ppvVsPppPond));
+  set('pck-ppvppp-sub',       pcFmtTn(k.totVendidasTn) + ' tn vendidas');
+  set('pck-pxfinalppp',       pcFmtDiff(k.pxFinalVsPppPond),   col(k.pxFinalVsPppPond));
+  set('pck-pxfinalppp-sub',   pcFmtTn(k.totTn) + ' tn totales');
+  set('pck-resproye',         pcFmtTotal(k.totResProye),        col(k.totResProye));
+  set('pck-resproye-sub',     pcFmtDiff(k.pxFinalVsPppPond) + '/tn prom.');
 }
 
 function pcToggleResultados() {
@@ -347,29 +364,29 @@ function pcInjectHTML() {
   </style>`;
 
   // ── KPIs consolidados ──
-  const kpiResColor = k.totResProye > 0 ? '#1A6B3C' : k.totResProye < 0 ? '#c43030' : 'var(--text-1,#111)';
+  const kpiRC  = col => col > 0 ? '#1A6B3C' : col < 0 ? '#c43030' : 'var(--text-1,#111)';
   h += `
   <div style="font-size:14px;font-weight:700;color:#1A6B3C;margin:0 0 14px 0">Posición Comercial 26-27</div>
   <div class="pc-kpi-grid">
     <div class="pc-kpi accent">
-      <div class="pc-kpi-lbl">Ventas Proyectadas</div>
-      <div class="pc-kpi-val" id="pck-vproyectadas">${pcFmtTotal(k.totVproyectadas)}</div>
-      <div class="pc-kpi-sub">Portfolio total</div>
+      <div class="pc-kpi-lbl">Resultado Comercial</div>
+      <div class="pc-kpi-val" id="pck-rescomercial" style="color:${kpiRC(k.totResComercial)}">${pcFmtTotal(k.totResComercial)}</div>
+      <div class="pc-kpi-sub" id="pck-rescomercial-sub">${pcFmtDiff(k.ppvVsPppPond)}/tn prom.</div>
     </div>
     <div class="pc-kpi">
-      <div class="pc-kpi-lbl">Ventas Realizadas</div>
-      <div class="pc-kpi-val" id="pck-vrealizadas">${pcFmtTotal(k.totVrealizadas)}</div>
-      <div class="pc-kpi-sub"><span id="pck-tnvendidas">${pcFmtTn(k.totVendidasTn)}</span> tn vendidas</div>
+      <div class="pc-kpi-lbl">PPV vs PPP ($/tn)</div>
+      <div class="pc-kpi-val" id="pck-ppvppp" style="color:${kpiRC(k.ppvVsPppPond)}">${pcFmtDiff(k.ppvVsPppPond)}</div>
+      <div class="pc-kpi-sub" id="pck-ppvppp-sub">${pcFmtTn(k.totVendidasTn)} tn vendidas</div>
+    </div>
+    <div class="pc-kpi">
+      <div class="pc-kpi-lbl">Precio Final vs PPP ($/tn)</div>
+      <div class="pc-kpi-val" id="pck-pxfinalppp" style="color:${kpiRC(k.pxFinalVsPppPond)}">${pcFmtDiff(k.pxFinalVsPppPond)}</div>
+      <div class="pc-kpi-sub" id="pck-pxfinalppp-sub">${pcFmtTn(k.totTn)} tn totales</div>
     </div>
     <div class="pc-kpi accent">
       <div class="pc-kpi-lbl">Res. Comercial Proyectado</div>
-      <div class="pc-kpi-val" id="pck-resproye" style="color:${kpiResColor}">${pcFmtTotal(k.totResProye)}</div>
-      <div class="pc-kpi-sub">vs. precio prom. posición</div>
-    </div>
-    <div class="pc-kpi">
-      <div class="pc-kpi-lbl">Cobertura Portfolio</div>
-      <div class="pc-kpi-val" id="pck-cobertura">${pcFmtPct(k.cobPct)}</div>
-      <div class="pc-kpi-sub">de <span id="pck-tntotales">${pcFmtTn(k.totTn)}</span> tn totales</div>
+      <div class="pc-kpi-val" id="pck-resproye" style="color:${kpiRC(k.totResProye)}">${pcFmtTotal(k.totResProye)}</div>
+      <div class="pc-kpi-sub" id="pck-resproye-sub">${pcFmtDiff(k.pxFinalVsPppPond)}/tn prom.</div>
     </div>
   </div>`;
 
