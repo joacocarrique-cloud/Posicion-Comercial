@@ -83,6 +83,66 @@ function foFmt(n) { return n.toLocaleString('es-AR', {minimumFractionDigits:2, m
 function foFmtInt(n) { return n.toLocaleString('es-AR'); }
 function foFmtUSD(n) { return (n < 0 ? '-' : '') + 'U$S ' + foFmt(Math.abs(n)); }
 
+// ═══════════════════════════════════════════════════
+//  CRUCE CON marketData (precios de ajuste A3) → P&L mark-to-market
+// ═══════════════════════════════════════════════════
+// marketData usa: crop minúscula (soja), pos tipo "JUL26", opciones.puts/calls[].prima
+// futuros_opciones usa: esp MAYÚSCULA (SOJA), contrato tipo "jul-26", tipo CALL/PUT
+// Estas funciones normalizan ambos formatos a una clave común para poder matchear.
+
+const FO_MES_NUM = {ene:1,feb:2,mar:3,abr:4,may:5,jun:6,jul:7,ago:8,sep:9,sept:9,oct:10,nov:11,dic:12};
+
+// "jul-26" / "JUL26" → "JUL26" (formato pos de marketData)
+function foNormPos(contrato) {
+  if (!contrato) return '';
+  const c = contrato.toString().toLowerCase().trim();
+  const m = c.match(/([a-z]{3,4})[-\s]?(\d{2,4})/);
+  if (!m) return contrato.toUpperCase().replace(/[-\s]/g, '');
+  const mesNum = FO_MES_NUM[m[1]];
+  if (!mesNum) return contrato.toUpperCase().replace(/[-\s]/g, '');
+  const mesAbbr = ['','ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'][mesNum];
+  const yr = m[2].slice(-2);
+  return mesAbbr + yr;
+}
+
+// "SOJA" → "soja"  (formato crop de marketData)
+function foNormCrop(esp) {
+  return (esp || '').toString().toLowerCase().trim();
+}
+
+// ¿Hay datos de mercado sincronizados? Usamos sheetData porque contiene TODAS
+// las especies (marketData sólo trae el crop activo del builder).
+function foHasMarket() {
+  return typeof sheetData !== 'undefined' && sheetData && sheetData.futuros
+    && Object.keys(sheetData.futuros).length > 0;
+}
+
+// Devuelve el ajuste del futuro para esa especie+contrato, o null si no está
+function foMatchFuturoAjuste(esp, contrato) {
+  if (!foHasMarket()) return null;
+  const crop = foNormCrop(esp);
+  const pos = foNormPos(contrato);
+  const list = sheetData.futuros[crop];
+  if (!list) return null;
+  const f = list.find(x => x.pos === pos);
+  return (f && f.precio > 0) ? f.precio : null;
+}
+
+// Devuelve la prima de ajuste (mark-to-market) de una opción, o null si no está
+function foMatchOpcionPrima(esp, contrato, strike, tipo) {
+  if (!foHasMarket() || !sheetData.opciones) return null;
+  const crop = foNormCrop(esp);
+  const pos = foNormPos(contrato);
+  const cropOpts = sheetData.opciones[crop];
+  if (!cropOpts || !cropOpts[pos]) return null;
+  const isCall = (tipo || '').toUpperCase().includes('CALL');
+  const list = isCall ? cropOpts[pos].calls : cropOpts[pos].puts;
+  if (!list) return null;
+  // Match por strike (tolerancia 0.5 por redondeos)
+  const o = list.find(x => Math.abs(x.strike - strike) < 0.5);
+  return (o && o.prima > 0) ? o.prima : null;
+}
+
 // ─── Data Processing ───
 function foProcessFuturos(camp, species) {
   const data = foRawFuturos.slice(2);
@@ -233,6 +293,49 @@ function foRender() {
   const primaCobrada   = optData.open.filter(r => r.oper === 'Venta').reduce((s, r) => s + r.totalPrimaUSD, 0);
   const primaNeta      = primaCobrada - primaPagada;
 
+  // ── P&L mark-to-market total (futuros + opciones abiertas) ──
+  let mtmFut = 0, mtmOpt = 0, mtmAvailable = false;
+  if (foHasMarket()) {
+    for (const r of futData.open) {
+      const isShort = r.neto < 0;
+      const openPrice = isShort ? r.avg_v : r.avg_c;
+      const ajuste = foMatchFuturoAjuste(r.esp, r.contrato);
+      if (ajuste !== null && openPrice > 0) {
+        const tons = Math.abs(r.neto);
+        mtmFut += isShort ? (openPrice - ajuste) * tons : (ajuste - openPrice) * tons;
+        mtmAvailable = true;
+      }
+    }
+    for (const r of optData.open) {
+      const primaHoy = foMatchOpcionPrima(r.esp, r.contrato, r.strike, r.tipo);
+      if (primaHoy !== null) {
+        mtmOpt += r.oper === 'Compra'
+          ? (primaHoy - r.avgPrima) * r.tons
+          : (r.avgPrima - primaHoy) * r.tons;
+        mtmAvailable = true;
+      }
+    }
+  }
+  const mtmTotal = mtmFut + mtmOpt;
+
+  const mtmCard = !foHasMarket()
+    ? `<div class="fo-kpi">
+        <div class="fo-kpi-lbl">P&L mark-to-market</div>
+        <div class="fo-kpi-val" style="font-size:14px;color:var(--text-3);">Sincronizá A3</div>
+        <div class="fo-kpi-sub">Pulsá "Sincronizar A3" para valuar</div>
+      </div>`
+    : mtmAvailable
+      ? `<div class="fo-kpi">
+          <div class="fo-kpi-lbl">P&L mark-to-market</div>
+          <div class="fo-kpi-val ${mtmTotal >= 0 ? 'fo-pnl-pos' : 'fo-pnl-neg'}">${foFmtUSD(mtmTotal)}</div>
+          <div class="fo-kpi-sub">Fut ${foFmtUSD(mtmFut)} · Opc ${foFmtUSD(mtmOpt)}</div>
+        </div>`
+      : `<div class="fo-kpi">
+          <div class="fo-kpi-lbl">P&L mark-to-market</div>
+          <div class="fo-kpi-val" style="font-size:14px;color:var(--text-3);">Sin match</div>
+          <div class="fo-kpi-sub">Los contratos no coinciden con A3</div>
+        </div>`;
+
   document.getElementById('fo-kpi-grid').innerHTML = `
     <div class="fo-kpi">
       <div class="fo-kpi-lbl">Futuros vendidos neto</div>
@@ -245,14 +348,15 @@ function foRender() {
       <div class="fo-kpi-sub">${optData.open.length} series</div>
     </div>
     <div class="fo-kpi">
-      <div class="fo-kpi-lbl">PnL futuros cerrados</div>
-      <div class="fo-kpi-val ${totalPnL >= 0 ? 'fo-pnl-pos' : 'fo-pnl-neg'}">${foFmtUSD(totalPnL)}</div>
-      <div class="fo-kpi-sub">Cancelaciones + neteo</div>
-    </div>
-    <div class="fo-kpi">
       <div class="fo-kpi-lbl">Prima neta opciones</div>
       <div class="fo-kpi-val ${primaNeta >= 0 ? 'fo-pnl-pos' : 'fo-pnl-neg'}">${foFmtUSD(primaNeta)}</div>
       <div class="fo-kpi-sub">▲ cobrada ${foFmtUSD(primaCobrada)} · ▼ pagada ${foFmtUSD(primaPagada)}</div>
+    </div>
+    ${mtmCard}
+    <div class="fo-kpi">
+      <div class="fo-kpi-lbl">PnL futuros cerrados</div>
+      <div class="fo-kpi-val ${totalPnL >= 0 ? 'fo-pnl-pos' : 'fo-pnl-neg'}">${foFmtUSD(totalPnL)}</div>
+      <div class="fo-kpi-sub">Cancelaciones + neteo (realizado)</div>
     </div>`;
 
   // Tables
@@ -266,21 +370,46 @@ function foRender() {
 function foRenderFutOpen(data) {
   const el = document.getElementById('fo-fut-open');
   if (!data.length) { el.innerHTML = '<div class="fo-empty">Sin posiciones abiertas en esta campaña</div>'; return; }
+  const showMtM = foHasMarket();
   let h = `<div class="fo-table-wrap"><table class="fo-table"><thead><tr>
     <th>Especie</th><th>Contrato</th><th>Dirección</th>
-    <th class="r">Tons netas</th><th class="r">Precio prom. ponderado</th><th class="r">Valor nocional</th><th class="r">Ops</th>
+    <th class="r">Tons netas</th><th class="r">Precio prom. ponderado</th><th class="r">Valor nocional</th>`
+    + (showMtM ? `<th class="r">Ajuste hoy</th><th class="r">P&L MtM</th>` : '')
+    + `<th class="r">Ops</th>
   </tr></thead><tbody>`;
+  let totalMtM = 0, anyMtM = false;
   for (const r of data) {
     const isShort = r.neto < 0;
     const dir = isShort ? '<span class="fo-badge fo-badge-v">VENDIDO</span>' : '<span class="fo-badge fo-badge-c">COMPRADO</span>';
     const openPrice = isShort ? r.avg_v : r.avg_c;
-    // Valor nocional en ARS (precio × tons): permite ver la exposición total
-    const nocional = openPrice * Math.abs(r.neto);
+    const tons = Math.abs(r.neto);
+    const nocional = openPrice * tons;
+
+    let mtmCells = '';
+    if (showMtM) {
+      const ajuste = foMatchFuturoAjuste(r.esp, r.contrato);
+      if (ajuste !== null && openPrice > 0) {
+        // Vendido: gano si el mercado baja (precio venta − ajuste).
+        // Comprado: gano si el mercado sube (ajuste − precio compra).
+        const pnl = isShort ? (openPrice - ajuste) * tons : (ajuste - openPrice) * tons;
+        totalMtM += pnl; anyMtM = true;
+        mtmCells = `<td class="r m">$ ${foFmt(ajuste)}</td>
+          <td class="r m ${foPnlClass(pnl)}">${foFmtUSD(pnl)}</td>`;
+      } else {
+        mtmCells = `<td class="r m">—</td><td class="r m">—</td>`;
+      }
+    }
+
     h += `<tr><td>${foEspecieTag(r.esp)}</td><td class="m">${r.contrato}</td><td>${dir}</td>
-      <td class="r m">${foFmtInt(Math.abs(r.neto))}</td>
+      <td class="r m">${foFmtInt(tons)}</td>
       <td class="r m">${openPrice > 0 ? '$ ' + foFmt(openPrice) : '—'}</td>
       <td class="r m">${nocional > 0 ? '$ ' + foFmt(nocional) : '—'}</td>
+      ${mtmCells}
       <td class="r m">${r.trades}</td></tr>`;
+  }
+  if (showMtM && anyMtM) {
+    h += `<tr class="fo-summary"><td colspan="6" style="text-align:right;">Total P&L mark-to-market</td>
+      <td></td><td class="r m ${foPnlClass(totalMtM)}">${foFmtUSD(totalMtM)}</td><td></td></tr>`;
   }
   h += '</tbody></table></div>';
   el.innerHTML = h;
@@ -342,18 +471,39 @@ function foRenderFutDetail(detail) {
 function foRenderOptOpen(data) {
   const el = document.getElementById('fo-opt-open');
   if (!data.length) { el.innerHTML = '<div class="fo-empty">Sin opciones abiertas en esta campaña</div>'; return; }
+  const showMtM = foHasMarket();
   let h = `<div class="fo-table-wrap"><table class="fo-table"><thead><tr>
     <th>Especie</th><th>Tipo</th><th>Operación</th><th>Contrato</th>
     <th class="r">Strike</th><th class="r">Toneladas</th>
-    <th class="r">Prima prom/tn</th><th class="r">Prima total</th><th class="r">Ops</th>
+    <th class="r">Prima prom/tn</th><th class="r">Prima total</th>`
+    + (showMtM ? `<th class="r">Prima hoy/tn</th><th class="r">P&L MtM</th>` : '')
+    + `<th class="r">Ops</th>
   </tr></thead><tbody>`;
-  let totalPrima = 0;
+  let totalPrima = 0, totalMtM = 0, anyMtM = false;
   for (const r of data) {
     const tb = r.tipo.toUpperCase().includes('CALL') ? 'fo-badge-call' : 'fo-badge-put';
     const ob = r.oper === 'Compra' ? 'fo-badge-c' : 'fo-badge-v';
-    // Convención de signo: prima cobrada (Venta) es positiva, prima pagada (Compra) es negativa
+    // Convención de signo de prima: cobrada (Venta) positiva, pagada (Compra) negativa
     const sign = r.oper === 'Compra' ? -1 : 1;
     totalPrima += r.totalPrimaUSD * sign;
+
+    let mtmCells = '';
+    if (showMtM) {
+      const primaHoy = foMatchOpcionPrima(r.esp, r.contrato, r.strike, r.tipo);
+      if (primaHoy !== null) {
+        // Comprador: gana si la prima sube (prima_hoy − prima_pagada).
+        // Vendedor: gana si la prima baja (prima_cobrada − prima_hoy).
+        const pnl = r.oper === 'Compra'
+          ? (primaHoy - r.avgPrima) * r.tons
+          : (r.avgPrima - primaHoy) * r.tons;
+        totalMtM += pnl; anyMtM = true;
+        mtmCells = `<td class="r m">$ ${foFmt(primaHoy)}</td>
+          <td class="r m ${foPnlClass(pnl)}">${foFmtUSD(pnl)}</td>`;
+      } else {
+        mtmCells = `<td class="r m">—</td><td class="r m">—</td>`;
+      }
+    }
+
     h += `<tr><td>${foEspecieTag(r.esp)}</td>
       <td><span class="fo-badge ${tb}">${r.tipo.toUpperCase()}</span></td>
       <td><span class="fo-badge ${ob}">${r.oper}</span></td>
@@ -362,10 +512,17 @@ function foRenderOptOpen(data) {
       <td class="r m">${foFmtInt(r.tons)}</td>
       <td class="r m">$ ${foFmt(r.avgPrima)}</td>
       <td class="r m ${foPnlClass(r.totalPrimaUSD * sign)}">${foFmtUSD(r.totalPrimaUSD * sign)}</td>
+      ${mtmCells}
       <td class="r m">${r.count}</td></tr>`;
   }
-  h += `<tr class="fo-summary"><td colspan="7" style="text-align:right;">Prima neta</td>
-    <td class="r m ${foPnlClass(totalPrima)}">${foFmtUSD(totalPrima)}</td><td></td></tr>`;
+  const colspanPrima = showMtM ? 7 : 7;
+  h += `<tr class="fo-summary"><td colspan="${colspanPrima}" style="text-align:right;">Prima neta</td>
+    <td class="r m ${foPnlClass(totalPrima)}">${foFmtUSD(totalPrima)}</td>`
+    + (showMtM ? (anyMtM
+        ? `<td></td><td class="r m ${foPnlClass(totalMtM)}">${foFmtUSD(totalMtM)}</td>`
+        : `<td></td><td></td>`)
+      : '')
+    + `<td></td></tr>`;
   h += '</tbody></table></div>';
   el.innerHTML = h;
 }
