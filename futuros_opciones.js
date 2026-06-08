@@ -11,6 +11,19 @@ const PC_CROPS = [
 
 const PC_STORAGE_KEY = 'espartina_pc_2627';
 
+const PC_SEEDS = {
+  'COLZA'      : { tnTotales:  3805 },
+  'CEBADA'     : { tnTotales: 18295 },
+  'GI OLEICO'  : { tnTotales: 11548 },
+  'GIRASOL'    : { tnTotales:  9569 },
+  'MAÍZ TEMP.' : { tnTotales: 23350 },
+  'MAÍZ TARDÍO': { tnTotales: 171515 },
+  'MAÍZ'       : { tnTotales: 195965 },
+  'SOJA ARR.'  : { tnTotales:      0 },
+  'SOJA'       : { tnTotales: 86184 },
+  'TRIGO'      : { tnTotales: 52152 },
+};
+
 function pcDefaultCrop() {
   return {
     tnTotales: 0, tnFijadas: 0, tnAFijar: 0,
@@ -25,7 +38,7 @@ function pcLoadData() {
     const saved = JSON.parse(localStorage.getItem(PC_STORAGE_KEY) || 'null');
     const d = {};
     PC_CROPS.forEach(c => {
-      d[c] = Object.assign(pcDefaultCrop(), saved && saved[c] ? saved[c] : {});
+      d[c] = Object.assign(pcDefaultCrop(), PC_SEEDS[c] || {}, saved && saved[c] ? saved[c] : {});
     });
     return d;
   } catch(e) {
@@ -41,25 +54,102 @@ function pcSaveData() {
   try { localStorage.setItem(PC_STORAGE_KEY, JSON.stringify(PC_DATA)); } catch(e) {}
 }
 
+function pcMaizVals() {
+  const dT = PC_DATA['MAÍZ TEMP.'], dL = PC_DATA['MAÍZ TARDÍO'];
+  const tnT = dT.tnTotales || 0, tnL = dL.tnTotales || 0, tot = tnT + tnL;
+  const fijT = dT.tnFijadas || 0, fijL = dL.tnFijadas || 0, totFij = fijT + fijL;
+  const wAvg  = f => tot    ? ((dT[f]||0)*tnT  + (dL[f]||0)*tnL)  / tot    : 0;
+  const wAvgF = f => totFij ? ((dT[f]||0)*fijT + (dL[f]||0)*fijL) / totFij : 0;
+  return {
+    tnTotales     : tot,
+    tnFijadas     : fijT + fijL,
+    tnAFijar      : (dT.tnAFijar ||0) + (dL.tnAFijar ||0),
+    tnFuturos     : (dT.tnFuturos||0) + (dL.tnFuturos||0),
+    tnPut         : (dT.tnPut    ||0) + (dL.tnPut    ||0),
+    tnCall        : (dT.tnCall   ||0) + (dL.tnCall   ||0),
+    precioDolor   : wAvg('precioDolor'),
+    precioObjetivo: wAvg('precioObjetivo'),
+    precioPromPos : wAvg('precioPromPos'),
+    precioPromVenta: wAvgF('precioPromVenta'),   // pondera por tn fijadas
+    precioMercado : wAvg('precioMercado'),
+  };
+}
+
 function pcCalc(c) {
-  const d = PC_DATA[c], tot = d.tnTotales || 0;
+  const d = c === 'MAÍZ' ? pcMaizVals() : PC_DATA[c];
+  const tot = d.tnTotales || 0;
   const pv = tot ? (d.tnFijadas + d.tnFuturos) / tot : 0;
   const pf = (pv > 0 && d.precioPromVenta > 0)
     ? pv * d.precioPromVenta + (1 - pv) * (d.precioMercado || 0)
     : (d.precioMercado || 0);
+  const tnVendidas = d.tnFijadas + d.tnFuturos;
   return {
-    tnComp    : tot ? d.tnFijadas / tot : 0,
-    totalV    : tot - d.tnFijadas - d.tnAFijar,
-    pctVenta  : pv,
-    cobBaja   : tot ? (d.tnFijadas + d.tnFuturos + d.tnPut) / tot : 0,
-    cobSuba   : (1 - pv) + (tot ? d.tnCall / tot : 0),
-    precioFinal: pf
+    tnComp             : tot ? d.tnFijadas / tot : 0,
+    totalV             : tot - d.tnFijadas - d.tnAFijar,
+    pctVenta           : pv,
+    cobBaja            : tot ? (d.tnFijadas + d.tnFuturos + d.tnPut) / tot : 0,
+    cobSuba            : (1 - pv) + (tot ? d.tnCall / tot : 0),
+    precioFinal        : pf,
+    // ── KPIs comerciales ──
+    ventasRealizadas   : d.tnFijadas > 0 && d.precioPromVenta > 0 ? d.tnFijadas * d.precioPromVenta : 0,
+    ventasProyectadas  : pf * tot,
+    resultadoComercial : (d.precioPromVenta - d.precioPromPos) * tnVendidas,
+    ppvVsPpp           : d.precioPromVenta - d.precioPromPos,
+    pxFinalVsPpp       : pf - d.precioPromPos,
+    resultadoProyectado: (pf - d.precioPromPos) * tot
   };
 }
 
 function pcFmtTn(v)  { return v ? Math.round(v).toLocaleString('es-AR') : '—'; }
 function pcFmtPct(v) { return Math.round(v * 100) + '%'; }
 function pcFmtPx(v)  { return v ? '$ ' + v.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'; }
+function pcFmtTotal(v) {
+  if (!v) return '—';
+  const abs = Math.abs(v), sign = v < 0 ? '-' : '';
+  if (abs >= 1000000) return sign + '$ ' + (abs / 1000000).toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'M';
+  if (abs >= 1000)    return sign + '$ ' + Math.round(abs / 1000).toLocaleString('es-AR') + 'k';
+  return sign + '$ ' + Math.round(abs).toLocaleString('es-AR');
+}
+function pcFmtDiff(v) {
+  if (!v && v !== 0) return '—';
+  if (Math.abs(v) < 0.05) return '—';
+  const sign = v > 0 ? '+' : '';
+  return sign + '$ ' + v.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+function pcParseInput(type, s) {
+  if (!s) return 0;
+  s = String(s).replace(/[\s$]/g, '');
+  if (type === 'tn') return parseInt(s.replace(/\D/g,'')) || 0;
+  // precios: europeo "1.234,5" → punto=miles, coma=decimal
+  if (s.includes(',') && s.includes('.')) return parseFloat(s.replace(/\./g,'').replace(',','.')) || 0;
+  if (s.includes(',')) return parseFloat(s.replace(',','.')) || 0;
+  if (/\.\d{3}$/.test(s)) return parseFloat(s.replace('.','')) || 0; // punto como miles
+  return parseFloat(s) || 0;
+}
+function pcFmtInput(type, v) {
+  if (!v) return '';
+  return type === 'tn'
+    ? Math.round(v).toLocaleString('es-AR')
+    : '$ ' + v.toLocaleString('es-AR', { minimumFractionDigits:1, maximumFractionDigits:1 });
+}
+function pcFocusInput(el) {
+  const v = PC_DATA[PC_CROPS[+el.dataset.idx]][el.dataset.field];
+  el.value = v || ''; el.select();
+}
+function pcBlurInput(el) {
+  const idx = +el.dataset.idx, field = el.dataset.field, type = el.dataset.type;
+  const v = pcParseInput(type, el.value);
+  PC_DATA[PC_CROPS[idx]][field] = v;
+  pcSaveData();
+  el.value = pcFmtInput(type, v);
+  pcRefreshCalcs();
+}
+function pcInputChange(el) {
+  const idx = +el.dataset.idx, field = el.dataset.field, type = el.dataset.type;
+  PC_DATA[PC_CROPS[idx]][field] = pcParseInput(type, el.value);
+  pcRefreshCalcs();
+}
 
 function pcUpdate(idx, field, value) {
   const crop = PC_CROPS[idx];
@@ -71,18 +161,40 @@ function pcUpdate(idx, field, value) {
 
 function pcRefreshCalcs() {
   const CALCS = [
-    { id: 'tncomp',   fn: c => pcFmtPct(pcCalc(c).tnComp) },
-    { id: 'totalv',   fn: c => pcFmtTn(pcCalc(c).totalV) },
-    { id: 'pctventa', fn: c => pcFmtPct(pcCalc(c).pctVenta) },
-    { id: 'cobbaja',  fn: c => pcFmtPct(pcCalc(c).cobBaja) },
-    { id: 'cobsuba',  fn: c => pcFmtPct(pcCalc(c).cobSuba) },
-    { id: 'pxfinal',  fn: c => pcFmtPx(pcCalc(c).precioFinal) },
+    { id: 'tncomp',      fmt: c => pcFmtPct(pcCalc(c).tnComp) },
+    { id: 'totalv',      fmt: c => pcFmtTn(pcCalc(c).totalV) },
+    { id: 'pctventa',    fmt: c => pcFmtPct(pcCalc(c).pctVenta) },
+    { id: 'cobbaja',     fmt: c => pcFmtPct(pcCalc(c).cobBaja) },
+    { id: 'cobsuba',     fmt: c => pcFmtPct(pcCalc(c).cobSuba) },
+    { id: 'pxfinal',     fmt: c => pcFmtPx(pcCalc(c).precioFinal) },
+    { id: 'vrealizadas', fmt: c => pcFmtTotal(pcCalc(c).ventasRealizadas) },
+    { id: 'vproyectadas',fmt: c => pcFmtTotal(pcCalc(c).ventasProyectadas) },
+    { id: 'rescomercial',fmt: c => pcFmtTotal(pcCalc(c).resultadoComercial), val: c => pcCalc(c).resultadoComercial },
+    { id: 'ppvppp',      fmt: c => pcFmtDiff(pcCalc(c).ppvVsPpp),            val: c => pcCalc(c).ppvVsPpp },
+    { id: 'pxfinalppp',  fmt: c => pcFmtDiff(pcCalc(c).pxFinalVsPpp),        val: c => pcCalc(c).pxFinalVsPpp },
+    { id: 'resproye',    fmt: c => pcFmtTotal(pcCalc(c).resultadoProyectado), val: c => pcCalc(c).resultadoProyectado },
   ];
-  CALCS.forEach(({ id, fn }) => {
+  CALCS.forEach(({ id, fmt, val }) => {
     PC_CROPS.forEach((c, i) => {
       const el = document.getElementById(`pcc_${id}_${i}`);
-      if (el) el.textContent = fn(c);
+      if (!el) return;
+      el.textContent = fmt(c);
+      if (val) {
+        const v = val(c);
+        el.style.color = v > 0 ? '#1A6B3C' : v < 0 ? '#c43030' : 'var(--text-3,#666)';
+      }
     });
+  });
+  // Actualizar celdas derivadas de MAÍZ (ponderadas desde TEMP + TARDÍO)
+  const mv = pcMaizVals();
+  ['tnTotales','tnFijadas','tnAFijar','tnFuturos','tnPut','tnCall',
+   'precioDolor','precioObjetivo','precioPromPos','precioPromVenta','precioMercado'].forEach(field => {
+    const el = document.getElementById('pcc_maiz_' + field);
+    if (!el) return;
+    const isTn = field.startsWith('tn');
+    el.textContent = isTn
+      ? (mv[field] ? Math.round(mv[field]).toLocaleString('es-AR') : '—')
+      : pcFmtPx(mv[field]);
   });
 }
 
@@ -91,26 +203,33 @@ function pcInjectHTML() {
 
   const PC_ROWS = [
     { kind: 'S', label: 'TONELADAS' },
-    { kind: 'E', label: 'TN Totales',           field: 'tnTotales',      bg: 'grn', bold: true },
-    { kind: 'E', label: 'TN Fijadas',            field: 'tnFijadas' },
-    { kind: 'E', label: 'TN A Fijar',            field: 'tnAFijar' },
+    { kind: 'E', label: 'TN Totales',           field: 'tnTotales',      type: 'tn', bg: 'grn', bold: true },
+    { kind: 'E', label: 'TN Fijadas',            field: 'tnFijadas',      type: 'tn' },
+    { kind: 'E', label: 'TN A Fijar',            field: 'tnAFijar',       type: 'tn' },
     { kind: 'C', label: 'TN Comprometidas',      calcId: 'tncomp',   fn: c => pcFmtPct(pcCalc(c).tnComp),     bg: 'gry' },
     { kind: 'C', label: 'Total a Vender',        calcId: 'totalv',   fn: c => pcFmtTn(pcCalc(c).totalV),      bg: 'org', bold: true },
     { kind: 'S', label: 'INSTRUMENTOS DE COBERTURA' },
-    { kind: 'E', label: 'TN Futuros',            field: 'tnFuturos' },
-    { kind: 'E', label: 'TN Put',                field: 'tnPut' },
-    { kind: 'E', label: 'TN Call',               field: 'tnCall' },
+    { kind: 'E', label: 'TN Futuros',            field: 'tnFuturos',      type: 'tn' },
+    { kind: 'E', label: 'TN Put',                field: 'tnPut',          type: 'tn' },
+    { kind: 'E', label: 'TN Call',               field: 'tnCall',         type: 'tn' },
     { kind: 'S', label: 'INDICADORES DE COBERTURA' },
     { kind: 'C', label: '% de Venta',            calcId: 'pctventa', fn: c => pcFmtPct(pcCalc(c).pctVenta),   bg: 'gry' },
     { kind: 'C', label: 'Cobertura a la Baja',   calcId: 'cobbaja',  fn: c => pcFmtPct(pcCalc(c).cobBaja),    bg: 'gry' },
     { kind: 'C', label: 'Cobertura a la Suba',   calcId: 'cobsuba',  fn: c => pcFmtPct(pcCalc(c).cobSuba),    bg: 'gry' },
     { kind: 'S', label: 'PRECIOS' },
-    { kind: 'E', label: 'Precio Dolor',          field: 'precioDolor' },
-    { kind: 'E', label: 'Precio Objetivo',       field: 'precioObjetivo' },
-    { kind: 'E', label: 'Precio Prom. Posición', field: 'precioPromPos' },
-    { kind: 'E', label: 'Precio Prom. de Venta', field: 'precioPromVenta' },
-    { kind: 'E', label: 'Precio Mercado',        field: 'precioMercado' },
+    { kind: 'E', label: 'Precio Dolor',          field: 'precioDolor',    type: 'px' },
+    { kind: 'E', label: 'Precio Objetivo',       field: 'precioObjetivo', type: 'px' },
+    { kind: 'E', label: 'Precio Prom. Posición', field: 'precioPromPos',  type: 'px' },
+    { kind: 'E', label: 'Precio Prom. de Venta', field: 'precioPromVenta',type: 'px' },
+    { kind: 'E', label: 'Precio Mercado',        field: 'precioMercado',  type: 'px' },
     { kind: 'C', label: 'Precio Final',          calcId: 'pxfinal',  fn: c => pcFmtPx(pcCalc(c).precioFinal), bg: 'yel', bold: true },
+    { kind: 'S', label: 'RESULTADOS COMERCIALES' },
+    { kind: 'C', label: 'Ventas Realizadas',         calcId: 'vrealizadas',  fn: c => pcFmtTotal(pcCalc(c).ventasRealizadas),    bg: 'gry' },
+    { kind: 'C', label: 'Ventas Proyectadas',         calcId: 'vproyectadas', fn: c => pcFmtTotal(pcCalc(c).ventasProyectadas),   bg: 'gry' },
+    { kind: 'C', label: 'Resultado Comercial',        calcId: 'rescomercial', fn: c => pcFmtTotal(pcCalc(c).resultadoComercial),  bg: 'gry' },
+    { kind: 'C', label: 'PPV vs PPP ($/tn)',          calcId: 'ppvppp',       fn: c => pcFmtDiff(pcCalc(c).ppvVsPpp),             bg: 'gry' },
+    { kind: 'C', label: 'Precio Final vs PPP ($/tn)', calcId: 'pxfinalppp',   fn: c => pcFmtDiff(pcCalc(c).pxFinalVsPpp),         bg: 'gry' },
+    { kind: 'C', label: 'Res. Comercial Proyectado',  calcId: 'resproye',     fn: c => pcFmtTotal(pcCalc(c).resultadoProyectado), bg: 'grn', bold: true },
   ];
 
   const BG = { grn: '#e8f5ee', org: '#fde8d8', gry: '#f4f4f4', yel: '#fff9cc' };
@@ -123,6 +242,7 @@ function pcInjectHTML() {
     .pc-tbl td.pc-lbl{position:sticky;left:0;z-index:1;padding:3px 10px;font-size:12px;white-space:nowrap;border-right:2px solid #ccc;border-bottom:1px solid #e8e8e8;background:#fff}
     .pc-tbl td.pc-dc{padding:0;border-right:1px solid #e4e4e4;border-bottom:1px solid #eee;min-width:95px}
     .pc-tbl td.pc-cc{padding:3px 9px;text-align:right;border-right:1px solid #e4e4e4;border-bottom:1px solid #eee;font-size:12px;min-width:95px}
+    .pc-tbl td.pc-cm{padding:3px 9px;text-align:right;border-right:1px solid #e4e4e4;border-bottom:1px solid #eee;font-size:12px;min-width:95px;color:#888;font-style:italic}
     .pc-tbl tr.pc-sec td{background:#2d4a3e!important;color:#C8A44A;padding:4px 12px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;position:static!important;white-space:nowrap}
     .pc-inp{width:100%;border:none;outline:none;background:transparent;text-align:right;font-size:12px;padding:4px 8px;box-sizing:border-box;font-family:inherit;color:var(--text-1,#111)}
     .pc-inp:focus{background:#fffde7;border:1px solid #C8A44A}
@@ -134,6 +254,8 @@ function pcInjectHTML() {
   h += `<th class="pc-th0">Especie</th>`;
   PC_CROPS.forEach(c => { h += `<th>${c}</th>`; });
   h += `</tr></thead><tbody>`;
+
+  const mv = pcMaizVals();
 
   PC_ROWS.forEach(row => {
     if (row.kind === 'S') {
@@ -149,15 +271,30 @@ function pcInjectHTML() {
 
     PC_CROPS.forEach((c, i) => {
       if (row.kind === 'C') {
+        // ── celda calculada normal ──
         const txtColor = row.bg === 'yel' ? '#6b5a00' : 'var(--text-3,#666)';
         h += `<td class="pc-cc" id="pcc_${row.calcId}_${i}"
               style="${bgStyle}${bldStyle}color:${txtColor}">${row.fn(c)}</td>`;
+      } else if (c === 'MAÍZ') {
+        // ── MAÍZ: valor derivado de TEMP + TARDÍO, no editable ──
+        const rawVal  = mv[row.field] || 0;
+        const isTn    = row.type === 'tn';
+        const fmtVal  = isTn
+          ? (rawVal ? Math.round(rawVal).toLocaleString('es-AR') : '—')
+          : pcFmtPx(rawVal);
+        h += `<td class="pc-cm" id="pcc_maiz_${row.field}"
+              style="${bgStyle}${bldStyle}">${fmtVal}</td>`;
       } else {
-        const val = PC_DATA[c][row.field] || '';
+        // ── celda editable con formato ──
+        const rawVal = PC_DATA[c][row.field] || 0;
+        const fmtVal = pcFmtInput(row.type, rawVal);
         h += `<td class="pc-dc" style="${bgStyle}">
-          <input class="pc-inp" type="number" placeholder="—" value="${val}"
+          <input class="pc-inp" type="text" placeholder="—" value="${fmtVal}"
             style="${bldStyle}"
-            oninput="pcUpdate(${i},'${row.field}',this.value)">
+            data-idx="${i}" data-field="${row.field}" data-type="${row.type}"
+            onfocus="pcFocusInput(this)"
+            onblur="pcBlurInput(this)"
+            oninput="pcInputChange(this)">
         </td>`;
       }
     });
@@ -173,6 +310,7 @@ function pcInjectHTML() {
 
   const space = document.getElementById('futopc-space');
   if (space) space.insertBefore(block, space.firstChild);
+  pcRefreshCalcs(); // aplica colores de signo en el primer render
 }
 
 // ═══════════════════════════════════════════════════
