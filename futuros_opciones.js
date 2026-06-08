@@ -153,28 +153,49 @@ function foProcessOpciones(camp, species) {
     const strike = foParsePrice(r[12]);
     const primaC = foParsePrice(r[13]);
     const primaV = foParsePrice(r[14]);
+    const prima = primaC || primaV;
     const precioFinal = (r[15] || '').trim();
     const isClosed = !!precioFinal;
 
-    const key = `${esp}|${tipo}|${oper}|${contrato}`;
-    if (!positions[key]) positions[key] = { esp, tipo, oper, contrato, tons:0, strikes:[], primas:[], count:0, closed:0 };
+    // ── Cada serie es única por strike ──────────────────────────────────────
+    // No se agrupan distintos strikes: un CALL jul-25 @210k y un CALL jul-25
+    // @220k son instrumentos distintos con perfiles de pago diferentes.
+    // Lo que sí se promedia dentro de la misma serie (mismo strike) es la prima
+    // promedio ponderada, que refleja el costo promedio de entrada a ese instrumento.
+    const key = `${esp}|${tipo}|${oper}|${contrato}|${strike}`;
+    if (!positions[key]) positions[key] = {
+      esp, tipo, oper, contrato, strike,
+      tons: 0, prima_val: 0, // prima_val = suma(prima_i * tons_i) para el promedio ponderado
+      count: 0, closed: 0
+    };
     const p = positions[key];
-    p.tons += tons;
-    p.strikes.push({ strike, tons });
-    p.primas.push({ prima: primaC || primaV, tons });
+    p.tons      += tons;
+    p.prima_val += prima * tons;  // acumulación ponderada
     p.count++;
     if (isClosed) p.closed++;
   }
 
   const open = [], closed = [];
-  for (const key of Object.keys(positions).sort()) {
+  // Ordenar por esp → tipo → contrato → strike
+  const sortedKeys = Object.keys(positions).sort((a, b) => {
+    const [ea, ta, oa, ca, sa] = a.split('|');
+    const [eb, tb, ob, cb, sb] = b.split('|');
+    return ea.localeCompare(eb)
+      || ta.localeCompare(tb)
+      || foContractSort(ca) - foContractSort(cb)
+      || parseFloat(sa) - parseFloat(sb);
+  });
+
+  for (const key of sortedKeys) {
     const p = positions[key];
-    const tT = p.strikes.reduce((s, x) => s + x.tons, 0);
-    const avgStrike = tT > 0 ? p.strikes.reduce((s, x) => s + x.strike * x.tons, 0) / tT : 0;
-    const avgPrima = tT > 0 ? p.primas.reduce((s, x) => s + x.prima * x.tons, 0) / tT : 0;
-    const row = { ...p, avgStrike, avgPrima, totalPrimaUSD: avgPrima * tT };
+    // Prima promedio ponderada: costo promedio de entrada a esta serie
+    const avgPrima     = p.tons > 0 ? p.prima_val / p.tons : 0;
+    // Prima total: suma directa, equivalente a avgPrima * tons (pero calculada
+    // desde la acumulación directa para evitar errores de redondeo)
+    const totalPrimaUSD = p.prima_val;  // = Σ(prima_i × tons_i)
+    const row = { ...p, avgPrima, totalPrimaUSD };
     if (p.closed < p.count) open.push(row);
-    if (p.closed > 0) closed.push(row);
+    if (p.closed > 0)       closed.push(row);
   }
   return { open, closed };
 }
@@ -199,25 +220,40 @@ function foRender() {
 
   // KPIs
   const totalOpenV = futData.open.reduce((s, r) => s + (r.neto < 0 ? Math.abs(r.neto) : 0), 0);
-  const totalPnL = futData.closed.reduce((s, r) => s + r.total_pnl, 0);
-  const totalOptTons = optData.open.reduce((s, r) => s + r.tons, 0);
-  const primaPagada = optData.open.filter(r => r.oper === 'Compra').reduce((s, r) => s + r.totalPrimaUSD, 0);
-  const primaCobrada = optData.open.filter(r => r.oper === 'Venta').reduce((s, r) => s + r.totalPrimaUSD, 0);
-  const primaNeta = primaCobrada - primaPagada;
+  const totalPnL   = futData.closed.reduce((s, r) => s + r.total_pnl, 0);
+
+  // Precio promedio ponderado de futuros vendidos abiertos
+  const futVendidos = futData.open.filter(r => r.neto < 0);
+  const futPxNum = futVendidos.reduce((s, r) => s + r.avg_v * Math.abs(r.neto), 0);
+  const futPxDen = futVendidos.reduce((s, r) => s + Math.abs(r.neto), 0);
+  const avgPxFut = futPxDen > 0 ? futPxNum / futPxDen : 0;
+
+  const totalOptTons   = optData.open.reduce((s, r) => s + r.tons, 0);
+  const primaPagada    = optData.open.filter(r => r.oper === 'Compra').reduce((s, r) => s + r.totalPrimaUSD, 0);
+  const primaCobrada   = optData.open.filter(r => r.oper === 'Venta').reduce((s, r) => s + r.totalPrimaUSD, 0);
+  const primaNeta      = primaCobrada - primaPagada;
 
   document.getElementById('fo-kpi-grid').innerHTML = `
-    <div class="fo-kpi"><div class="fo-kpi-lbl">Futuros vendidos neto</div>
+    <div class="fo-kpi">
+      <div class="fo-kpi-lbl">Futuros vendidos neto</div>
       <div class="fo-kpi-val">${foFmtInt(totalOpenV)} tn</div>
-      <div class="fo-kpi-sub">Posiciones abiertas</div></div>
-    <div class="fo-kpi"><div class="fo-kpi-lbl">Opciones abiertas</div>
+      <div class="fo-kpi-sub">${avgPxFut > 0 ? 'Px prom. $ ' + foFmt(avgPxFut) : 'Sin posición'}</div>
+    </div>
+    <div class="fo-kpi">
+      <div class="fo-kpi-lbl">Opciones abiertas</div>
       <div class="fo-kpi-val">${foFmtInt(totalOptTons)} tn</div>
-      <div class="fo-kpi-sub">${optData.open.length} posiciones</div></div>
-    <div class="fo-kpi"><div class="fo-kpi-lbl">PnL futuros cerrados</div>
+      <div class="fo-kpi-sub">${optData.open.length} series</div>
+    </div>
+    <div class="fo-kpi">
+      <div class="fo-kpi-lbl">PnL futuros cerrados</div>
       <div class="fo-kpi-val ${totalPnL >= 0 ? 'fo-pnl-pos' : 'fo-pnl-neg'}">${foFmtUSD(totalPnL)}</div>
-      <div class="fo-kpi-sub">Cancelaciones + neteo</div></div>
-    <div class="fo-kpi"><div class="fo-kpi-lbl">Prima neta opciones</div>
+      <div class="fo-kpi-sub">Cancelaciones + neteo</div>
+    </div>
+    <div class="fo-kpi">
+      <div class="fo-kpi-lbl">Prima neta opciones</div>
       <div class="fo-kpi-val ${primaNeta >= 0 ? 'fo-pnl-pos' : 'fo-pnl-neg'}">${foFmtUSD(primaNeta)}</div>
-      <div class="fo-kpi-sub">Cobrada − Pagada</div></div>`;
+      <div class="fo-kpi-sub">▲ cobrada ${foFmtUSD(primaCobrada)} · ▼ pagada ${foFmtUSD(primaPagada)}</div>
+    </div>`;
 
   // Tables
   foRenderFutOpen(futData.open);
@@ -232,16 +268,18 @@ function foRenderFutOpen(data) {
   if (!data.length) { el.innerHTML = '<div class="fo-empty">Sin posiciones abiertas en esta campaña</div>'; return; }
   let h = `<div class="fo-table-wrap"><table class="fo-table"><thead><tr>
     <th>Especie</th><th>Contrato</th><th>Dirección</th>
-    <th class="r">Tons netas</th><th class="r">Precio promedio</th><th class="r">Ops</th>
+    <th class="r">Tons netas</th><th class="r">Precio prom. ponderado</th><th class="r">Valor nocional</th><th class="r">Ops</th>
   </tr></thead><tbody>`;
   for (const r of data) {
     const isShort = r.neto < 0;
     const dir = isShort ? '<span class="fo-badge fo-badge-v">VENDIDO</span>' : '<span class="fo-badge fo-badge-c">COMPRADO</span>';
-    // Show price of the open side only: sells if net short, buys if net long
     const openPrice = isShort ? r.avg_v : r.avg_c;
+    // Valor nocional en ARS (precio × tons): permite ver la exposición total
+    const nocional = openPrice * Math.abs(r.neto);
     h += `<tr><td>${foEspecieTag(r.esp)}</td><td class="m">${r.contrato}</td><td>${dir}</td>
       <td class="r m">${foFmtInt(Math.abs(r.neto))}</td>
       <td class="r m">${openPrice > 0 ? '$ ' + foFmt(openPrice) : '—'}</td>
+      <td class="r m">${nocional > 0 ? '$ ' + foFmt(nocional) : '—'}</td>
       <td class="r m">${r.trades}</td></tr>`;
   }
   h += '</tbody></table></div>';
@@ -306,21 +344,22 @@ function foRenderOptOpen(data) {
   if (!data.length) { el.innerHTML = '<div class="fo-empty">Sin opciones abiertas en esta campaña</div>'; return; }
   let h = `<div class="fo-table-wrap"><table class="fo-table"><thead><tr>
     <th>Especie</th><th>Tipo</th><th>Operación</th><th>Contrato</th>
-    <th class="r">Toneladas</th><th class="r">Strike prom</th><th class="r">Prima prom</th>
-    <th class="r">Prima total</th><th class="r">Ops</th>
+    <th class="r">Strike</th><th class="r">Toneladas</th>
+    <th class="r">Prima prom/tn</th><th class="r">Prima total</th><th class="r">Ops</th>
   </tr></thead><tbody>`;
   let totalPrima = 0;
   for (const r of data) {
     const tb = r.tipo.toUpperCase().includes('CALL') ? 'fo-badge-call' : 'fo-badge-put';
     const ob = r.oper === 'Compra' ? 'fo-badge-c' : 'fo-badge-v';
+    // Convención de signo: prima cobrada (Venta) es positiva, prima pagada (Compra) es negativa
     const sign = r.oper === 'Compra' ? -1 : 1;
     totalPrima += r.totalPrimaUSD * sign;
     h += `<tr><td>${foEspecieTag(r.esp)}</td>
       <td><span class="fo-badge ${tb}">${r.tipo.toUpperCase()}</span></td>
       <td><span class="fo-badge ${ob}">${r.oper}</span></td>
       <td class="m">${r.contrato}</td>
+      <td class="r m">$ ${foFmt(r.strike)}</td>
       <td class="r m">${foFmtInt(r.tons)}</td>
-      <td class="r m">$ ${foFmt(r.avgStrike)}</td>
       <td class="r m">$ ${foFmt(r.avgPrima)}</td>
       <td class="r m ${foPnlClass(r.totalPrimaUSD * sign)}">${foFmtUSD(r.totalPrimaUSD * sign)}</td>
       <td class="r m">${r.count}</td></tr>`;
