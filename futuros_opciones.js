@@ -9,19 +9,64 @@ const PC_CROPS = [
   'SOJA ARR.', 'SOJA', 'TRIGO'
 ];
 
-const PC_STORAGE_KEY = 'espartina_pc_2627';
+const PC_STORAGE_KEY = 'espartina_pc_2627_v2';
 
 const PC_SEEDS = {
-  'COLZA'      : { tnTotales:  3805 },
-  'CEBADA'     : { tnTotales: 18295 },
-  'GI OLEICO'  : { tnTotales: 11548 },
-  'GIRASOL'    : { tnTotales:  9569 },
-  'MAÍZ TEMP.' : { tnTotales: 23350 },
-  'MAÍZ TARDÍO': { tnTotales: 171515 },
-  'MAÍZ'       : { tnTotales: 195965 },
-  'SOJA ARR.'  : { tnTotales:      0 },
-  'SOJA'       : { tnTotales: 86184 },
-  'TRIGO'      : { tnTotales: 52152 },
+  'COLZA': {
+    tnTotales: 3805,  tnFijadas: 750,   tnAFijar: 750,
+    tnFuturos: 0,     tnPut: 0,         tnCall: 0,
+    precioDolor: 335.0,   precioObjetivo: 400.0,
+    precioPromPos: 0,     precioPromVenta: 553.0,  precioMercado: 555.0,
+  },
+  'CEBADA': {
+    tnTotales: 18295, tnFijadas: 3500,  tnAFijar: 0,
+    tnFuturos: 0,     tnPut: 0,         tnCall: 0,
+    precioDolor: 185.1,   precioObjetivo: 215.2,
+    precioPromPos: 187.1, precioPromVenta: 212.0,  precioMercado: 200.0,
+  },
+  'GI OLEICO': {
+    tnTotales: 11548, tnFijadas: 0,     tnAFijar: 0,
+    tnFuturos: 0,     tnPut: 0,         tnCall: 0,
+    precioDolor: 376.4,   precioObjetivo: 445.3,
+    precioPromPos: 450.0, precioPromVenta: 0,      precioMercado: 439.5,
+  },
+  'GIRASOL': {
+    tnTotales: 9569,  tnFijadas: 0,     tnAFijar: 0,
+    tnFuturos: 0,     tnPut: 0,         tnCall: 0,
+    precioDolor: 386.9,   precioObjetivo: 456.7,
+    precioPromPos: 420.0, precioPromVenta: 0,      precioMercado: 409.5,
+  },
+  'MAÍZ TEMP.': {
+    tnTotales: 23350, tnFijadas: 0,     tnAFijar: 0,
+    tnFuturos: 0,     tnPut: 0,         tnCall: 0,
+    precioDolor: 161.2,   precioObjetivo: 188.8,
+    precioPromPos: 190.8, precioPromVenta: 0,      precioMercado: 190.0,
+  },
+  'MAÍZ TARDÍO': {
+    tnTotales: 171515, tnFijadas: 0,    tnAFijar: 0,
+    tnFuturos: 0,      tnPut: 0,        tnCall: 0,
+    precioDolor: 181.0,   precioObjetivo: 208.9,
+    precioPromPos: 188.9, precioPromVenta: 0,      precioMercado: 187.0,
+  },
+  'MAÍZ': {}, // calculado automáticamente desde MAÍZ TEMP. + MAÍZ TARDÍO
+  'SOJA ARR.': {
+    tnTotales: 86184, tnFijadas: 7591,  tnAFijar: 0,
+    tnFuturos: 0,     tnPut: 0,         tnCall: 0,
+    precioDolor: 308.0,   precioObjetivo: 362.0,
+    precioPromPos: 332.5, precioPromVenta: 329.8,  precioMercado: 327.0,
+  },
+  'SOJA': {
+    tnTotales: 86558, tnFijadas: 0,     tnAFijar: 0,
+    tnFuturos: 5600,  tnPut: 0,         tnCall: 0,
+    precioDolor: 308.0,   precioObjetivo: 362.0,
+    precioPromPos: 332.5, precioPromVenta: 341.0,  precioMercado: 327.0,
+  },
+  'TRIGO': {
+    tnTotales: 52152, tnFijadas: 8500,  tnAFijar: 0,
+    tnFuturos: 10000, tnPut: 10000,     tnCall: 10000,
+    precioDolor: 204.0,   precioObjetivo: 240.0,
+    precioPromPos: 207.8, precioPromVenta: 231.4,  precioMercado: 215.0,
+  },
 };
 
 function pcDefaultCrop() {
@@ -91,7 +136,7 @@ function pcCalc(c) {
     cobSuba            : (1 - pv) + (tot ? d.tnCall / tot : 0),
     precioFinal        : pf,
     // ── KPIs comerciales ──
-    ventasRealizadas   : d.tnFijadas > 0 && d.precioPromVenta > 0 ? d.tnFijadas * d.precioPromVenta : 0,
+    ventasRealizadas   : tnVendidas > 0 && d.precioPromVenta > 0 ? tnVendidas * d.precioPromVenta : 0,
     ventasProyectadas  : pf * tot,
     resultadoComercial : (d.precioPromVenta - d.precioPromPos) * tnVendidas,
     ppvVsPpp           : d.precioPromVenta - d.precioPromPos,
@@ -196,6 +241,47 @@ function pcRefreshCalcs() {
       ? (mv[field] ? Math.round(mv[field]).toLocaleString('es-AR') : '—')
       : pcFmtPx(mv[field]);
   });
+  // Actualizar KPIs consolidados
+  pcUpdateKpis();
+}
+
+function pcKpiTotals() {
+  let totTn = 0, totVendidasTn = 0, totVrealizadas = 0, totVproyectadas = 0, totResProye = 0;
+  PC_CROPS.forEach(c => {
+    const k = pcCalc(c);
+    const d = c === 'MAÍZ' ? pcMaizVals() : PC_DATA[c];
+    totTn          += d.tnTotales || 0;
+    totVendidasTn  += (d.tnFijadas || 0) + (d.tnFuturos || 0);
+    totVrealizadas += k.ventasRealizadas;
+    totVproyectadas+= k.ventasProyectadas;
+    totResProye    += k.resultadoProyectado;
+  });
+  const cobPct = totTn ? totVendidasTn / totTn : 0;
+  return { totTn, totVendidasTn, cobPct, totVrealizadas, totVproyectadas, totResProye };
+}
+
+function pcUpdateKpis() {
+  const k = pcKpiTotals();
+  const set = (id, txt, color) => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = txt; if (color) el.style.color = color; }
+  };
+  set('pck-vrealizadas', pcFmtTotal(k.totVrealizadas));
+  set('pck-vproyectadas', pcFmtTotal(k.totVproyectadas));
+  set('pck-resproye', pcFmtTotal(k.totResProye),
+    k.totResProye > 0 ? '#1A6B3C' : k.totResProye < 0 ? '#c43030' : '');
+  set('pck-cobertura', pcFmtPct(k.cobPct));
+  set('pck-tntotales', pcFmtTn(k.totTn));
+  set('pck-tnvendidas', pcFmtTn(k.totVendidasTn));
+}
+
+function pcToggleResultados() {
+  const rows = document.querySelectorAll('.pc-res-row');
+  const btn  = document.getElementById('pc-res-toggle');
+  const open = rows.length > 0 && rows[0].style.display !== 'none';
+  rows.forEach(r => { r.style.display = open ? 'none' : ''; });
+  if (btn) btn.textContent = open ? '▶' : '▼';
+  try { localStorage.setItem('espartina_pc_res_open_v2', open ? '0' : '1'); } catch(e) {}
 }
 
 function pcInjectHTML() {
@@ -233,8 +319,16 @@ function pcInjectHTML() {
   ];
 
   const BG = { grn: '#e8f5ee', org: '#fde8d8', gry: '#f4f4f4', yel: '#fff9cc' };
+  const resOpen = (() => { try { return localStorage.getItem('espartina_pc_res_open_v2') !== '0'; } catch(e) { return true; } })();
+  const k = pcKpiTotals();
 
   let h = `<style>
+    .pc-kpi-grid{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:20px}
+    .pc-kpi{background:var(--bg-2,#f8f8f8);border:1px solid var(--border-1,#e0e0e0);border-radius:8px;padding:12px 16px;min-width:160px;flex:1}
+    .pc-kpi-lbl{font-size:11px;color:var(--text-3,#888);font-weight:500;margin-bottom:4px}
+    .pc-kpi-val{font-size:20px;font-weight:700;color:var(--text-1,#111);line-height:1.2}
+    .pc-kpi-sub{font-size:11px;color:var(--text-3,#888);margin-top:3px}
+    .pc-kpi.accent{border-left:3px solid #1A6B3C}
     .pc-wrap{overflow-x:auto;border-radius:8px;border:1px solid var(--border-1,#d0d0d0);margin-bottom:28px}
     .pc-tbl{border-collapse:collapse;min-width:1120px;width:100%}
     .pc-tbl th{background:#1A6B3C;color:#fff;padding:7px 10px;font-size:11px;font-weight:600;white-space:nowrap;border-right:1px solid rgba(255,255,255,.18);text-align:center}
@@ -244,48 +338,89 @@ function pcInjectHTML() {
     .pc-tbl td.pc-cc{padding:3px 9px;text-align:right;border-right:1px solid #e4e4e4;border-bottom:1px solid #eee;font-size:12px;min-width:95px}
     .pc-tbl td.pc-cm{padding:3px 9px;text-align:right;border-right:1px solid #e4e4e4;border-bottom:1px solid #eee;font-size:12px;min-width:95px;color:#888;font-style:italic}
     .pc-tbl tr.pc-sec td{background:#2d4a3e!important;color:#C8A44A;padding:4px 12px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;position:static!important;white-space:nowrap}
+    .pc-tbl tr.pc-sec-toggle td{background:#2d4a3e!important;color:#C8A44A;padding:4px 12px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;position:static!important;white-space:nowrap;cursor:pointer;user-select:none}
+    .pc-tbl tr.pc-sec-toggle:hover td{background:#3a5c4e!important}
+    .pc-toggle-btn{margin-right:6px;font-size:9px;opacity:.8}
     .pc-inp{width:100%;border:none;outline:none;background:transparent;text-align:right;font-size:12px;padding:4px 8px;box-sizing:border-box;font-family:inherit;color:var(--text-1,#111)}
     .pc-inp:focus{background:#fffde7;border:1px solid #C8A44A}
     .pc-inp::placeholder{color:#bbb}
   </style>`;
 
-  h += `<div style="font-size:14px;font-weight:700;color:#1A6B3C;margin:0 0 12px 0">Posición Comercial 26-27</div>`;
+  // ── KPIs consolidados ──
+  const kpiResColor = k.totResProye > 0 ? '#1A6B3C' : k.totResProye < 0 ? '#c43030' : 'var(--text-1,#111)';
+  h += `
+  <div style="font-size:14px;font-weight:700;color:#1A6B3C;margin:0 0 14px 0">Posición Comercial 26-27</div>
+  <div class="pc-kpi-grid">
+    <div class="pc-kpi accent">
+      <div class="pc-kpi-lbl">Ventas Proyectadas</div>
+      <div class="pc-kpi-val" id="pck-vproyectadas">${pcFmtTotal(k.totVproyectadas)}</div>
+      <div class="pc-kpi-sub">Portfolio total</div>
+    </div>
+    <div class="pc-kpi">
+      <div class="pc-kpi-lbl">Ventas Realizadas</div>
+      <div class="pc-kpi-val" id="pck-vrealizadas">${pcFmtTotal(k.totVrealizadas)}</div>
+      <div class="pc-kpi-sub"><span id="pck-tnvendidas">${pcFmtTn(k.totVendidasTn)}</span> tn vendidas</div>
+    </div>
+    <div class="pc-kpi accent">
+      <div class="pc-kpi-lbl">Res. Comercial Proyectado</div>
+      <div class="pc-kpi-val" id="pck-resproye" style="color:${kpiResColor}">${pcFmtTotal(k.totResProye)}</div>
+      <div class="pc-kpi-sub">vs. precio prom. posición</div>
+    </div>
+    <div class="pc-kpi">
+      <div class="pc-kpi-lbl">Cobertura Portfolio</div>
+      <div class="pc-kpi-val" id="pck-cobertura">${pcFmtPct(k.cobPct)}</div>
+      <div class="pc-kpi-sub">de <span id="pck-tntotales">${pcFmtTn(k.totTn)}</span> tn totales</div>
+    </div>
+  </div>`;
+
+  // ── Tabla ──
   h += `<div class="pc-wrap"><table class="pc-tbl"><thead><tr>`;
   h += `<th class="pc-th0">Especie</th>`;
   PC_CROPS.forEach(c => { h += `<th>${c}</th>`; });
   h += `</tr></thead><tbody>`;
 
   const mv = pcMaizVals();
+  let inResSection = false;
 
   PC_ROWS.forEach(row => {
     if (row.kind === 'S') {
-      h += `<tr class="pc-sec"><td colspan="${PC_CROPS.length + 1}">${row.label}</td></tr>`;
+      const isRes = row.label === 'RESULTADOS COMERCIALES';
+      inResSection = isRes;
+      if (isRes) {
+        h += `<tr class="pc-sec-toggle" onclick="pcToggleResultados()">
+          <td colspan="${PC_CROPS.length + 1}">
+            <span class="pc-toggle-btn" id="pc-res-toggle">${resOpen ? '▼' : '▶'}</span>
+            ${row.label}
+          </td>
+        </tr>`;
+      } else {
+        inResSection = false;
+        h += `<tr class="pc-sec"><td colspan="${PC_CROPS.length + 1}">${row.label}</td></tr>`;
+      }
       return;
     }
+
     const bgColor  = row.bg ? BG[row.bg] : '';
     const bgStyle  = bgColor ? `background:${bgColor};` : '';
     const bldStyle = row.bold ? 'font-weight:700;' : '';
+    const resClass = inResSection ? ' pc-res-row' : '';
+    const resStyle = inResSection && !resOpen ? 'display:none;' : '';
 
-    h += `<tr>`;
+    h += `<tr class="${resClass}" style="${resStyle}">`;
     h += `<td class="pc-lbl" style="${bgStyle}${bldStyle}">${row.label}</td>`;
 
     PC_CROPS.forEach((c, i) => {
       if (row.kind === 'C') {
-        // ── celda calculada normal ──
         const txtColor = row.bg === 'yel' ? '#6b5a00' : 'var(--text-3,#666)';
         h += `<td class="pc-cc" id="pcc_${row.calcId}_${i}"
               style="${bgStyle}${bldStyle}color:${txtColor}">${row.fn(c)}</td>`;
       } else if (c === 'MAÍZ') {
-        // ── MAÍZ: valor derivado de TEMP + TARDÍO, no editable ──
-        const rawVal  = mv[row.field] || 0;
-        const isTn    = row.type === 'tn';
-        const fmtVal  = isTn
+        const rawVal = mv[row.field] || 0;
+        const fmtVal = row.type === 'tn'
           ? (rawVal ? Math.round(rawVal).toLocaleString('es-AR') : '—')
           : pcFmtPx(rawVal);
-        h += `<td class="pc-cm" id="pcc_maiz_${row.field}"
-              style="${bgStyle}${bldStyle}">${fmtVal}</td>`;
+        h += `<td class="pc-cm" id="pcc_maiz_${row.field}" style="${bgStyle}${bldStyle}">${fmtVal}</td>`;
       } else {
-        // ── celda editable con formato ──
         const rawVal = PC_DATA[c][row.field] || 0;
         const fmtVal = pcFmtInput(row.type, rawVal);
         h += `<td class="pc-dc" style="${bgStyle}">
