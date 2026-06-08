@@ -19,6 +19,17 @@ function asstDays(a,b){return Math.round((b-a)/864e5);}
 
 function toggleAsistente(){ /* No longer separate module */ }
 
+// Colapsable del panel del asistente (dentro de Coberturas)
+function asstToggle(){
+  const c=document.getElementById('asst-content');
+  if(!c)return;
+  const a=document.getElementById('asst-toggle-arrow');
+  const willOpen=(c.style.display==='none'||!c.style.display);
+  c.style.display=willOpen?'block':'none';
+  if(a)a.textContent=willOpen?'▾':'▸';
+  if(willOpen){ try{asstUpdatePos();}catch(e){} try{asstRenderChain();}catch(e){} }
+}
+
 // Sync Asistente from the main builder's current state
 function asstSyncFromBuilder() {
   if (!sheetData) return;
@@ -101,8 +112,8 @@ async function asstInit(){
 
 async function asstLoadDrive(){
   const bar=document.getElementById('asst-sync-bar');
-  bar.style.display='block';bar.style.background='var(--bg-input)';bar.style.borderColor='var(--border-2)';
-  bar.innerHTML='⏳ Sincronizando datos históricos desde Google Drive...';
+  if(bar){bar.style.display='block';bar.style.background='var(--bg-input)';bar.style.borderColor='var(--border-2)';
+  bar.innerHTML='⏳ Sincronizando datos históricos desde Google Drive...';}
   const loaders=[
     {key:'vi_percentiles',fn:r=>{ASST_VI_PERC=r.map(x=>({cultivo:x.cultivo,mes:x.mes_cal,p10:x.vi_p10,p25:x.vi_p25,p50:x.vi_p50,p75:x.vi_p75,p90:x.vi_p90,mean:x.vi_mean}));}},
     {key:'skew_historico',fn:r=>{ASST_SKEW=r.map(x=>({cultivo:x.cultivo,bucket:x.bucket,mMin:x.moneyness_min,mMax:x.moneyness_max,viMean:x.vi_mean,viMedian:x.vi_median,viP25:x.vi_p25,viP75:x.vi_p75}));}},
@@ -112,12 +123,14 @@ async function asstLoadDrive(){
   ];
   let ok=0,errs=[];
   for(const l of loaders){try{const r=await fetch(ASST_DRIVE[l.key]);const t=await r.text();const parsed=Papa.parse(t.trim(),{header:true,dynamicTyping:true,skipEmptyLines:true});l.fn(parsed.data);ok++;}catch(e){errs.push(l.key);}}
+  if(bar){
   if(errs.length===0){
     bar.style.background='var(--es-green-light)';bar.style.borderColor='var(--es-green)';
     bar.innerHTML=`✅ Datos sincronizados — ${ASST_VI_PERC.length} percentiles, ${ASST_SKEW.length} skew, ${ASST_SERIE.length} días VI, ${ASST_VIVHV.length} VI/HV, ${ASST_FUTPOS.length} futuros/posición`;
   } else {
     bar.style.background='var(--es-gold-light)';bar.style.borderColor='var(--es-gold)';
     bar.innerHTML=`⚠️ Error en: ${errs.join(', ')}`;
+  }
   }
   asstShowContext();
 }
@@ -134,11 +147,12 @@ function asstShowContext(){
 // UI helpers
 function asstSetMode(n){asstModeNum=n;document.getElementById('asst-mode1').style.borderColor=n===1?'var(--es-green)':'var(--border)';document.getElementById('asst-mode2').style.borderColor=n===2?'var(--es-green)':'var(--border)';document.getElementById('asst-vision-wrap').style.display=n===1?'block':'none';document.getElementById('asst-tol-wrap').style.display=n===1?'':'none';document.getElementById('asst-btn-label').textContent=n===1?'Generar recomendaciones':'Analizar cadena';}
 function asstVision(el){document.querySelectorAll('#asst-vision-chips button').forEach(b=>{b.className='btn btn-outline';b.style.background='';b.style.color='';});el.className='btn';el.style.background='var(--es-green)';el.style.color='#fff';asstVisionSel=el.dataset.v;}
-function asstUpdatePos(){const c=document.getElementById('asst-crop').value,sel=document.getElementById('asst-pos');sel.innerHTML=(ASST_POS[c]||[]).map(p=>`<option value="${p}">${p}</option>`).join('');document.getElementById('asst-fwd').value=ASST_FWD[c]||300;asstUpdateVto();}
+function asstUpdatePos(){const cropEl=document.getElementById('asst-crop');const sel=document.getElementById('asst-pos');if(!cropEl||!sel)return;const c=cropEl.value;sel.innerHTML=(ASST_POS[c]||[]).map(p=>`<option value="${p}">${p}</option>`).join('');const fwdEl=document.getElementById('asst-fwd');if(fwdEl)fwdEl.value=ASST_FWD[c]||300;asstUpdateVto();}
 function asstUpdateVto(){const posEl=document.getElementById('asst-pos');const dispEl=document.getElementById('asst-vto-display');if(!posEl||!dispEl)return;const p=posEl.value,exp=asstExpiry(p),dias=exp?asstDays(new Date(),exp):0;dispEl.innerHTML=exp?`<div style="background:var(--bg-input);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;font-family:var(--mono);">📅 Vto: <strong style="color:var(--es-green);">${exp.getDate().toString().padStart(2,'0')}/${ASST_MNAMES[exp.getMonth()+1]}/${exp.getFullYear()}</strong> · ${dias}d</div>`:'';}
 
 function asstRenderChain(){
   const c=document.getElementById('asst-chain-inputs');
+  if(!c)return;
   c.innerHTML=`<div style="display:grid;grid-template-columns:80px 90px 90px 40px;gap:6px;margin-bottom:6px;font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.3px;"><span>Strike</span><span>Prima Put</span><span>Prima Call</span><span></span></div>`
     +asstChainRows.map((r,i)=>`<div style="display:grid;grid-template-columns:80px 90px 90px 40px;gap:6px;align-items:center;"><input type="number" value="${r.k}" onchange="asstChainRows[${i}].k=+this.value" style="font-family:var(--mono);font-size:13px;padding:6px;border:1px solid var(--border);border-radius:5px;background:var(--bg-input);"><input type="number" step="0.1" value="${r.pp||''}" onchange="asstChainRows[${i}].pp=+this.value" style="font-family:var(--mono);font-size:13px;padding:6px;border:1px solid var(--border);border-radius:5px;background:var(--bg-input);" placeholder="—"><input type="number" step="0.1" value="${r.pc||''}" onchange="asstChainRows[${i}].pc=+this.value" style="font-family:var(--mono);font-size:13px;padding:6px;border:1px solid var(--border);border-radius:5px;background:var(--bg-input);" placeholder="—"><button onclick="asstChainRows.splice(${i},1);asstRenderChain();" style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--red);">✕</button></div>`).join('');
 }
