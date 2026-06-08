@@ -1,4 +1,181 @@
 // ═══════════════════════════════════════════════════
+//  POSICIÓN COMERCIAL — Tabla por especie
+//  Inyectada al inicio del panel Futuros & Opciones
+// ═══════════════════════════════════════════════════
+
+const PC_CROPS = [
+  'COLZA', 'CEBADA', 'GI OLEICO', 'GIRASOL',
+  'MAÍZ TEMP.', 'MAÍZ TARDÍO', 'MAÍZ',
+  'SOJA ARR.', 'SOJA', 'TRIGO'
+];
+
+const PC_STORAGE_KEY = 'espartina_pc_2627';
+
+function pcDefaultCrop() {
+  return {
+    tnTotales: 0, tnFijadas: 0, tnAFijar: 0,
+    tnFuturos: 0, tnPut: 0, tnCall: 0,
+    precioDolor: 0, precioObjetivo: 0, precioPromPos: 0,
+    precioPromVenta: 0, precioMercado: 0
+  };
+}
+
+function pcLoadData() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PC_STORAGE_KEY) || 'null');
+    const d = {};
+    PC_CROPS.forEach(c => {
+      d[c] = Object.assign(pcDefaultCrop(), saved && saved[c] ? saved[c] : {});
+    });
+    return d;
+  } catch(e) {
+    const d = {};
+    PC_CROPS.forEach(c => { d[c] = pcDefaultCrop(); });
+    return d;
+  }
+}
+
+let PC_DATA = pcLoadData();
+
+function pcSaveData() {
+  try { localStorage.setItem(PC_STORAGE_KEY, JSON.stringify(PC_DATA)); } catch(e) {}
+}
+
+function pcCalc(c) {
+  const d = PC_DATA[c], tot = d.tnTotales || 0;
+  const pv = tot ? (d.tnFijadas + d.tnFuturos) / tot : 0;
+  const pf = (pv > 0 && d.precioPromVenta > 0)
+    ? pv * d.precioPromVenta + (1 - pv) * (d.precioMercado || 0)
+    : (d.precioMercado || 0);
+  return {
+    tnComp    : tot ? d.tnFijadas / tot : 0,
+    totalV    : tot - d.tnFijadas - d.tnAFijar,
+    pctVenta  : pv,
+    cobBaja   : tot ? (d.tnFijadas + d.tnFuturos + d.tnPut) / tot : 0,
+    cobSuba   : (1 - pv) + (tot ? d.tnCall / tot : 0),
+    precioFinal: pf
+  };
+}
+
+function pcFmtTn(v)  { return v ? Math.round(v).toLocaleString('es-AR') : '—'; }
+function pcFmtPct(v) { return Math.round(v * 100) + '%'; }
+function pcFmtPx(v)  { return v ? '$ ' + v.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—'; }
+
+function pcUpdate(idx, field, value) {
+  const crop = PC_CROPS[idx];
+  if (!crop) return;
+  PC_DATA[crop][field] = parseFloat(String(value).replace(',', '.')) || 0;
+  pcSaveData();
+  pcRefreshCalcs();
+}
+
+function pcRefreshCalcs() {
+  const CALCS = [
+    { id: 'tncomp',   fn: c => pcFmtPct(pcCalc(c).tnComp) },
+    { id: 'totalv',   fn: c => pcFmtTn(pcCalc(c).totalV) },
+    { id: 'pctventa', fn: c => pcFmtPct(pcCalc(c).pctVenta) },
+    { id: 'cobbaja',  fn: c => pcFmtPct(pcCalc(c).cobBaja) },
+    { id: 'cobsuba',  fn: c => pcFmtPct(pcCalc(c).cobSuba) },
+    { id: 'pxfinal',  fn: c => pcFmtPx(pcCalc(c).precioFinal) },
+  ];
+  CALCS.forEach(({ id, fn }) => {
+    PC_CROPS.forEach((c, i) => {
+      const el = document.getElementById(`pcc_${id}_${i}`);
+      if (el) el.textContent = fn(c);
+    });
+  });
+}
+
+function pcInjectHTML() {
+  if (document.getElementById('pc-posicion-block')) return; // ya inyectado
+
+  const PC_ROWS = [
+    { kind: 'S', label: 'TONELADAS' },
+    { kind: 'E', label: 'TN Totales',           field: 'tnTotales',      bg: 'grn', bold: true },
+    { kind: 'E', label: 'TN Fijadas',            field: 'tnFijadas' },
+    { kind: 'E', label: 'TN A Fijar',            field: 'tnAFijar' },
+    { kind: 'C', label: 'TN Comprometidas',      calcId: 'tncomp',   fn: c => pcFmtPct(pcCalc(c).tnComp),     bg: 'gry' },
+    { kind: 'C', label: 'Total a Vender',        calcId: 'totalv',   fn: c => pcFmtTn(pcCalc(c).totalV),      bg: 'org', bold: true },
+    { kind: 'S', label: 'INSTRUMENTOS DE COBERTURA' },
+    { kind: 'E', label: 'TN Futuros',            field: 'tnFuturos' },
+    { kind: 'E', label: 'TN Put',                field: 'tnPut' },
+    { kind: 'E', label: 'TN Call',               field: 'tnCall' },
+    { kind: 'S', label: 'INDICADORES DE COBERTURA' },
+    { kind: 'C', label: '% de Venta',            calcId: 'pctventa', fn: c => pcFmtPct(pcCalc(c).pctVenta),   bg: 'gry' },
+    { kind: 'C', label: 'Cobertura a la Baja',   calcId: 'cobbaja',  fn: c => pcFmtPct(pcCalc(c).cobBaja),    bg: 'gry' },
+    { kind: 'C', label: 'Cobertura a la Suba',   calcId: 'cobsuba',  fn: c => pcFmtPct(pcCalc(c).cobSuba),    bg: 'gry' },
+    { kind: 'S', label: 'PRECIOS' },
+    { kind: 'E', label: 'Precio Dolor',          field: 'precioDolor' },
+    { kind: 'E', label: 'Precio Objetivo',       field: 'precioObjetivo' },
+    { kind: 'E', label: 'Precio Prom. Posición', field: 'precioPromPos' },
+    { kind: 'E', label: 'Precio Prom. de Venta', field: 'precioPromVenta' },
+    { kind: 'E', label: 'Precio Mercado',        field: 'precioMercado' },
+    { kind: 'C', label: 'Precio Final',          calcId: 'pxfinal',  fn: c => pcFmtPx(pcCalc(c).precioFinal), bg: 'yel', bold: true },
+  ];
+
+  const BG = { grn: '#e8f5ee', org: '#fde8d8', gry: '#f4f4f4', yel: '#fff9cc' };
+
+  let h = `<style>
+    .pc-wrap{overflow-x:auto;border-radius:8px;border:1px solid var(--border-1,#d0d0d0);margin-bottom:28px}
+    .pc-tbl{border-collapse:collapse;min-width:1120px;width:100%}
+    .pc-tbl th{background:#1A6B3C;color:#fff;padding:7px 10px;font-size:11px;font-weight:600;white-space:nowrap;border-right:1px solid rgba(255,255,255,.18);text-align:center}
+    .pc-tbl th.pc-th0{position:sticky;left:0;z-index:3;text-align:left;min-width:180px;border-right:2px solid rgba(255,255,255,.35)}
+    .pc-tbl td.pc-lbl{position:sticky;left:0;z-index:1;padding:3px 10px;font-size:12px;white-space:nowrap;border-right:2px solid #ccc;border-bottom:1px solid #e8e8e8;background:#fff}
+    .pc-tbl td.pc-dc{padding:0;border-right:1px solid #e4e4e4;border-bottom:1px solid #eee;min-width:95px}
+    .pc-tbl td.pc-cc{padding:3px 9px;text-align:right;border-right:1px solid #e4e4e4;border-bottom:1px solid #eee;font-size:12px;min-width:95px}
+    .pc-tbl tr.pc-sec td{background:#2d4a3e!important;color:#C8A44A;padding:4px 12px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;position:static!important;white-space:nowrap}
+    .pc-inp{width:100%;border:none;outline:none;background:transparent;text-align:right;font-size:12px;padding:4px 8px;box-sizing:border-box;font-family:inherit;color:var(--text-1,#111)}
+    .pc-inp:focus{background:#fffde7;border:1px solid #C8A44A}
+    .pc-inp::placeholder{color:#bbb}
+  </style>`;
+
+  h += `<div style="font-size:14px;font-weight:700;color:#1A6B3C;margin:0 0 12px 0">Posición Comercial 26-27</div>`;
+  h += `<div class="pc-wrap"><table class="pc-tbl"><thead><tr>`;
+  h += `<th class="pc-th0">Especie</th>`;
+  PC_CROPS.forEach(c => { h += `<th>${c}</th>`; });
+  h += `</tr></thead><tbody>`;
+
+  PC_ROWS.forEach(row => {
+    if (row.kind === 'S') {
+      h += `<tr class="pc-sec"><td colspan="${PC_CROPS.length + 1}">${row.label}</td></tr>`;
+      return;
+    }
+    const bgColor  = row.bg ? BG[row.bg] : '';
+    const bgStyle  = bgColor ? `background:${bgColor};` : '';
+    const bldStyle = row.bold ? 'font-weight:700;' : '';
+
+    h += `<tr>`;
+    h += `<td class="pc-lbl" style="${bgStyle}${bldStyle}">${row.label}</td>`;
+
+    PC_CROPS.forEach((c, i) => {
+      if (row.kind === 'C') {
+        const txtColor = row.bg === 'yel' ? '#6b5a00' : 'var(--text-3,#666)';
+        h += `<td class="pc-cc" id="pcc_${row.calcId}_${i}"
+              style="${bgStyle}${bldStyle}color:${txtColor}">${row.fn(c)}</td>`;
+      } else {
+        const val = PC_DATA[c][row.field] || '';
+        h += `<td class="pc-dc" style="${bgStyle}">
+          <input class="pc-inp" type="number" placeholder="—" value="${val}"
+            style="${bldStyle}"
+            oninput="pcUpdate(${i},'${row.field}',this.value)">
+        </td>`;
+      }
+    });
+
+    h += `</tr>`;
+  });
+
+  h += `</tbody></table></div>`;
+
+  const block = document.createElement('div');
+  block.id = 'pc-posicion-block';
+  block.innerHTML = h;
+
+  const space = document.getElementById('futopc-space');
+  if (space) space.insertBefore(block, space.firstChild);
+}
+
+// ═══════════════════════════════════════════════════
 //  FUTUROS Y OPCIONES — Módulo Suite Comercial
 //  Lee posiciones desde Google Sheets publicado CSV
 // ═══════════════════════════════════════════════════
@@ -25,6 +202,7 @@ function toggleFutOpc() {
   document.getElementById('spreads-space').style.display = 'none';
   document.getElementById('desvio-space').style.display = 'none';
   document.getElementById('futopc-space').style.display = 'block';
+  pcInjectHTML();
   document.getElementById('mkt-bar').style.display = 'none';
   document.getElementById('fob-bar').style.display = 'none';
   document.getElementById('tabs-container').style.display = 'none';
