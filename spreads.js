@@ -243,17 +243,31 @@ function spCalcSpread(){
     chart.options.scales.y.max=Math.ceil((vMax+pad)*10)/10;
     chart.update('none');
   }
-  spChartSeason=new Chart(ctxS,{type:'scatter',data:{datasets:sDatasets},options:{responsive:true,maintainAspectRatio:false,
-    plugins:{legend:{display:true,labels:{font:{size:8},boxWidth:10},
-      onClick(e,legendItem,legend){
-        const index=legendItem.datasetIndex;
-        const meta=legend.chart.getDatasetMeta(index);
-        meta.hidden=meta.hidden===null?!legend.chart.data.datasets[index].hidden:!meta.hidden;
-        spSeasonRecalcY(legend.chart);
+  spChartSeason=new Chart(ctxS,{
+    type:'scatter',
+    data:{datasets:sDatasets},
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      plugins:{
+        legend:{
+          display:true,
+          labels:{font:{size:8},boxWidth:10},
+          onClick:function(e,legendItem,legend){
+            const index=legendItem.datasetIndex;
+            const meta=legend.chart.getDatasetMeta(index);
+            meta.hidden=meta.hidden===null?!legend.chart.data.datasets[index].hidden:!meta.hidden;
+            spSeasonRecalcY(legend.chart);
+          }
+        },
+        tooltip:{mode:'nearest'}
+      },
+      scales:{
+        x:{title:{display:true,text:'Días al vencimiento',font:{size:10}},reverse:true,ticks:{font:{size:9}}},
+        y:{min:sAxisMin,max:sAxisMax,title:{display:true,text:spMode==='basis'?'Basis (u$s)':'Relación',font:{size:10}},ticks:{font:{size:9,family:'JetBrains Mono'}}}
       }
-    },tooltip:{mode:'nearest'}},
-    scales:{x:{title:{display:true,text:'Días al vencimiento',font:{size:10}},reverse:true,ticks:{font:{size:9}}},
-      y:{min:sAxisMin,max:sAxisMax,title:{display:true,text:spMode==='basis'?'Basis (u$s)':'Relación',font:{size:10}},ticks:{font:{size:9,family:'JetBrains Mono'}}}}}}}});
+    }
+  });
 
   // ─── Chart 3: Distribución ───
   if(spChartDist){spChartDist.destroy();}
