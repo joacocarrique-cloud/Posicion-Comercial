@@ -49,16 +49,23 @@ function toggleAlertas(){
   pills.forEach(p => p.classList.remove('active'));
   pills.forEach(p => { if(p.textContent.includes('Inteligencia')) p.classList.add('active'); });
 
-  document.getElementById('workspace').style.display = 'none';
-  if(document.querySelector('.ret-section')) document.querySelector('.ret-section').style.display = 'none';
-  if(document.querySelector('.pase-section')) document.querySelector('.pase-section').style.display = 'none';
-  document.getElementById('spreads-space').style.display = 'none';
-  document.getElementById('theory-space').style.display = 'none';
-  document.getElementById('desvio-space').style.display = 'none';
-  document.getElementById('alertas-space').style.display = 'block';
-  document.getElementById('tabs-container').style.display = 'none';
-  document.getElementById('fob-bar').style.display = 'none';
-  document.getElementById('mkt-bar').style.display = 'none';
+  // Null-safe hide: ignora elementos que no existan en el DOM (HTML deployado puede variar)
+  const hideEl = id => { const el = document.getElementById(id); if(el) el.style.display = 'none'; };
+  const hideSel = sel => { const el = document.querySelector(sel); if(el) el.style.display = 'none'; };
+
+  hideEl('workspace');
+  hideSel('.ret-section');
+  hideSel('.pase-section');
+  hideEl('spreads-space');
+  hideEl('theory-space');
+  hideEl('desvio-space');
+  hideEl('futopc-space');
+  hideEl('tabs-container');
+  hideEl('fob-bar');
+  hideEl('mkt-bar');
+
+  const alSpace = document.getElementById('alertas-space');
+  if(alSpace) alSpace.style.display = 'block';
 
   if(!window.ASST_FUTPOS || ASST_FUTPOS.length === 0){
     const container = document.getElementById('alertas-space');
