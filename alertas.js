@@ -87,10 +87,25 @@ function toggleAlertas(){
 function alBuildTree(){
   const tree = {};
   if(!window.ASST_FUTPOS || !ASST_FUTPOS.length) return tree;
+
+  // ── Diagnóstico: por qué se descartan registros ──
+  let nNoCrop = 0, nNoMes = 0, nNoAnio = 0, nOk = 0;
+  const sample = ASST_FUTPOS[0] || {};
+  alDebugLog.push('Campos del registro [0]: ' + Object.keys(sample).join(', '));
+  alDebugLog.push('Valores [0]: cultivo=' + JSON.stringify(sample.cultivo) +
+                  ' · mes_label=' + JSON.stringify(sample.mes_label) +
+                  ' · anio_pos=' + JSON.stringify(sample.anio_pos) +
+                  ' · fecha=' + JSON.stringify(sample.fecha) +
+                  ' · precio=' + JSON.stringify(sample.precio) +
+                  ' · dias_vto=' + JSON.stringify(sample.dias_vto));
+
   ASST_FUTPOS.forEach(r => {
     const crop = r.cultivo, mes = r.mes_label;
     const anio = typeof r.anio_pos === 'number' ? r.anio_pos : parseInt(r.anio_pos);
-    if(!crop || !mes || !anio) return;
+    if(!crop){ nNoCrop++; return; }
+    if(!mes){ nNoMes++; return; }
+    if(!anio){ nNoAnio++; return; }
+    nOk++;
     if(!tree[crop]) tree[crop] = {};
     if(!tree[crop][mes]) tree[crop][mes] = {};
     if(!tree[crop][mes][anio]) tree[crop][mes][anio] = [];
@@ -100,6 +115,10 @@ function alBuildTree(){
       dte: r.dias_vto,
     });
   });
+
+  alDebugLog.push('Parseados: ' + nOk + ' OK · descartados: sin cultivo=' + nNoCrop +
+                  ', sin mes_label=' + nNoMes + ', sin anio_pos=' + nNoAnio +
+                  ' (total ' + ASST_FUTPOS.length + ')');
   // Sort by fecha string (ISO-sortable)
   for(const c in tree)
     for(const m in tree[c])
@@ -257,10 +276,10 @@ function alZScore(value, mean, std){
 // ═══════════════════════════════════════════════════════════════
 
 function alRunEngine(){
-  const tree = alBuildTree();
   alDebugLog = [];
+  const tree = alBuildTree();
   if(!Object.keys(tree).length){
-    alDebugLog.push('Tree vacío — ASST_FUTPOS sin datos parseables');
+    alDebugLog.push('Tree vacío — ningún registro pasó los filtros (ver detalle arriba)');
     return [];
   }
   alDebugLog.push('Cultivos en tree: ' + Object.keys(tree).join(', '));
