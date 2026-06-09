@@ -16,19 +16,20 @@ const AL_MIN_HIST_OBS = 8;
 
 // ── Pares a monitorear ──────────────────────────────────────────
 const AL_INTRA_PAIRS = [
-  { cultivo:'soja',  posA:'MAY', posB:'JUL', label:'Soja May–Jul' },
-  { cultivo:'soja',  posA:'MAY', posB:'NOV', label:'Soja May–Nov' },
   { cultivo:'soja',  posA:'JUL', posB:'NOV', label:'Soja Jul–Nov' },
-  { cultivo:'maiz',  posA:'ABR', posB:'JUL', label:'Maíz Abr–Jul' },
+  { cultivo:'soja',  posA:'NOV', posB:'MAY', label:'Soja Nov–May' },
+  { cultivo:'soja',  posA:'JUL', posB:'MAY', label:'Soja Jul–May' },
   { cultivo:'maiz',  posA:'JUL', posB:'DIC', label:'Maíz Jul–Dic' },
-  { cultivo:'trigo', posA:'DIC', posB:'JUL', label:'Trigo Dic–Jul' },
+  { cultivo:'maiz',  posA:'DIC', posB:'ABR', label:'Maíz Dic–Abr' },
+  { cultivo:'trigo', posA:'JUL', posB:'DIC', label:'Trigo Jul–Dic' },
 ];
 
 const AL_INTER_PAIRS = [
-  { culA:'maiz', posA:'ABR', culB:'soja', posB:'MAY', label:'Maíz Abr / Soja May' },
   { culA:'maiz', posA:'JUL', culB:'soja', posB:'JUL', label:'Maíz Jul / Soja Jul' },
   { culA:'maiz', posA:'JUL', culB:'soja', posB:'NOV', label:'Maíz Jul / Soja Nov' },
-  { culA:'trigo', posA:'DIC', culB:'soja', posB:'MAY', label:'Trigo Dic / Soja May' },
+  { culA:'maiz', posA:'DIC', culB:'soja', posB:'NOV', label:'Maíz Dic / Soja Nov' },
+  { culA:'maiz', posA:'ABR', culB:'soja', posB:'MAY', label:'Maíz Abr / Soja May' },
+  { culA:'trigo', posA:'DIC', culB:'soja', posB:'NOV', label:'Trigo Dic / Soja Nov' },
   { culA:'maiz', posA:'ABR', culB:'trigo', posB:'DIC', label:'Maíz Abr / Trigo Dic' },
 ];
 
@@ -54,7 +55,6 @@ function toggleAlertas(){
   document.getElementById('spreads-space').style.display = 'none';
   document.getElementById('theory-space').style.display = 'none';
   document.getElementById('desvio-space').style.display = 'none';
-  document.getElementById('futopc-space').style.display = 'none';
   document.getElementById('alertas-space').style.display = 'block';
   document.getElementById('tabs-container').style.display = 'none';
   document.getElementById('fob-bar').style.display = 'none';
@@ -915,6 +915,6 @@ function alInsight(a){
     }
   };
   window.addEventListener('load', () => {
-    ['switchToWorkspace','toggleRetenciones','togglePases','toggleSpreads','toggleTheory','toggleDesvio','toggleFutOpc'].forEach(patch);
+    ['switchToWorkspace','toggleRetenciones','togglePases','toggleSpreads','toggleTheory','toggleDesvio'].forEach(patch);
   });
 })();
