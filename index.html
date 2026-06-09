@@ -15,7 +15,7 @@
     <div class="header-logo">🌾</div>
     <div>
       <div class="header-title">Suite Comercial · Espartina S.A.</div>
-      <div class="header-subtitle">Coberturas · FAS & Retenciones · Pases & Tasas · Desvío de Precios · Inteligencia · Futuros & Opciones</div>
+      <div class="header-subtitle">Coberturas · FAS & Retenciones · Pases & Tasas · Desvío de Precios · Inteligencia</div>
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:12px;">
@@ -27,7 +27,6 @@
       <button class="mod-pill" onclick="toggleSpreads()">📈 Spreads</button>
       <button class="mod-pill" onclick="toggleDesvio()">📉 Desvío</button>
       <button class="mod-pill" onclick="toggleAlertas()">🧠 Inteligencia</button>
-      <button class="mod-pill" onclick="toggleFutOpc()">📋 Fut & Opc</button>
       <button class="mod-pill" onclick="toggleTheory()">📙 Manual</button>
     </nav>
   </div>
@@ -685,73 +684,8 @@
     </div>
   </div>
 
-  <!-- ═══ FUTUROS Y OPCIONES ═══ -->
+  <!-- ═══ ALERTAS ═══ -->
   <div id="alertas-space" style="display:none;"></div>
-
-  <div id="futopc-space" style="display:none;">
-    <!-- Toolbar -->
-    <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap;">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span style="font-size:28px;">📋</span>
-        <div>
-          <div style="font-size:18px;font-weight:700;">Futuros y Opciones</div>
-          <div style="font-size:12px;color:var(--text-2);">Posición en derivados MATBA-ROFEX · Datos desde Google Sheets</div>
-        </div>
-      </div>
-      <span id="fo-status" class="fo-status loading" style="margin-left:auto;">⏳</span>
-    </div>
-
-    <!-- Filters -->
-    <div style="display:flex;gap:14px;align-items:flex-end;margin-bottom:18px;flex-wrap:wrap;">
-      <div class="field">
-        <label>Campaña</label>
-        <select id="fo-camp-filter" style="font-family:var(--mono);font-size:13px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);min-width:100px;">
-          <option value="">Cargando...</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Especie</label>
-        <select id="fo-species-filter" style="font-family:var(--mono);font-size:13px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);min-width:100px;">
-          <option value="ALL">Todas</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- KPI Grid -->
-    <div id="fo-kpi-grid" class="fo-kpi-grid"></div>
-
-    <!-- Futuros Section -->
-    <div class="fo-section">
-      <div class="fo-section-header">
-        <span class="fo-section-icon fo-icon-fut">F</span>
-        <span class="fo-section-title">Futuros</span>
-        <span class="fo-section-count" id="fo-fut-count">0</span>
-      </div>
-      <div id="fo-fut-tabs" style="display:flex;gap:2px;margin-bottom:14px;background:var(--bg-input);border-radius:6px;padding:3px;width:fit-content;">
-        <button class="fo-sub-tab active" onclick="foSwitchFut('open')">Posiciones abiertas</button>
-        <button class="fo-sub-tab" onclick="foSwitchFut('closed')">Cerradas & PnL</button>
-        <button class="fo-sub-tab" onclick="foSwitchFut('detail')">Detalle</button>
-      </div>
-      <div id="fo-fut-open"></div>
-      <div id="fo-fut-closed" style="display:none;"></div>
-      <div id="fo-fut-detail" style="display:none;"></div>
-    </div>
-
-    <!-- Opciones Section -->
-    <div class="fo-section">
-      <div class="fo-section-header">
-        <span class="fo-section-icon fo-icon-opt">O</span>
-        <span class="fo-section-title">Opciones</span>
-        <span class="fo-section-count" id="fo-opt-count">0</span>
-      </div>
-      <div id="fo-opt-tabs" style="display:flex;gap:2px;margin-bottom:14px;background:var(--bg-input);border-radius:6px;padding:3px;width:fit-content;">
-        <button class="fo-sub-tab active" onclick="foSwitchOpt('open')">Posiciones abiertas</button>
-        <button class="fo-sub-tab" onclick="foSwitchOpt('closed')">Cerradas & PnL</button>
-      </div>
-      <div id="fo-opt-open"></div>
-      <div id="fo-opt-closed" style="display:none;"></div>
-    </div>
-  </div>
 
 <!-- ═══ FOOTER DE IMPRESIÓN (oculto en pantalla, visible al imprimir) ═══ -->
 <div id="print-footer" style="display:none;">
@@ -794,7 +728,6 @@ window.addEventListener('beforeprint', function() {
 <script src="spreads.js"></script>
 <script src="desvio.js"></script>
 <script src="alertas.js"></script>
-<script src="futuros_opciones.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

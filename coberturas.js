@@ -139,7 +139,6 @@ function renderTabs() {
   const alSpace = document.getElementById('alertas-space');
   const inOtherModule = theoryMode || retMode || paseMode || spreadMode
     || (typeof desvioMode !== 'undefined' && desvioMode)
-    || (typeof futOpcMode !== 'undefined' && futOpcMode)
     || (alSpace && alSpace.style.display === 'block');
   if (inOtherModule) {
     container.style.display = 'none';
@@ -162,7 +161,7 @@ function renderModules() {
   const pills = document.querySelectorAll('.mod-pill');
   pills.forEach(p => p.classList.remove('active'));
   // Índices alineados al orden de las pills en index.html:
-  // 0 Coberturas · 1 FAS&Ret · 2 Pases · 3 Spreads · 4 Desvío · 5 Inteligencia · 6 Fut&Opc · 7 Manual
+  // 0 Coberturas · 1 FAS&Ret · 2 Pases · 3 Spreads · 4 Desvío · 5 Inteligencia · 6 Manual
   let idx = 0;
   if (retMode)     idx = 1;
   if (paseMode)    idx = 2;
@@ -170,14 +169,12 @@ function renderModules() {
   if (typeof desvioMode !== 'undefined' && desvioMode) idx = 4;
   const alSpace = document.getElementById('alertas-space');
   if (alSpace && alSpace.style.display === 'block') idx = 5;
-  if (typeof futOpcMode !== 'undefined' && futOpcMode)  idx = 6;
   if (theoryMode)  idx = 7;
   if (pills[idx]) pills[idx].classList.add('active');
 }
 
 function switchToWorkspace() {
   theoryMode = false; retMode = false; paseMode = false; asstMode = false; spreadMode = false;
-  if (typeof futOpcMode !== 'undefined') futOpcMode = false;
   if (typeof desvioMode !== 'undefined') desvioMode = false;
   document.getElementById('workspace').style.display = 'block';
   document.getElementById('theory-space').style.display = 'none';
@@ -186,7 +183,6 @@ function switchToWorkspace() {
   document.getElementById('spreads-space').style.display = 'none';
   if (document.getElementById('desvio-space')) document.getElementById('desvio-space').style.display = 'none';
   if (document.getElementById('alertas-space')) document.getElementById('alertas-space').style.display = 'none';
-  if (document.getElementById('futopc-space')) document.getElementById('futopc-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'flex';
   document.getElementById('fob-bar').style.display = 'flex';
   document.getElementById('tabs-container').style.display = 'flex';
@@ -197,13 +193,11 @@ function switchToWorkspace() {
 
 function toggleTheory() {
   theoryMode = true; retMode = false; paseMode = false; asstMode = false; spreadMode = false;
-  if (typeof futOpcMode !== 'undefined') futOpcMode = false;
   document.getElementById('workspace').style.display = 'none';
   document.getElementById('theory-space').style.display = 'block';
   document.getElementById('ret-space').style.display = 'none';
   document.getElementById('pase-space').style.display = 'none';
   document.getElementById('spreads-space').style.display = 'none';
-  if (document.getElementById('futopc-space')) document.getElementById('futopc-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'none';
   renderTabs();
   renderModules();
@@ -211,13 +205,11 @@ function toggleTheory() {
 
 function toggleRetenciones() {
   retMode = true; theoryMode = false; paseMode = false; asstMode = false; spreadMode = false;
-  if (typeof futOpcMode !== 'undefined') futOpcMode = false;
   document.getElementById('workspace').style.display = 'none';
   document.getElementById('theory-space').style.display = 'none';
   document.getElementById('ret-space').style.display = 'block';
   document.getElementById('pase-space').style.display = 'none';
   document.getElementById('spreads-space').style.display = 'none';
-  if (document.getElementById('futopc-space')) document.getElementById('futopc-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'flex';
   document.getElementById('btn-update-primas').style.display = 'none';
   renderTabs();
@@ -229,7 +221,6 @@ function toggleRetenciones() {
 
 function switchTab(idx) {
   theoryMode = false; retMode = false; paseMode = false; asstMode = false; spreadMode = false;
-  if (typeof futOpcMode !== 'undefined') futOpcMode = false;
   if (typeof desvioMode !== 'undefined') desvioMode = false;
   document.getElementById('workspace').style.display = 'block';
   document.getElementById('theory-space').style.display = 'none';
@@ -238,7 +229,6 @@ function switchTab(idx) {
   document.getElementById('spreads-space').style.display = 'none';
   if (document.getElementById('desvio-space')) document.getElementById('desvio-space').style.display = 'none';
   if (document.getElementById('alertas-space')) document.getElementById('alertas-space').style.display = 'none';
-  if (document.getElementById('futopc-space')) document.getElementById('futopc-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'flex';
   document.getElementById('fob-bar').style.display = 'flex';
   document.getElementById('tabs-container').style.display = 'flex';
