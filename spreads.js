@@ -214,10 +214,9 @@ function spCalcSpread(){
     });
   }
   const avgPts=Object.keys(avgByDte).map(d=>({x:parseInt(d),y:avgByDte[d].sum/avgByDte[d].count})).sort((a,b)=>b.x-a.x);
-  // Auto Y-axis from season data (avg + all campaigns)
+  // Auto Y-axis inicial: solo Promedio (datasets de campañas arrancan hidden)
   let sYMin=Infinity,sYMax=-Infinity;
   avgPts.forEach(p=>{if(p.y<sYMin)sYMin=p.y;if(p.y>sYMax)sYMax=p.y;});
-  sKeys.slice(0,8).forEach(k=>(seasonData[k]||[]).forEach(p=>{if(p.val<sYMin)sYMin=p.val;if(p.val>sYMax)sYMax=p.val;}));
   const sPad=(sYMax-sYMin)*0.1||1;
   const sAxisMin=yMinInput!==''?parseFloat(yMinInput):Math.floor((sYMin-sPad)*10)/10;
   const sAxisMax=yMaxInput!==''?parseFloat(yMaxInput):Math.ceil((sYMax+sPad)*10)/10;
@@ -225,10 +224,36 @@ function spCalcSpread(){
     sDatasets.push({label:'Promedio',data:avgPts,showLine:true,borderColor:'#C8A44A',borderWidth:2.5,
       pointRadius:0,tension:0.4,borderDash:[6,3],backgroundColor:'rgba(217,119,6,.08)',fill:true});
   }
+  function spSeasonRecalcY(chart){
+    const yManMin=document.getElementById('sp-ymin').value;
+    const yManMax=document.getElementById('sp-ymax').value;
+    if(yManMin!==''&&yManMax!==''){
+      chart.options.scales.y.min=parseFloat(yManMin);
+      chart.options.scales.y.max=parseFloat(yManMax);
+      chart.update('none');return;
+    }
+    let vMin=Infinity,vMax=-Infinity;
+    chart.data.datasets.forEach((ds,i)=>{
+      if(chart.getDatasetMeta(i).hidden)return;
+      (ds.data||[]).forEach(p=>{if(p.y<vMin)vMin=p.y;if(p.y>vMax)vMax=p.y;});
+    });
+    if(!isFinite(vMin)||!isFinite(vMax))return;
+    const pad=(vMax-vMin)*0.1||1;
+    chart.options.scales.y.min=Math.floor((vMin-pad)*10)/10;
+    chart.options.scales.y.max=Math.ceil((vMax+pad)*10)/10;
+    chart.update('none');
+  }
   spChartSeason=new Chart(ctxS,{type:'scatter',data:{datasets:sDatasets},options:{responsive:true,maintainAspectRatio:false,
-    plugins:{legend:{display:true,labels:{font:{size:8},boxWidth:10}},tooltip:{mode:'nearest'}},
+    plugins:{legend:{display:true,labels:{font:{size:8},boxWidth:10},
+      onClick(e,legendItem,legend){
+        const index=legendItem.datasetIndex;
+        const meta=legend.chart.getDatasetMeta(index);
+        meta.hidden=meta.hidden===null?!legend.chart.data.datasets[index].hidden:!meta.hidden;
+        spSeasonRecalcY(legend.chart);
+      }
+    },tooltip:{mode:'nearest'}},
     scales:{x:{title:{display:true,text:'Días al vencimiento',font:{size:10}},reverse:true,ticks:{font:{size:9}}},
-      y:{min:sAxisMin,max:sAxisMax,title:{display:true,text:spMode==='basis'?'Basis (u$s)':'Relación',font:{size:10}},ticks:{font:{size:9,family:'JetBrains Mono'}}}}}});
+      y:{min:sAxisMin,max:sAxisMax,title:{display:true,text:spMode==='basis'?'Basis (u$s)':'Relación',font:{size:10}},ticks:{font:{size:9,family:'JetBrains Mono'}}}}}}}});
 
   // ─── Chart 3: Distribución ───
   if(spChartDist){spChartDist.destroy();}
