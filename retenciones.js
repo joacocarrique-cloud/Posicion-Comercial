@@ -2,6 +2,36 @@
 // ─── RETENCIONES & FAS Calculator ───
 // ═══════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════
+// ─── SOJA: rendimientos de molienda (hardcoded) ───
+// ═══════════════════════════════════════════════════
+const SOJA_REND_ACEITE  = 0.198;  // 19.8%
+const SOJA_REND_HARINA  = 0.710;  // 71.0%
+const SOJA_REND_CASCARA = 0.065;  // 6.5%  → se pondera dentro del coef de harina
+const SOJA_FOB_CASCARA  = 116;    // USD/tn — la cáscara NO paga retención
+// Desecho 2.7% → valor 0, no aporta nada.
+
+// Rendimiento de harina EQUIVALENTE: absorbe el valor de la cáscara.
+// Como la cáscara no paga retención, se compara contra la base NETA de la harina
+// para que su aporte en USD quede intacto: rend_casc × FOB_casc.
+function retCrushCoefs(fobHarina, retSub) {
+  const baseNeta = fobHarina * (1 - retSub);
+  const deltaCascara = baseNeta > 0 ? (SOJA_REND_CASCARA * SOJA_FOB_CASCARA) / baseNeta : 0;
+  return {
+    aceite: SOJA_REND_ACEITE,
+    harina: SOJA_REND_HARINA + deltaCascara,
+    deltaCascara
+  };
+}
+
+// Los inputs de coeficiente pasan a ser display read-only (los calcula el modelo).
+function retSyncCoefInputs(cCA, cCH) {
+  const ia = document.getElementById('ret-crush-coef-aceite');
+  const ih = document.getElementById('ret-crush-coef-harina');
+  if (ia) { ia.value = cCA.toFixed(3);  ia.readOnly = true; }
+  if (ih) { ih.value = cCH.toFixed(4);  ih.readOnly = true; }
+}
+
 function retChangeCultivo() {
   const cultivo = document.getElementById('ret-cultivo').value;
   const d = RET_DEFAULTS[cultivo];
@@ -125,12 +155,16 @@ function retCalc() {
   let crushFAS = 0;
   if (isSoja) {
     const cFA = parseFloat(document.getElementById('ret-crush-fob-aceite').value) || 0;
-    const cCA = parseFloat(document.getElementById('ret-crush-coef-aceite').value) || 0;
     const cFH = parseFloat(document.getElementById('ret-crush-fob-harina').value) || 0;
-    const cCH = parseFloat(document.getElementById('ret-crush-coef-harina').value) || 0;
     const cRS = (parseFloat(document.getElementById('ret-crush-ret-subprod').value) || 0) / 100;
     const cFob = parseFloat(document.getElementById('ret-crush-fobbing-val').value) || 0;
     const cInd = parseFloat(document.getElementById('ret-crush-industria-val').value) || 0;
+
+    // Coeficientes hardcodeados. El de harina viene ponderado con la cáscara.
+    const coefs = retCrushCoefs(cFH, cRS);
+    const cCA = coefs.aceite;
+    const cCH = coefs.harina;
+    retSyncCoefInputs(cCA, cCH);
 
     const acBruto = cFA * cCA;
     const haBruto = cFH * cCH;
@@ -139,9 +173,11 @@ function retCalc() {
     const harina = haBruto * (1 - cRS);
     crushFAS = aceite + harina - cFob - cInd;
 
+    const notaCasc = `<span style="font-size:0.68rem; font-weight:400; color:var(--text-3); margin-left:6px;">${(SOJA_REND_HARINA * 100).toFixed(1)}% + cáscara ${(SOJA_REND_CASCARA * 100).toFixed(1)}% @ ${SOJA_FOB_CASCARA} = +${(coefs.deltaCascara * 100).toFixed(2)} pp</span>`;
+
     let crushHTML = '';
-    crushHTML += retCascBar('Aceite (' + cFA.toFixed(1) + ' × ' + cCA.toFixed(2) + ')', acBruto, bruto > 0 ? (acBruto / bruto) * 100 : 0, 'var(--es-green-light)', 'var(--es-green-dark)');
-    crushHTML += retCascBar('Harina (' + cFH.toFixed(1) + ' × ' + cCH.toFixed(2) + ')', haBruto, bruto > 0 ? (haBruto / bruto) * 100 : 0, 'var(--es-green-light)', 'var(--es-green-dark)');
+    crushHTML += retCascBar('Aceite (' + cFA.toFixed(1) + ' × ' + cCA.toFixed(3) + ')', acBruto, bruto > 0 ? (acBruto / bruto) * 100 : 0, 'var(--es-green-light)', 'var(--es-green-dark)');
+    crushHTML += retCascBar('Harina (' + cFH.toFixed(1) + ' × ' + cCH.toFixed(4) + ')' + notaCasc, haBruto, bruto > 0 ? (haBruto / bruto) * 100 : 0, 'var(--es-green-light)', 'var(--es-green-dark)');
     crushHTML += retCascBar('Ret subprod ' + (cRS * 100).toFixed(1) + '%', -(bruto * cRS), cRS * 100, '#fde8e8', 'var(--red)');
     crushHTML += retCascBar('Fobbing subprod', -cFob, bruto > 0 ? (cFob / bruto) * 100 : 0, 'var(--bg-input)', 'var(--text-3)');
     crushHTML += retCascBar('Gasto industrialización', -cInd, bruto > 0 ? (cInd / bruto) * 100 : 0, 'var(--bg-input)', 'var(--text-3)');
@@ -171,15 +207,16 @@ function retCalc() {
   if (isSoja) {
     const cRS = (parseFloat(document.getElementById('ret-crush-ret-subprod').value) || 0) / 100;
     const cFA = parseFloat(document.getElementById('ret-crush-fob-aceite').value) || 0;
-    const cCA = parseFloat(document.getElementById('ret-crush-coef-aceite').value) || 0;
     const cFH = parseFloat(document.getElementById('ret-crush-fob-harina').value) || 0;
-    const cCH = parseFloat(document.getElementById('ret-crush-coef-harina').value) || 0;
     const cFob = parseFloat(document.getElementById('ret-crush-fobbing-val').value) || 0;
     const cInd = parseFloat(document.getElementById('ret-crush-industria-val').value) || 0;
 
     const newCrushRet = cRS * (1 - reduction);
-    const acNew = cFA * cCA * (1 - newCrushRet);
-    const haNew = cFH * cCH * (1 - newCrushRet);
+    // El Δ cáscara se reajusta solo: la cáscara no paga retención, así que no
+    // se beneficia de la baja y su peso relativo en el coef de harina cambia.
+    const coefsNew = retCrushCoefs(cFH, newCrushRet);
+    const acNew = cFA * coefsNew.aceite * (1 - newCrushRet);
+    const haNew = cFH * coefsNew.harina * (1 - newCrushRet);
     const newCrushFAS = acNew + haNew - cFob - cInd;
 
     document.getElementById('ret-sc-act-crush').textContent = crushFAS.toFixed(2);
@@ -219,4 +256,3 @@ function retSliderStep(delta) {
   slider.value = val;
   retCalc();
 }
-
