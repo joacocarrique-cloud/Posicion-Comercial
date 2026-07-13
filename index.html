@@ -140,6 +140,38 @@
       </div>
     </div>
 
+    <!-- ═══ CALCULADORA DE RESULTADO (P&L por volumen) ═══ -->
+    <div class="calc-section" id="calc-section">
+      <h2>Calculadora de Resultado (P&amp;L por volumen)</h2>
+      <div class="calc-controls">
+        <div class="field">
+          <label>🎯 Precio objetivo futuro (u$s)</label>
+          <input type="number" id="calc-target" step="0.1" oninput="renderCalc()" placeholder="spot">
+        </div>
+        <div class="field">
+          <label>Rango P&amp;L Mín</label>
+          <input type="number" id="calc-min" step="0.1" oninput="renderCalc()" placeholder="eje X mín">
+        </div>
+        <div class="field">
+          <label>Rango P&amp;L Máx</label>
+          <input type="number" id="calc-max" step="0.1" oninput="renderCalc()" placeholder="eje X máx">
+        </div>
+        <div class="calc-hint">
+          El volumen (tns) se define en cada estrategia. El resultado es <strong>neto del derivado</strong>: valor intrínseco al vencimiento menos la prima, por el volumen.
+        </div>
+      </div>
+      <table class="comp-table" id="calc-table"></table>
+    </div>
+
+    <!-- ═══ PANEL DE MERCADO EN VIVO ═══ -->
+    <div class="live-panel" id="live-panel">
+      <div class="live-panel-head">
+        <h2>📡 Panel de Mercado en Vivo</h2>
+        <button class="btn btn-sm btn-outline" onclick="liveRefreshNow()" title="Volver a sincronizar con A3 ahora">🔄 Actualizar ahora</button>
+      </div>
+      <div id="live-panel-body"></div>
+    </div>
+
     <!-- ═══ VOLATILIDAD & GRIEGAS ═══ -->
     <div id="vg-panel" style="display:none;margin-top:30px;border-top:3px solid var(--es-green);padding-top:24px;">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;cursor:pointer;" onclick="vgToggle()">
@@ -721,6 +753,7 @@ window.addEventListener('beforeprint', function() {
 <script src="storage.js"></script>
 <script src="sync.js"></script>
 <script src="coberturas.js"></script>
+<script src="livepanel.js"></script>
 <script src="retenciones.js"></script>
 <script src="pases.js"></script>
 <script src="asistente.js"></script>
@@ -729,5 +762,6 @@ window.addEventListener('beforeprint', function() {
 <script src="desvio.js"></script>
 <script src="alertas.js"></script>
 <script src="app.js"></script>
+<script src="pnl.js"></script>
 </body>
 </html>
