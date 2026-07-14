@@ -841,6 +841,44 @@ window.addEventListener('beforeprint', function() {
 });
 </script>
 
+<script>
+// ═══ BARRAS GLOBALES POR MÓDULO ═══
+// #tabs-container (tabs de coberturas) y #mkt-bar (Sincronizar A3) viven fuera de
+// los -space, así que por defecto se ven en todos los módulos. Acá se ocultan en
+// los módulos donde no aplican.
+(function () {
+  const BARRAS  = ['tabs-container', 'mkt-bar'];  // qué ocultar
+  const OCULTAR_EN = ['pnl-space'];               // en qué módulos
+
+  const visible = el => el && el.offsetParent !== null;
+
+  function refrescarBarras() {
+    const debeOcultar = OCULTAR_EN.some(id => visible(document.getElementById(id)));
+    BARRAS.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (!el.dataset.dspOriginal) {
+        const d = el.style.display || getComputedStyle(el).display;
+        el.dataset.dspOriginal = (d && d !== 'none') ? d : 'flex';
+      }
+      el.style.display = debeOcultar ? 'none' : el.dataset.dspOriginal;
+    });
+  }
+  window.refrescarBarras = refrescarBarras;
+
+  document.addEventListener('DOMContentLoaded', function () {
+    const obs = new MutationObserver(refrescarBarras);
+    document.querySelectorAll('#workspace, [id$="-space"]').forEach(el =>
+      obs.observe(el, { attributes: true, attributeFilter: ['style', 'class'] })
+    );
+    document.querySelectorAll('.mod-pill').forEach(b =>
+      b.addEventListener('click', () => setTimeout(refrescarBarras, 0))
+    );
+    refrescarBarras();
+  });
+})();
+</script>
+
 <script src="globals.js"></script>
 <script src="storage.js"></script>
 <script src="sync.js"></script>
