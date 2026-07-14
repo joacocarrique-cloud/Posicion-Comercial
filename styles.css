@@ -1130,6 +1130,38 @@ body {
   border-bottom-color: var(--es-green);
 }
 
+/* ─── Chip de estado A3 (módulos que consumen datos de mercado) ─── */
+.a3-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  margin-bottom: 14px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.a3-chip b { font-weight: 700; color: var(--es-green); }
+.a3-chip:hover { border-color: var(--es-green); color: var(--text-2); }
+.a3-chip.warn {
+  background: var(--es-gold-light);
+  border-color: var(--es-gold);
+  color: #96700e;
+}
+.a3-chip.warn b { color: #96700e; }
+.a3-chip.bad {
+  background: #fdecec;
+  border-color: var(--red);
+  color: #8c2020;
+}
+.a3-chip.bad b { color: #8c2020; }
+
 /* ─── Fondeo ─── */
 .fondeo-inputs {
   display: grid;

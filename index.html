@@ -842,35 +842,94 @@ window.addEventListener('beforeprint', function() {
 </script>
 
 <script>
-// ═══ BARRAS GLOBALES POR MÓDULO ═══
-// #tabs-container (tabs de coberturas) y #mkt-bar (Sincronizar A3) viven fuera de
-// los -space, así que por defecto se ven en todos los módulos. Acá se ocultan en
-// los módulos donde no aplican.
+// ═══ BARRAS GLOBALES + CHIP DE ESTADO A3 ═══
+// #tabs-container y #mkt-bar viven fuera de los -space, así que por defecto
+// aparecerían en TODOS los módulos. Acá se restringen a Coberturas.
+// En los módulos que consumen datos de A3 se inyecta en su lugar un chip fino
+// que muestra la antigüedad de los datos y, si están viejos o faltan, sincroniza.
 (function () {
-  const BARRAS  = ['tabs-container', 'mkt-bar'];  // qué ocultar
-  const OCULTAR_EN = ['pnl-space'];               // en qué módulos
+  const SOLO_EN_COBERTURAS = ['tabs-container', 'mkt-bar'];
+  const MODULOS_A3 = ['ret-space', 'pase-space', 'spreads-space', 'desvio-space'];
+  const DIAS_RANCIO = 2;
+
+  const SPACES = ['workspace', 'ret-space', 'pase-space', 'spreads-space',
+                  'desvio-space', 'alertas-space', 'pnl-space', 'theory-space'];
 
   const visible = el => el && el.offsetParent !== null;
+  const moduloActivo = () => SPACES.find(id => visible(document.getElementById(id))) || null;
+
+  // Lee el estado de A3 desde la barra global (única fuente de verdad).
+  function estadoA3() {
+    const st = document.getElementById('mkt-status');
+    const txt = st ? st.textContent.trim() : '';
+    const m = txt.match(/(\d{2})-(\d{2})-(\d{4})/);
+    if (!m) return { ok: false, txt: 'Sin datos de mercado', dias: null };
+    const fecha = new Date(+m[3], +m[2] - 1, +m[1]);
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    const dias = Math.max(0, Math.round((hoy - fecha) / 86400000));
+    return { ok: true, txt, dias, rancio: dias > DIAS_RANCIO };
+  }
+
+  function chipDe(spaceId) {
+    const space = document.getElementById(spaceId);
+    if (!space) return null;
+    let chip = document.getElementById('a3-chip-' + spaceId);
+    if (!chip) {
+      chip = document.createElement('button');
+      chip.id = 'a3-chip-' + spaceId;
+      chip.className = 'a3-chip';
+      chip.type = 'button';
+      chip.addEventListener('click', function () {
+        if (typeof syncFromSheet === 'function') syncFromSheet();
+      });
+      space.insertBefore(chip, space.firstChild);
+    }
+    return chip;
+  }
+
+  function refrescarChips() {
+    const e = estadoA3();
+    MODULOS_A3.forEach(id => {
+      const chip = chipDe(id);
+      if (!chip) return;
+      chip.classList.toggle('bad', !e.ok);
+      chip.classList.toggle('warn', !!e.rancio);
+      if (!e.ok) {
+        chip.innerHTML = '<b>📡 A3</b> Sin datos — click para sincronizar';
+        chip.title = 'No hay datos de mercado cargados. Click para sincronizar con A3.';
+      } else if (e.rancio) {
+        chip.innerHTML = '<b>📡 A3</b> ' + e.txt + ' · ' + e.dias + ' días de antigüedad — click para actualizar';
+        chip.title = 'Los datos tienen ' + e.dias + ' días. Click para volver a sincronizar.';
+      } else {
+        chip.innerHTML = '<b>📡 A3</b> ' + e.txt;
+        chip.title = 'Datos de mercado al día. Click para volver a sincronizar.';
+      }
+    });
+  }
 
   function refrescarBarras() {
-    const debeOcultar = OCULTAR_EN.some(id => visible(document.getElementById(id)));
-    BARRAS.forEach(id => {
+    const activo = moduloActivo();
+    SOLO_EN_COBERTURAS.forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
       if (!el.dataset.dspOriginal) {
         const d = el.style.display || getComputedStyle(el).display;
         el.dataset.dspOriginal = (d && d !== 'none') ? d : 'flex';
       }
-      el.style.display = debeOcultar ? 'none' : el.dataset.dspOriginal;
+      el.style.display = (activo === 'workspace') ? el.dataset.dspOriginal : 'none';
     });
+    refrescarChips();
   }
   window.refrescarBarras = refrescarBarras;
 
   document.addEventListener('DOMContentLoaded', function () {
     const obs = new MutationObserver(refrescarBarras);
-    document.querySelectorAll('#workspace, [id$="-space"]').forEach(el =>
-      obs.observe(el, { attributes: true, attributeFilter: ['style', 'class'] })
-    );
+    SPACES.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) obs.observe(el, { attributes: true, attributeFilter: ['style', 'class'] });
+    });
+    const st = document.getElementById('mkt-status');
+    if (st) new MutationObserver(refrescarChips).observe(st, { childList: true, characterData: true, subtree: true });
     document.querySelectorAll('.mod-pill').forEach(b =>
       b.addEventListener('click', () => setTimeout(refrescarBarras, 0))
     );
