@@ -27,6 +27,7 @@
       <button class="mod-pill" onclick="toggleSpreads()">📈 Spreads</button>
       <button class="mod-pill" onclick="toggleDesvio()">📉 Desvío</button>
       <button class="mod-pill" onclick="toggleAlertas()">🧠 Inteligencia</button>
+      <button class="mod-pill" onclick="togglePnL()">💰 P&amp;L</button>
       <button class="mod-pill" onclick="toggleTheory()">📙 Manual</button>
     </nav>
   </div>
@@ -718,6 +719,19 @@
 
   <!-- ═══ ALERTAS ═══ -->
   <div id="alertas-space" style="display:none;"></div>
+
+  <!-- ═══ P&L / PRESUPUESTO Y DESARME ═══ -->
+  <div id="pnl-space" style="display:none;">
+    <div class="pnl-h">
+      <span style="font-size:26px;">💰</span>
+      <div style="flex:1;">
+        <h2>P&amp;L — Presupuesto y Desarme</h2>
+        <div class="s">Pata financiera: cuánto cuesta, cuánto vale según precio y fecha, y a qué nivel se desarma</div>
+      </div>
+      <button class="btn" onclick="document.body.classList.add('pnl-only');window.print();setTimeout(()=>document.body.classList.remove('pnl-only'),500)">Exportar PDF</button>
+    </div>
+    <div id="pnl-content"></div>
+  </div>
 
 <!-- ═══ FOOTER DE IMPRESIÓN (oculto en pantalla, visible al imprimir) ═══ -->
 <div id="print-footer" style="display:none;">
