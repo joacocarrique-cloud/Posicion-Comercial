@@ -1,262 +1,305 @@
 // ═══════════════════════════════════════════════════
-// ─── FONDEO MODULE ───
+// ─── FONDEO ───
 // Comparador de fuentes de financiamiento cuando NO hay mercadería disponible.
-// Pregunta que responde: necesito plata hoy y la devuelvo contra la cosecha,
-// ¿qué fuente me deja más u$s netos hoy por tonelada comprometida?
+// Necesito plata hoy y la devuelvo contra la cosecha: ¿qué fuente me deja más
+// u$s netos hoy por tonelada comprometida?
 // Independiente de paseCalcStrategies(), que asume que tenés grano para vender hoy.
 // ═══════════════════════════════════════════════════
 
-let fondeoSubTab = false;
+let fondeoForwardManual = false;   // false = forward derivado de MATBA × TC futuro
 
+// ─── Helpers ───
+const fondeoNum = id => {
+  const el = document.getElementById(id);
+  if (!el) return 0;
+  const raw = String(el.value).replace(/\./g, '').replace(',', '.').replace(/[^0-9.\-]/g, '');
+  return parseFloat(raw) || 0;
+};
+const fondeoMiles = n => Math.round(n).toLocaleString('es-AR');
+const fondeoDec = (n, d = 1) => n.toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+// ─── Navegación ───
 function fondeoShow() {
-  fondeoSubTab = true;
-  const est = document.getElementById('pase-main-block');
+  const main = document.getElementById('pase-main-block');
   const fon = document.getElementById('fondeo-block');
-  if (est) est.style.display = 'none';
+  if (main) main.style.display = 'none';
   if (fon) fon.style.display = 'block';
   document.querySelectorAll('.pase-subtab').forEach(t => t.classList.remove('active'));
   const btn = document.getElementById('pase-subtab-fondeo');
   if (btn) btn.classList.add('active');
-  fondeoInitFecha();
+  fondeoInit();
   fondeoCalc();
 }
 
 function fondeoHide() {
-  fondeoSubTab = false;
-  const est = document.getElementById('pase-main-block');
+  const main = document.getElementById('pase-main-block');
   const fon = document.getElementById('fondeo-block');
-  if (est) est.style.display = 'block';
+  if (main) main.style.display = 'block';
   if (fon) fon.style.display = 'none';
   document.querySelectorAll('.pase-subtab').forEach(t => t.classList.remove('active'));
   const btn = document.getElementById('pase-subtab-estrategias');
   if (btn) btn.classList.add('active');
 }
 
-function fondeoInitFecha() {
+function fondeoInit() {
   const f = document.getElementById('fondeo-fecha');
   if (f && !f.value) {
     const d = new Date();
     d.setMonth(d.getMonth() + 6);
     f.value = d.toISOString().slice(0, 10);
   }
-  fondeoUpdateDias();
+  const m = document.getElementById('fondeo-monto');
+  if (m && m.value) m.value = fondeoMiles(fondeoNum('fondeo-monto'));
+  const fw = document.getElementById('fondeo-forward-ars');
+  if (fw && !fondeoForwardManual) { fw.readOnly = true; fw.classList.add('is-auto'); }
 }
 
-function fondeoUpdateDias() {
+// ─── Monto: separador de miles mientras escribís ───
+function fondeoMontoInput(el) {
+  const pos = el.selectionStart;
+  const antes = el.value.length;
+  const v = fondeoNum('fondeo-monto');
+  el.value = v > 0 ? fondeoMiles(v) : '';
+  const desp = el.value.length;
+  const nueva = Math.max(0, pos + (desp - antes));
+  el.setSelectionRange(nueva, nueva);
+  fondeoCalc();
+}
+
+function fondeoForwardInput(el) {
+  const pos = el.selectionStart;
+  const antes = el.value.length;
+  const v = fondeoNum('fondeo-forward-ars');
+  el.value = v > 0 ? fondeoMiles(v) : '';
+  const desp = el.value.length;
+  const nueva = Math.max(0, pos + (desp - antes));
+  el.setSelectionRange(nueva, nueva);
+  fondeoCalc();
+}
+
+// ─── Forward: derivado o manual ───
+function fondeoToggleForward(chk) {
+  fondeoForwardManual = chk.checked;
+  const inp = document.getElementById('fondeo-forward-ars');
+  if (inp) {
+    inp.readOnly = !fondeoForwardManual;
+    inp.classList.toggle('is-auto', !fondeoForwardManual);
+    if (fondeoForwardManual) inp.focus();
+  }
+  fondeoCalc();
+}
+
+function fondeoSyncForward() {
+  const inp = document.getElementById('fondeo-forward-ars');
+  if (!inp) return 0;
+  if (!fondeoForwardManual) {
+    const derivado = fondeoNum('fondeo-precio-usd') * fondeoNum('fondeo-tc-fut');
+    inp.value = derivado > 0 ? fondeoMiles(derivado) : '';
+    return derivado;
+  }
+  return fondeoNum('fondeo-forward-ars');
+}
+
+function fondeoDias() {
   const f = document.getElementById('fondeo-fecha');
-  const out = document.getElementById('fondeo-dias');
-  if (!f || !out) return 0;
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-  const d = new Date(f.value);
+  if (!f || !f.value) return 0;
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const d = new Date(f.value + 'T00:00:00');
   const dias = Math.round((d - hoy) / 86400000);
-  out.textContent = dias > 0 ? dias : '—';
   return dias > 0 ? dias : 0;
 }
 
 function fondeoGetInputs() {
-  const num = id => parseFloat((document.getElementById(id) || {}).value) || 0;
   return {
-    monto:      num('fondeo-monto'),
-    dias:       fondeoUpdateDias(),
-    precioUSD:  num('fondeo-precio-usd'),
-    forwardARS: num('fondeo-forward-ars'),
-    tcSpot:     num('fondeo-tc-spot'),
-    tcFut:      num('fondeo-tc-fut'),
-    rUSD:       num('fondeo-r-usd'),
-    rARS:       num('fondeo-r-ars'),
-    rCheq:      num('fondeo-r-cheq')
+    monto:      fondeoNum('fondeo-monto'),
+    dias:       fondeoDias(),
+    precioUSD:  fondeoNum('fondeo-precio-usd'),
+    forwardARS: fondeoSyncForward(),
+    tcSpot:     fondeoNum('fondeo-tc-spot'),
+    tcFut:      fondeoNum('fondeo-tc-fut'),
+    rUSD:       fondeoNum('fondeo-r-usd'),
+    rARS:       fondeoNum('fondeo-r-ars'),
+    rCheq:      fondeoNum('fondeo-r-cheq')
   };
 }
 
-// Devuelve las alternativas calculadas, ordenadas por u$s netos hoy (desc).
-function fondeoCalcOpciones(inp) {
+// ─── Tasas implícitas ───
+function fondeoImplicitas(inp) {
+  const a = 365 / (inp.dias || 1);
+  const deva = (inp.tcSpot > 0 && inp.tcFut > 0)
+    ? ((inp.tcFut / inp.tcSpot) - 1) * a * 100 : 0;
+  const tcImpl = inp.precioUSD > 0 ? inp.forwardARS / inp.precioUSD : 0;
+  const tasaFwd = (inp.precioUSD > 0 && inp.tcSpot > 0)
+    ? ((inp.forwardARS / (inp.precioUSD * inp.tcSpot)) - 1) * a * 100 : 0;
+  return { deva, tcImpl, tasaFwd, gapTC: tcImpl - inp.tcFut, gapTasa: tasaFwd - deva };
+}
+
+// ─── Alternativas ───
+function fondeoCalcOpciones(inp, im) {
   const f = inp.dias / 365;
+  const a = 365 / inp.dias;
   const ops = [];
+  const costoTNA = usdHoy => (usdHoy > 0 && inp.precioUSD > 0)
+    ? ((inp.precioUSD / usdHoy) - 1) * a * 100 : 0;
 
-  const tnaCostoUSD = usdHoy =>
-    (usdHoy > 0 && inp.precioUSD > 0)
-      ? ((inp.precioUSD / usdHoy) - 1) * (365 / inp.dias) * 100
-      : 0;
-
-  // ── A: Crédito USD + venta futuro MATBA (precio fijado, sin descalce) ──
+  // A — Crédito USD + venta futuro MATBA
   if (inp.rUSD > 0 && inp.precioUSD > 0) {
     const usdHoy = inp.precioUSD / (1 + (inp.rUSD / 100) * f);
     ops.push({
-      key: 'usd',
+      key: 'usd', short: 'Crédito USD',
       name: 'Crédito USD + venta futuro MATBA',
-      desc: `Tomás u$s al ${inp.rUSD}% TNA y fijás precio vendiendo ${inp.precioUSD.toFixed(1)} u$s/tn.`,
-      usdHoy,
-      pesosHoy: usdHoy * inp.tcSpot,
-      costoTNA: tnaCostoUSD(usdHoy),
-      cat: 'USD',
-      detail: `Cobrás ${inp.precioUSD.toFixed(1)} u$s/tn en ${inp.dias}d y devolvés capital + ${(inp.rUSD * f).toFixed(1)}% de interés. ` +
-              `Valor de esa tonelada hoy: ${usdHoy.toFixed(1)} u$s. Sin exposición cambiaria: te endeudás y cobrás en la misma moneda.`
+      desc: `Tomás u$s al ${fondeoDec(inp.rUSD)}% TNA y fijás precio vendiendo a ${fondeoDec(inp.precioUSD)} u$s/tn.`,
+      usdHoy, costo: costoTNA(usdHoy),
+      detail: `Cobrás ${fondeoDec(inp.precioUSD)} u$s/tn en ${inp.dias} días y devolvés capital + ${fondeoDec(inp.rUSD * f)}% de interés. Valor de esa tonelada hoy: ${fondeoDec(usdHoy)} u$s. Sin descalce: te endeudás y cobrás en la misma moneda, así que el costo es la tasa y nada más.`
     });
   }
 
-  // ── B: Crédito ARS + venta futuro MATBA + compra de dólar futuro (TC cubierto) ──
+  // B — Crédito ARS + venta futuro MATBA + dólar futuro (TC cubierto)
   if (inp.rARS > 0 && inp.precioUSD > 0 && inp.tcFut > 0 && inp.tcSpot > 0) {
-    const pesosFuturo = inp.precioUSD * inp.tcFut;          // lo que cobrás en $ con el TC cubierto
-    const pesosHoy    = pesosFuturo / (1 + (inp.rARS / 100) * f);
-    const usdHoy      = pesosHoy / inp.tcSpot;
-    const devaImpl    = ((inp.tcFut / inp.tcSpot) - 1) * (365 / inp.dias) * 100;
-    const spread      = devaImpl - inp.rARS;               // >0 → el peso te sale barato en u$s
+    const pesosFut = inp.precioUSD * inp.tcFut;
+    const pesosHoy = pesosFut / (1 + (inp.rARS / 100) * f);
+    const usdHoy = pesosHoy / inp.tcSpot;
+    const spread = im.deva - inp.rARS;
     ops.push({
-      key: 'ars',
+      key: 'ars', short: 'Crédito ARS',
       name: 'Crédito ARS + venta futuro + dólar futuro',
-      desc: `Tomás $ al ${inp.rARS}% TNA, fijás precio en MATBA y cubrís el TC comprando ROFEX a ${inp.tcFut.toLocaleString('es')}.`,
-      usdHoy,
-      pesosHoy,
-      costoTNA: tnaCostoUSD(usdHoy),
-      cat: 'ARS',
-      spread,
-      devaImpl,
-      beTC: inp.tcFut,
-      detail: `Tasa ARS ${inp.rARS.toFixed(1)}% vs. deva implícita ${devaImpl.toFixed(1)}% → spread ${spread >= 0 ? '+' : ''}${spread.toFixed(1)}pp ` +
-              `${spread >= 0 ? 'a favor del peso' : 'en contra del peso'}. ` +
-              `Cobrás $${Math.round(pesosFuturo).toLocaleString('es')}/tn en ${inp.dias}d; descontado al ${inp.rARS}% son $${Math.round(pesosHoy).toLocaleString('es')} hoy ` +
-              `(≈ ${usdHoy.toFixed(1)} u$s al TC spot). Si NO cubrieras el TC, el breakeven cae exactamente en ${inp.tcFut.toLocaleString('es')}: ` +
-              `por debajo de ese dólar ganás por no cubrir, por encima perdés.`
+      desc: `Tomás $ al ${fondeoDec(inp.rARS)}% TNA, fijás precio en MATBA y cubrís el TC en ROFEX a ${fondeoMiles(inp.tcFut)}.`,
+      usdHoy, costo: costoTNA(usdHoy),
+      detail: `Tasa ARS ${fondeoDec(inp.rARS)}% vs. deva implícita ${fondeoDec(im.deva)}% → spread ${spread >= 0 ? '+' : ''}${fondeoDec(spread)}pp ${spread >= 0 ? 'a favor del peso' : 'en contra del peso'}. Cobrás $${fondeoMiles(pesosFut)}/tn en ${inp.dias} días; descontado al ${fondeoDec(inp.rARS)}% son $${fondeoMiles(pesosHoy)} hoy (≈ ${fondeoDec(usdHoy)} u$s al spot). Si no cubrieras el TC, el breakeven cae exactamente en ${fondeoMiles(inp.tcFut)}: por debajo de ese dólar ganás por no cubrir, por encima perdés. El futuro se compra el mismo día que tomás el crédito, no después.`
     });
   }
 
-  // ── C: Venta futura en pesos + descuento de cheques ──
+  // C — Venta futura en pesos + descuento de cheques
   if (inp.rCheq > 0 && inp.forwardARS > 0 && inp.tcSpot > 0) {
     const pesosHoy = inp.forwardARS / (1 + (inp.rCheq / 100) * f);
-    const usdHoy   = pesosHoy / inp.tcSpot;
-    const tcImpl   = inp.precioUSD > 0 ? inp.forwardARS / inp.precioUSD : 0;
-    const gapTC    = inp.tcFut > 0 ? tcImpl - inp.tcFut : 0;
+    const usdHoy = pesosHoy / inp.tcSpot;
     ops.push({
-      key: 'cheq',
+      key: 'cheq', short: 'Cheques',
       name: 'Venta futura en pesos + descuento de cheques',
-      desc: `Vendés forward a $${inp.forwardARS.toLocaleString('es')}/tn y descontás el cheque al ${inp.rCheq}% TNA.`,
-      usdHoy,
-      pesosHoy,
-      costoTNA: tnaCostoUSD(usdHoy),
-      cat: 'ARS',
-      tcImpl,
-      gapTC,
-      detail: `Cheque de $${inp.forwardARS.toLocaleString('es')}/tn a ${inp.dias}d, descontado al ${inp.rCheq}%: ` +
-              `cobrás $${Math.round(pesosHoy).toLocaleString('es')} hoy (≈ ${usdHoy.toFixed(1)} u$s al TC spot). ` +
-              (tcImpl > 0
-                ? `TC implícito del forward: ${Math.round(tcImpl).toLocaleString('es')}` +
-                  (inp.tcFut > 0
-                    ? ` vs. ${inp.tcFut.toLocaleString('es')} de ROFEX → ${gapTC >= 0 ? 'está por encima, el TC te juega a favor' : 'está ' + Math.abs(Math.round(gapTC)) + ' pesos por debajo: ahí se te va plata que no ves en la tasa'}.`
-                    : '.')
-                : '')
+      desc: `Vendés forward a $${fondeoMiles(inp.forwardARS)}/tn y descontás el cheque al ${fondeoDec(inp.rCheq)}% TNA.`,
+      usdHoy, costo: costoTNA(usdHoy),
+      detail: `Cheque de $${fondeoMiles(inp.forwardARS)}/tn a ${inp.dias} días, descontado al ${fondeoDec(inp.rCheq)}%: cobrás $${fondeoMiles(pesosHoy)} hoy (≈ ${fondeoDec(usdHoy)} u$s al spot). El forward te reconoce una tasa implícita en pesos de ${fondeoDec(im.tasaFwd)}% TNA contra una deva implícita de ${fondeoDec(im.deva)}%: ${im.gapTasa >= 0 ? 'te está pagando por encima de la curva de dólar' : 'te está pagando ' + fondeoDec(Math.abs(im.gapTasa)) + 'pp por debajo de la curva de dólar, y eso no aparece en la tasa de descuento del cheque'}.`
     });
   }
 
-  ops.forEach(o => {
-    o.toneladas = o.usdHoy > 0 ? inp.monto / o.usdHoy : 0;
-  });
-
-  ops.sort((a, b) => b.usdHoy - a.usdHoy);
-  if (ops.length) {
-    const best = ops[0].usdHoy;
-    ops.forEach(o => { o.delta = o.usdHoy - best; });
-  }
+  ops.forEach(o => { o.toneladas = o.usdHoy > 0 ? inp.monto / o.usdHoy : 0; });
+  ops.sort((x, y) => y.usdHoy - x.usdHoy);
+  if (ops.length) { const best = ops[0].usdHoy; ops.forEach(o => o.delta = o.usdHoy - best); }
   return ops;
 }
 
+// ─── Render ───
 function fondeoCalc() {
   const inp = fondeoGetInputs();
-  const kpisEl = document.getElementById('fondeo-kpis');
-  const rowsEl = document.getElementById('fondeo-rows');
-  const alertEl = document.getElementById('fondeo-alert');
-  if (!rowsEl) return;
+  const derEl = document.getElementById('fondeo-derived');
+  const kpiEl = document.getElementById('fondeo-kpis');
+  const rowEl = document.getElementById('fondeo-rows');
+  const altEl = document.getElementById('fondeo-alert');
+  if (!rowEl) return;
 
-  if (inp.dias <= 0 || inp.precioUSD <= 0) {
-    if (kpisEl) kpisEl.innerHTML = '';
-    if (alertEl) alertEl.innerHTML = '';
-    rowsEl.innerHTML = '<div style="text-align:center; color:var(--text-3); padding:24px; font-size:13px;">⚠ Cargá la fecha de repago y el precio del futuro para comparar</div>';
-    return;
+  const im = fondeoImplicitas(inp);
+
+  if (derEl) {
+    const okTasa = im.gapTasa >= -0.05;
+    const okTC = im.gapTC >= -1;
+    derEl.innerHTML = `
+      <div class="fondeo-chip">
+        <span class="fondeo-chip-lbl">Plazo</span>
+        <span class="fondeo-chip-val">${inp.dias > 0 ? inp.dias : '—'}<em>días</em></span>
+      </div>
+      <div class="fondeo-chip">
+        <span class="fondeo-chip-lbl">Deva implícita ROFEX</span>
+        <span class="fondeo-chip-val gold">${fondeoDec(im.deva)}%<em>TNA · umbral del crédito en $</em></span>
+      </div>
+      <div class="fondeo-chip">
+        <span class="fondeo-chip-lbl">TC implícito del forward</span>
+        <span class="fondeo-chip-val ${okTC ? 'ok' : 'bad'}">${fondeoMiles(im.tcImpl)}<em>${inp.tcFut > 0 ? (im.gapTC >= 0 ? '+' : '') + fondeoMiles(im.gapTC) + ' vs. ROFEX' : '—'}</em></span>
+      </div>
+      <div class="fondeo-chip">
+        <span class="fondeo-chip-lbl">Tasa implícita del forward</span>
+        <span class="fondeo-chip-val ${okTasa ? 'ok' : 'bad'}">${fondeoDec(im.tasaFwd)}%<em>TNA $ · ${im.gapTasa >= 0 ? '+' : ''}${fondeoDec(im.gapTasa)}pp vs. deva</em></span>
+      </div>`;
   }
 
-  const ops = fondeoCalcOpciones(inp);
-  if (ops.length === 0) {
-    if (kpisEl) kpisEl.innerHTML = '';
-    if (alertEl) alertEl.innerHTML = '';
-    rowsEl.innerHTML = '<div style="text-align:center; color:var(--text-3); padding:24px; font-size:13px;">⚠ Cargá al menos una tasa (crédito USD, crédito ARS o cheques)</div>';
-    return;
-  }
+  const vacio = msg => {
+    if (kpiEl) kpiEl.innerHTML = '';
+    if (altEl) altEl.innerHTML = '';
+    rowEl.innerHTML = `<div class="fondeo-empty">⚠ ${msg}</div>`;
+  };
 
-  const best = ops[0];
-  const second = ops[1];
-  const devaImpl = (inp.tcSpot > 0 && inp.tcFut > 0)
-    ? ((inp.tcFut / inp.tcSpot) - 1) * (365 / inp.dias) * 100 : 0;
+  if (inp.dias <= 0) return vacio('Cargá una fecha de repago posterior a hoy');
+  if (inp.precioUSD <= 0) return vacio('Cargá el precio del futuro MATBA para comparar');
 
-  // ─── KPIs ───
-  if (kpisEl) {
-    kpisEl.innerHTML = `
+  const ops = fondeoCalcOpciones(inp, im);
+  if (!ops.length) return vacio('Cargá al menos una tasa: crédito USD, crédito ARS o descuento de cheques');
+
+  const best = ops[0], second = ops[1];
+
+  if (kpiEl) {
+    kpiEl.innerHTML = `
       <div class="pase-reading-card">
         <div class="pase-reading-lbl">Fuente más barata</div>
-        <div class="pase-reading-val" style="color:var(--green);">${best.cat === 'USD' ? 'Crédito USD' : best.key === 'ars' ? 'Crédito ARS' : 'Cheques'}</div>
-        <div class="pase-reading-sub">${best.costoTNA.toFixed(1)}% TNA en u$s — ${best.usdHoy.toFixed(1)} u$s hoy/tn</div>
+        <div class="pase-reading-val" style="color:var(--es-green);">${best.short}</div>
+        <div class="pase-reading-sub">${fondeoDec(best.costo)}% TNA en u$s · ${fondeoDec(best.usdHoy)} u$s hoy/tn</div>
       </div>
       <div class="pase-reading-card">
-        <div class="pase-reading-lbl">Ahorro vs. 2ª opción</div>
-        <div class="pase-reading-val" style="font-family:var(--mono); color:var(--green);">${second ? '+' + (best.usdHoy - second.usdHoy).toFixed(1) : '—'}</div>
-        <div class="pase-reading-sub">${second ? 'u$s/tn vs. ' + second.name.split(' + ')[0].toLowerCase() : 'única alternativa cargada'}</div>
+        <div class="pase-reading-lbl">Ventaja vs. 2ª opción</div>
+        <div class="pase-reading-val" style="font-family:var(--mono); color:var(--es-green);">${second ? '+' + fondeoDec(best.usdHoy - second.usdHoy) : '—'}</div>
+        <div class="pase-reading-sub">${second ? 'u$s/tn contra ' + second.short.toLowerCase() : 'única alternativa cargada'}</div>
       </div>
       <div class="pase-reading-card gold">
-        <div class="pase-reading-lbl">Deva implícita ROFEX</div>
-        <div class="pase-reading-val" style="color:var(--es-gold); font-family:var(--mono);">${devaImpl.toFixed(1)}%</div>
-        <div class="pase-reading-sub">TNA — umbral del crédito en pesos</div>
-      </div>
-    `;
+        <div class="pase-reading-lbl">Toneladas a comprometer</div>
+        <div class="pase-reading-val" style="font-family:var(--mono); color:var(--es-gold);">${fondeoMiles(best.toneladas)}</div>
+        <div class="pase-reading-sub">para levantar u$s ${fondeoMiles(inp.monto)} por la mejor vía</div>
+      </div>`;
   }
 
-  // ─── Filas ───
-  rowsEl.innerHTML = ops.map((o, i) => {
+  rowEl.innerHTML = ops.map((o, i) => {
     const isBest = i === 0;
-    const costoColor = o.costoTNA <= 0 ? 'var(--green)'
-      : (best.costoTNA >= 0 && o.costoTNA > best.costoTNA * 1.5) ? 'var(--red)' : 'var(--text-2)';
+    const cColor = (best.costo >= 0 && o.costo > best.costo * 1.5) ? 'var(--red)'
+      : isBest ? 'var(--es-green)' : 'var(--text-2)';
     return `
-    <div style="border-bottom:1px solid var(--border); ${isBest ? 'border-left:4px solid var(--green); background:#fff;' : ''}">
-      <div style="display:grid; grid-template-columns:2fr 1fr 1fr 1fr; gap:12px; align-items:center; padding:14px 16px;">
-        <div>
-          <div style="font-weight:700; font-size:13px; color:${isBest ? 'var(--text)' : 'var(--text-2)'};">
-            ${o.name}
-            ${isBest ? '<span style="font-size:9px; background:var(--es-green-light); color:var(--es-green-dark); padding:2px 7px; border-radius:4px; margin-left:6px;">MÁS BARATA</span>' : ''}
+    <div class="fondeo-row ${isBest ? 'best' : ''}">
+      <div class="fondeo-row-top">
+        <div class="fondeo-row-name">
+          <span class="fondeo-rank">${i + 1}</span>
+          <div>
+            <div class="fondeo-row-title">${o.name}${isBest ? '<span class="fondeo-badge">MÁS BARATA</span>' : ''}</div>
+            <div class="fondeo-row-desc">${o.desc}</div>
           </div>
-          <div style="font-size:11px; color:var(--text-3); margin-top:2px;">${o.desc}</div>
         </div>
-        <div style="text-align:right;">
-          <span style="font-family:var(--mono); font-weight:700; font-size:16px;">${o.usdHoy.toFixed(1)}</span>
-          <div style="font-size:10px; color:var(--text-3);">u$s hoy/tn</div>
-          ${!isBest ? `<div style="font-size:10px; color:var(--red); font-family:var(--mono);">${o.delta.toFixed(1)}</div>` : ''}
+        <div class="fondeo-metric">
+          <span class="fondeo-metric-val">${fondeoDec(o.usdHoy)}</span>
+          <span class="fondeo-metric-lbl">u$s hoy/tn</span>
+          <span class="fondeo-metric-delta ${isBest ? 'ok' : ''}">${isBest ? 'benchmark' : fondeoDec(o.delta)}</span>
         </div>
-        <div style="text-align:right;">
-          <span style="font-family:var(--mono); font-weight:700; font-size:14px; color:${costoColor};">${o.costoTNA.toFixed(1)}%</span>
-          <div style="font-size:10px; color:var(--text-3);">costo TNA u$s</div>
+        <div class="fondeo-metric">
+          <span class="fondeo-metric-val" style="color:${cColor};">${fondeoDec(o.costo)}%</span>
+          <span class="fondeo-metric-lbl">costo TNA u$s</span>
         </div>
-        <div style="text-align:right;">
-          <span style="font-family:var(--mono); font-weight:700; font-size:14px;">${Math.round(o.toneladas).toLocaleString('es')}</span>
-          <div style="font-size:10px; color:var(--text-3);">tn a comprometer</div>
+        <div class="fondeo-metric">
+          <span class="fondeo-metric-val">${fondeoMiles(o.toneladas)}</span>
+          <span class="fondeo-metric-lbl">tn a comprometer</span>
         </div>
       </div>
-      <div style="padding:4px 16px 12px 20px; font-size:11px; color:var(--text-2); line-height:1.6; border-top:1px dashed var(--border); margin:0 16px;">${o.detail}</div>
+      <div class="fondeo-row-detail">${o.detail}</div>
     </div>`;
   }).join('');
 
-  // ─── Alerta de TC implícito del forward ───
-  const cheq = ops.find(o => o.key === 'cheq');
-  if (alertEl) {
-    if (cheq && cheq.tcImpl > 0 && inp.tcFut > 0 && cheq.gapTC < 0) {
-      alertEl.innerHTML = `
-        <div style="margin:0 16px 16px; padding:12px 14px; background:#fff3cd; border-left:4px solid #ffc107;">
-          <div style="font-size:12px; font-weight:700; color:#856404; margin-bottom:3px;">⚠️ TC implícito de la venta en pesos: ${Math.round(cheq.tcImpl).toLocaleString('es')}</div>
-          <div style="font-size:12px; color:#856404; line-height:1.6;">
-            El forward de $${inp.forwardARS.toLocaleString('es')}/tn sobre un MATBA de ${inp.precioUSD.toFixed(1)} u$s te implica un dólar de
-            ${Math.round(cheq.tcImpl).toLocaleString('es')}, contra ${inp.tcFut.toLocaleString('es')} de ROFEX.
-            Son ${Math.abs(Math.round(cheq.gapTC)).toLocaleString('es')} pesos por tonelada que el comprador se queda vía tipo de cambio, no vía tasa.
-            Ese es el costo escondido del canal de cheques.
-          </div>
+  if (altEl) {
+    if (inp.forwardARS > 0 && inp.tcFut > 0 && im.gapTC < -1) {
+      altEl.innerHTML = `
+        <div class="fondeo-warn">
+          <div class="fondeo-warn-t">⚠️ El forward en pesos te implica un dólar de ${fondeoMiles(im.tcImpl)}</div>
+          <div class="fondeo-warn-b">Sobre un MATBA de ${fondeoDec(inp.precioUSD)} u$s/tn, ese forward equivale a un TC de ${fondeoMiles(im.tcImpl)} contra ${fondeoMiles(inp.tcFut)} de ROFEX: son <strong>${fondeoMiles(Math.abs(im.gapTC))} pesos por tonelada</strong> que el comprador se queda vía tipo de cambio, no vía tasa. Podés estar negociando la tasa de descuento del cheque y perdiendo mucha más plata acá.</div>
+        </div>`;
+    } else if (!fondeoForwardManual) {
+      altEl.innerHTML = `
+        <div class="fondeo-info">
+          <div class="fondeo-warn-b">El forward está <strong>derivado</strong> de MATBA × TC futuro, así que por construcción no hay castigo cambiario y la comparación aísla las tasas puras. Cuando tengas la cotización real del comprador, tildá <strong>Editar</strong> y cargala: ahí vas a ver si te están poniendo un dólar peor que el de ROFEX.</div>
         </div>`;
     } else {
-      alertEl.innerHTML = '';
+      altEl.innerHTML = '';
     }
   }
 }
