@@ -460,6 +460,167 @@ body {
 .comp-table tr:last-child td { border-bottom: none; }
 .comp-table tbody tr:hover { background: var(--bg-input); }
 
+/* ─── Calculadora de Resultado ─── */
+.calc-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-top: 20px;
+  overflow-x: auto;
+  box-shadow: var(--shadow);
+}
+.calc-section h2 {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.calc-section h2::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 18px;
+  background: var(--es-green);
+  border-radius: 2px;
+}
+.calc-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.calc-controls .field { display: flex; flex-direction: column; gap: 4px; }
+.calc-controls .field label { font-size: 11px; color: var(--text-3); font-weight: 600; }
+.calc-controls .field input {
+  width: 150px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 13px;
+  background: var(--bg-input);
+}
+.calc-hint {
+  flex: 1;
+  min-width: 220px;
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.4;
+  align-self: center;
+}
+
+/* ─── Volumen por estrategia (footer de la tarjeta) ─── */
+.vol-field { display: flex; align-items: center; gap: 5px; }
+.vol-field label { font-size: 10px; color: var(--text-3); font-weight: 600; }
+.vol-field input { width: 72px; }
+.vol-field span { font-size: 10px; color: var(--text-3); }
+.strat-total { font-family: var(--mono); font-size: 11px; margin-left: 6px; }
+
+/* ─── Panel de Mercado en Vivo ─── */
+.live-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-top: 20px;
+  box-shadow: var(--shadow);
+}
+.live-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.live-panel-head h2 {
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.live-meta {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--border);
+}
+.live-section { margin-bottom: 22px; }
+.live-section h3 {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--es-green-dark, var(--es-green));
+  margin-bottom: 6px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.live-ref { font-size: 11px; font-weight: 500; color: var(--text-3); font-family: var(--mono); }
+.live-hint { font-size: 11px; color: var(--text-3); line-height: 1.4; margin-bottom: 8px; }
+.live-empty { font-size: 12px; color: var(--text-3); padding: 10px 0; }
+
+.live-fut-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+.live-fut-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--bg-input);
+}
+.live-fut-title { font-weight: 700; font-size: 12px; margin-bottom: 6px; color: var(--es-green); }
+
+.live-mini-table, .live-opp-table, .live-pnl-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.live-mini-table th, .live-opp-table th, .live-pnl-table th {
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-3);
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+.live-mini-table td, .live-opp-table td, .live-pnl-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font);
+}
+.live-mini-table td.num, .live-opp-table td.num, .live-pnl-table td.num,
+.live-mini-table th.num, .live-opp-table th.num, .live-pnl-table th.num {
+  text-align: right;
+  font-family: var(--mono);
+}
+.live-opp-table tbody tr:hover, .live-pnl-table tbody tr:hover { background: var(--bg-input); }
+.live-cheap { background: #fff7e0; }
+.live-mini-table td.dim, .num.dim { color: var(--text-3); }
+.pos { color: var(--green); font-weight: 600; }
+.neg { color: var(--red); font-weight: 600; }
+
+.live-badge {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.live-badge.green { color: var(--green); border-color: var(--green); }
+.live-badge.red { color: var(--red); border-color: var(--red); }
+.live-badge.dim { color: var(--text-3); }
+
 .winner-section {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -945,6 +1106,30 @@ body {
   gap: 14px;
   margin-bottom: 20px;
 }
+.pase-subtabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 20px;
+  border-bottom: 1px solid var(--border);
+}
+.pase-subtab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 9px 16px;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.pase-subtab:hover { color: var(--es-green); }
+.pase-subtab.active {
+  color: var(--es-green);
+  border-bottom-color: var(--es-green);
+}
+
 .pase-params-card {
   background: var(--bg-card);
   border: 1px solid var(--border);

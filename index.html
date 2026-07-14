@@ -457,6 +457,13 @@
 
     <div class="ret-section-title">Calculadora de pases, tasas implícitas y estrategias de venta</div>
 
+    <div class="pase-subtabs">
+      <button class="pase-subtab active" id="pase-subtab-estrategias" onclick="fondeoHide()">Pases &amp; estrategias</button>
+      <button class="pase-subtab" id="pase-subtab-fondeo" onclick="fondeoShow()">Fondeo</button>
+    </div>
+
+    <div id="pase-main-block">
+
     <div class="pase-grain-chips" id="pase-grain-chips">
       <button class="pase-chip active" onclick="paseSetGrain('soja', event)">Soja</button>
       <button class="pase-chip" onclick="paseSetGrain('maiz', event)">Maíz</button>
@@ -550,6 +557,54 @@
     <div id="pase-strat-summary" style="margin-bottom:16px;"></div>
     <div id="pase-strat-rows"></div>
     <div class="pase-note" id="pase-strat-note"></div>
+
+    </div><!-- /pase-main-block -->
+
+    <div id="fondeo-block" style="display:none;">
+
+      <div class="pase-params-grid">
+        <div class="pase-params-card">
+          <div class="pase-params-title">Necesidad y horizonte</div>
+          <div class="pase-params-row">
+            <div class="field"><label>Monto a fondear (u$s)</label><input type="number" id="fondeo-monto" value="1500000" step="10000" oninput="fondeoCalc()"></div>
+            <div class="field"><label>Fecha de repago</label><input type="date" id="fondeo-fecha" onchange="fondeoCalc()"></div>
+            <div class="field"><label>Días</label><div id="fondeo-dias" style="padding:9px 0; font-family:var(--mono); font-weight:700; font-size:15px; color:var(--es-green);">—</div></div>
+          </div>
+        </div>
+        <div class="pase-params-card">
+          <div class="pase-params-title">Precios y tipo de cambio</div>
+          <div class="pase-params-row">
+            <div class="field"><label>Futuro MATBA (u$s/tn)</label><input type="number" id="fondeo-precio-usd" value="215" step="0.1" oninput="fondeoCalc()"></div>
+            <div class="field"><label>Forward en pesos ($/tn)</label><input type="number" id="fondeo-forward-ars" value="360000" step="1000" oninput="fondeoCalc()"></div>
+            <div class="field"><label>TC Spot (ARS/USD)</label><input type="number" id="fondeo-tc-spot" value="1480" step="1" oninput="fondeoCalc()"></div>
+            <div class="field"><label>TC Futuro ROFEX</label><input type="number" id="fondeo-tc-fut" value="1720" step="1" oninput="fondeoCalc()"></div>
+          </div>
+        </div>
+        <div class="pase-params-card">
+          <div class="pase-params-title">Tasas todo-costo (TNA, con gastos, sellos e IVA)</div>
+          <div class="pase-params-row">
+            <div class="field"><label>Crédito USD (TNA %)</label><input type="number" id="fondeo-r-usd" value="9.0" step="0.1" oninput="fondeoCalc()" style="font-weight:700; border: 2px solid var(--es-green); background: var(--es-green-light); color: var(--es-green-dark);"></div>
+            <div class="field"><label>Crédito ARS (TNA %)</label><input type="number" id="fondeo-r-ars" value="38.0" step="0.1" oninput="fondeoCalc()" style="font-weight:700; border: 2px solid var(--es-gold); background: var(--es-gold-light); color: #96700e;"></div>
+            <div class="field"><label>Descuento cheques (TNA %)</label><input type="number" id="fondeo-r-cheq" value="42.0" step="0.1" oninput="fondeoCalc()"></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="text-align:right; margin-bottom:20px;">
+        <button class="btn" onclick="fondeoCalc()">Calcular</button>
+      </div>
+
+      <div class="ret-section-title">Lectura rápida</div>
+      <div class="pase-reading-grid" id="fondeo-kpis"></div>
+
+      <div class="ret-section-title gold">Comparador de fuentes de financiamiento</div>
+      <div id="fondeo-rows"></div>
+      <div id="fondeo-alert"></div>
+      <div class="pase-note" style="margin-top:16px;">
+        <strong>Cómo leerlo.</strong> Las tres alternativas se comparan por lo mismo: cuántos dólares netos te entran hoy por cada tonelada que comprometés. Gana la que más te deja. Cargá las tasas <strong>todo-costo</strong> (con gastos de otorgamiento, sellos e IVA sobre intereses); si comparás TNAs nominales limpias, el crédito bancario siempre parece más barato de lo que es.
+      </div>
+
+    </div><!-- /fondeo-block -->
 
   </div>
 </div>
@@ -770,6 +825,7 @@ window.addEventListener('beforeprint', function() {
 <script src="livepanel.js"></script>
 <script src="retenciones.js"></script>
 <script src="pases.js"></script>
+<script src="fondeo.js"></script>
 <script src="asistente.js"></script>
 <script src="vol_greeks.js"></script>
 <script src="spreads.js"></script>

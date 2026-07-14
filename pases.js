@@ -13,6 +13,7 @@ function togglePases() {
   document.getElementById('btn-update-primas').style.display = 'none';
   renderTabs();
   renderModules();
+  if (typeof fondeoHide === 'function') fondeoHide();
   paseUpdatePositions();
   paseCalc();
 }
@@ -396,12 +397,12 @@ function paseCalcStrategies(pair, inp, calc) {
     strats.push({
       name: '⑦ Forward + descuento cheques',
       desc: `Vender forward ${pair.to.name}, descontar cheques al ${inp.cheques}% TNA.`,
-      resultUSD: usdHoy,
-      resultARS: pesosHoy,
+      resultUSD: usdHoy * fvOppUSD,
+      resultARS: pesosHoy * fvOppUSD,
       riskTC: false, // TC fijado en el forward
       riskPrecio: false,
       category: 'ars',
-      detail: `Venta forward: ${pair.to.price.toFixed(1)} u$s × TC ${pair.tcTo} = $${cobroFuturoARS.toLocaleString('es',{maximumFractionDigits:0})} en ${days}d. Descuento al ${inp.cheques}% TNA: -$${costoDesc.toLocaleString('es',{maximumFractionDigits:0})}. Cobro hoy: $${pesosHoy.toLocaleString('es',{maximumFractionDigits:0})} (≈ ${usdHoy.toFixed(1)} u$s al TC spot).`
+      detail: `Venta forward: ${pair.to.price.toFixed(1)} u$s × TC ${pair.tcTo} = $${cobroFuturoARS.toLocaleString('es',{maximumFractionDigits:0})} en ${days}d. Descuento al ${inp.cheques}% TNA: -$${costoDesc.toLocaleString('es',{maximumFractionDigits:0})}. Cobro hoy: $${pesosHoy.toLocaleString('es',{maximumFractionDigits:0})} (≈ ${usdHoy.toFixed(1)} u$s al TC spot).${rOppUSD > 0 ? ` Aplicado al costo de capital (${rOppUSD}% TNA) hasta la fecha de ${pair.to.name}: ≈ ${(usdHoy * fvOppUSD).toFixed(1)} u$s — así queda comparable contra el resto.` : ''}`
     });
   }
 
