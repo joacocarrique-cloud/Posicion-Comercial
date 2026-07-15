@@ -73,11 +73,78 @@ function spToggleYear(y){
   spBuildYearChips();spCalcSpread();
 }
 
+// ─── Días al vencimiento (a hoy) ───
+// Reconstruye la fecha de vto desde el último registro (fecha + dias_vto)
+// y recalcula contra la fecha de hoy, no contra la última sync.
+function spVtoDate(crop,pos){
+  let lastKey='',last=null;
+  ASST_FUTPOS.forEach(r=>{
+    if(r.cultivo!==crop||r.pos!==pos)return;
+    const dk=String(r.fecha).slice(0,10);
+    if(dk>lastKey){lastKey=dk;last=r;}
+  });
+  if(!last)return null;
+  const dte=typeof last.dias_vto==='number'?last.dias_vto:parseInt(last.dias_vto);
+  if(!isFinite(dte))return null;
+  const p=lastKey.split('-').map(Number);
+  const v=new Date(p[0],p[1]-1,p[2]);
+  v.setDate(v.getDate()+dte);
+  return v;
+}
+
+function spDteHoy(crop,pos){
+  const v=spVtoDate(crop,pos);
+  if(!v)return null;
+  const hoy=new Date();hoy.setHours(0,0,0,0);
+  return{dias:Math.round((v-hoy)/86400000),vto:v};
+}
+
+function spFmtFecha(d){
+  const M=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  return `${String(d.getDate()).padStart(2,'0')}-${M[d.getMonth()]}-${String(d.getFullYear()).slice(2)}`;
+}
+
+function spRenderDte(crop1,pos1,crop2,pos2){
+  const bar=document.getElementById('sp-dte-bar');
+  if(!bar)return;
+  const a=spDteHoy(crop1,pos1),b=spDteHoy(crop2,pos2);
+  if(!a&&!b){bar.innerHTML='';return;}
+
+  const legs=[];
+  if(a)legs.push({lbl:`${crop1.toUpperCase()} ${pos1}`,...a});
+  if(b)legs.push({lbl:`${crop2.toUpperCase()} ${pos2}`,...b});
+
+  const minD=Math.min(...legs.map(l=>l.dias));
+
+  const chip=l=>{
+    const cerca=l.dias===minD&&legs.length>1;
+    let col='var(--es-green)',bg='var(--es-green-light)';
+    if(l.dias<=15){col='var(--red)';bg='#fde8e8';}
+    else if(l.dias<=30){col='#8a6d1f';bg='#fdf6e3';}
+    const txt=l.dias<0?`vencida hace ${Math.abs(l.dias)}d`
+             :l.dias===0?'vence HOY'
+             :`${l.dias} días al vto`;
+    return `<span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-family:var(--mono);
+      padding:6px 11px;border-radius:8px;border:1px solid ${col};background:${bg};color:${col};
+      ${cerca?'font-weight:700;box-shadow:0 0 0 2px rgba(0,0,0,.04);':''}">
+      ${cerca?'⏱':'📅'} <strong>${l.lbl}</strong> · ${txt} <span style="opacity:.7;">(${spFmtFecha(l.vto)})</span></span>`;
+  };
+
+  let html=legs.map(chip).join('');
+  if(legs.length===2){
+    const gap=Math.abs(legs[0].dias-legs[1].dias);
+    html+=`<span style="font-size:11px;color:var(--text-3);font-family:var(--mono);padding:6px 4px;">
+      ↔ ${gap} días entre patas</span>`;
+  }
+  bar.innerHTML=html;
+}
+
 function spCalcSpread(){
   const crop1=document.getElementById('sp-crop1').value;
   const crop2=document.getElementById('sp-crop2').value;
   const pos1=document.getElementById('sp-pos1').value;
   const pos2=document.getElementById('sp-pos2').value;
+  spRenderDte(crop1,pos1,crop2,pos2);
   if(!pos1||!pos2){document.getElementById('sp-stats').innerHTML='<div style="grid-column:span 6;color:var(--text-3);font-size:12px;">Seleccioná posiciones.</div>';return;}
   if(crop1===crop2&&pos1===pos2){document.getElementById('sp-stats').innerHTML='<div style="grid-column:span 6;color:var(--text-3);font-size:12px;">Seleccioná dos posiciones diferentes.</div>';return;}
 
