@@ -174,13 +174,14 @@ function renderModules() {
 }
 
 function switchToWorkspace() {
-  theoryMode = false; retMode = false; paseMode = false; asstMode = false; spreadMode = false;
+  theoryMode = false; retMode = false; paseMode = false; asstMode = false; spreadMode = false; if (typeof simMode !== 'undefined') simMode = false;
   if (typeof desvioMode !== 'undefined') desvioMode = false;
   document.getElementById('workspace').style.display = 'block';
   document.getElementById('theory-space').style.display = 'none';
   document.getElementById('ret-space').style.display = 'none';
   document.getElementById('pase-space').style.display = 'none';
   document.getElementById('spreads-space').style.display = 'none';
+  if (document.getElementById('simulador-space')) document.getElementById('simulador-space').style.display = 'none';
   if (document.getElementById('desvio-space')) document.getElementById('desvio-space').style.display = 'none';
   if (document.getElementById('alertas-space')) document.getElementById('alertas-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'flex';
@@ -198,6 +199,7 @@ function toggleTheory() {
   document.getElementById('ret-space').style.display = 'none';
   document.getElementById('pase-space').style.display = 'none';
   document.getElementById('spreads-space').style.display = 'none';
+  if (document.getElementById('simulador-space')) document.getElementById('simulador-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'none';
   renderTabs();
   renderModules();
@@ -210,6 +212,7 @@ function toggleRetenciones() {
   document.getElementById('ret-space').style.display = 'block';
   document.getElementById('pase-space').style.display = 'none';
   document.getElementById('spreads-space').style.display = 'none';
+  if (document.getElementById('simulador-space')) document.getElementById('simulador-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'flex';
   document.getElementById('btn-update-primas').style.display = 'none';
   renderTabs();
@@ -220,13 +223,14 @@ function toggleRetenciones() {
 }
 
 function switchTab(idx) {
-  theoryMode = false; retMode = false; paseMode = false; asstMode = false; spreadMode = false;
+  theoryMode = false; retMode = false; paseMode = false; asstMode = false; spreadMode = false; if (typeof simMode !== 'undefined') simMode = false;
   if (typeof desvioMode !== 'undefined') desvioMode = false;
   document.getElementById('workspace').style.display = 'block';
   document.getElementById('theory-space').style.display = 'none';
   document.getElementById('ret-space').style.display = 'none';
   document.getElementById('pase-space').style.display = 'none';
   document.getElementById('spreads-space').style.display = 'none';
+  if (document.getElementById('simulador-space')) document.getElementById('simulador-space').style.display = 'none';
   if (document.getElementById('desvio-space')) document.getElementById('desvio-space').style.display = 'none';
   if (document.getElementById('alertas-space')) document.getElementById('alertas-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'flex';
@@ -541,6 +545,10 @@ function renderChart() {
     borderWidth: 2,
     borderDash: [6, 4],
     pointRadius: 0,
+    pointHoverRadius: 5,
+    pointHoverBackgroundColor: '#b0afa8',
+    pointHoverBorderColor: '#fff',
+    pointHoverBorderWidth: 2,
     tension: 0
   }];
 
@@ -551,6 +559,10 @@ function renderChart() {
       borderColor: s.color,
       borderWidth: 2.5,
       pointRadius: 0,
+      pointHoverRadius: 6,
+      pointHoverBackgroundColor: s.color,
+      pointHoverBorderColor: '#fff',
+      pointHoverBorderWidth: 2,
       tension: 0
     });
   });

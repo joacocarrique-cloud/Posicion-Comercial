@@ -2121,3 +2121,32 @@ body {
     font-family: 'JetBrains Mono', monospace;
   }
 }
+
+/* ═══ SIMULADOR DE POSICIÓN ═══ */
+.sim-leg {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+  background: var(--bg-card);
+}
+.sim-leg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sim-leg-grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 8px; }
+.sim-del {
+  position: absolute; top: 8px; right: 8px;
+  background: var(--red); color: #fff; border: none;
+  width: 20px; height: 20px; border-radius: 5px; cursor: pointer; font-size: 11px; line-height: 1;
+}
+.sim-del:hover { background: #a52828; }
+.sim-prima-tag {
+  font-size: 11px; margin-top: 8px; padding: 4px 7px; border-radius: 5px;
+  font-family: var(--mono);
+}
+.sim-prima-tag.ok { background: var(--es-green-light); color: var(--es-green); }
+.sim-prima-tag.manual { background: var(--es-gold-light); color: var(--es-gold); }
+.sim-prima-tag.err { background: #fbebe8; color: var(--red); }
+.sim-alert {
+  background: #fbebe8; border: 1px solid #e8c3ba; color: var(--red);
+  padding: 8px 10px; border-radius: 6px; font-size: 12px; margin-bottom: 12px;
+}

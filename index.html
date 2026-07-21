@@ -28,6 +28,7 @@
       <button class="mod-pill" onclick="toggleDesvio()">📉 Desvío</button>
       <button class="mod-pill" onclick="toggleAlertas()">🧠 Inteligencia</button>
       <button class="mod-pill" onclick="togglePnL()">💰 P&amp;L</button>
+      <button class="mod-pill" id="sim-pill" onclick="toggleSimulador()">🎯 Posición</button>
       <button class="mod-pill" onclick="toggleTheory()">📙 Manual</button>
     </nav>
   </div>
@@ -815,6 +816,73 @@
     <div id="pnl-content"></div>
   </div>
 
+  <!-- ═══ SIMULADOR DE POSICIÓN ═══ -->
+  <div id="simulador-space" style="display:none;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <span style="font-size:28px;">🎯</span>
+      <div>
+        <div style="font-size:18px;font-weight:700;">Simulador de Posición Espartina</div>
+        <div style="font-size:12px;color:var(--text-2);">Precio de venta ponderado de la compañía combinando futuros y opciones (múltiples strikes) contra escenarios de mercado</div>
+      </div>
+    </div>
+
+    <div class="builder-area">
+      <!-- Columna izquierda: controles -->
+      <div class="strats-list">
+        <!-- Volumen base -->
+        <div class="strat-card" style="padding:16px;">
+          <div style="font-size:13px;font-weight:700;color:var(--es-green);margin-bottom:12px;">Volumen Base</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div class="field">
+              <label>Especie</label>
+              <select id="sim-crop" onchange="simRefreshAllPrimas();simRenderLegs();simRender();">
+                <option value="soja">Soja</option>
+                <option value="maiz">Maíz</option>
+                <option value="trigo">Trigo</option>
+                <option value="girasol">Girasol</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Volumen total (tn)</label>
+              <input type="number" id="sim-volbase" value="10000" min="0" onchange="simRender();">
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text-3);margin-top:10px;line-height:1.5;">
+            Las primas se toman de la misma sincronización A3 del builder de coberturas (botón «Sincronizar A3» en la solapa Coberturas). Si un strike no tiene dato, cargá la prima manual en la pata.
+          </div>
+        </div>
+
+        <!-- Patas -->
+        <div class="strat-card" style="padding:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <span style="font-size:13px;font-weight:700;color:var(--es-green);">Patas de la Posición</span>
+            <span id="sim-sum-pct" style="font-size:12px;color:var(--text-3);">0% asignado</span>
+          </div>
+          <div class="sim-alert" id="sim-alert-over" style="display:none;">⚠ La suma de % volumen supera el 100% — estarías comprometiendo más grano del que tenés.</div>
+          <div id="sim-legs"></div>
+          <button class="btn btn-outline" style="width:100%;margin-top:4px;" onclick="simAddLeg();simRenderLegs();simRender();">+ Agregar Pata</button>
+        </div>
+
+        <!-- Resumen KPIs -->
+        <div class="strat-card" style="padding:16px;">
+          <div style="font-size:13px;font-weight:700;color:var(--es-green);margin-bottom:4px;">Resumen</div>
+          <div class="kpi-grid" style="grid-template-columns:repeat(2,1fr);">
+            <div class="kpi-card"><div class="k-lbl">% Cubierto</div><div class="k-val" id="sim-kpi-cub">0%</div></div>
+            <div class="kpi-card"><div class="k-lbl">% Sin Cobertura</div><div class="k-val" id="sim-kpi-sincob">100%</div></div>
+            <div class="kpi-card"><div class="k-lbl">Precio @ Mercado</div><div class="k-val" id="sim-kpi-px">—</div></div>
+            <div class="kpi-card"><div class="k-lbl">Prima Neta /tn</div><div class="k-val" id="sim-kpi-prima">—</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Columna derecha: gráfico -->
+      <div class="chart-section">
+        <div class="chart-wrap" style="position:relative;height:520px;"><canvas id="sim-chart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+
 <!-- ═══ FOOTER DE IMPRESIÓN (oculto en pantalla, visible al imprimir) ═══ -->
 <div id="print-footer" style="display:none;">
   <span class="pf-left">Espartina S.A. · Suite Comercial de Coberturas · Precios indicativos</span>
@@ -957,5 +1025,6 @@ window.addEventListener('beforeprint', function() {
 <script src="alertas.js"></script>
 <script src="app.js"></script>
 <script src="pnl.js"></script>
+<script src="simulador.js"></script>
 </body>
 </html>
