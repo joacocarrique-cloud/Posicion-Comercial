@@ -169,11 +169,11 @@ function getRetencionForPos(cultivo, label) {
 
 // ─── Asistente constants ───
 const ASST_DRIVE = {
-  vi_percentiles:  'https://docs.google.com/spreadsheets/d/e/2PACX-1vSP5-XpHimq5vLl4TO5vIEpkxNWz6G1IoNoemRTJLiR68Clx-YP5ek3_MrjWYkW-WNvDwhd48mvmqJh/pub?gid=294861492&single=true&output=csv',
-  skew_historico:  'https://docs.google.com/spreadsheets/d/e/2PACX-1vSP5-XpHimq5vLl4TO5vIEpkxNWz6G1IoNoemRTJLiR68Clx-YP5ek3_MrjWYkW-WNvDwhd48mvmqJh/pub?gid=1243539227&single=true&output=csv',
-  serie_vi_diaria: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSP5-XpHimq5vLl4TO5vIEpkxNWz6G1IoNoemRTJLiR68Clx-YP5ek3_MrjWYkW-WNvDwhd48mvmqJh/pub?gid=1030026531&single=true&output=csv',
-  vi_vs_hv:        'https://docs.google.com/spreadsheets/d/e/2PACX-1vSP5-XpHimq5vLl4TO5vIEpkxNWz6G1IoNoemRTJLiR68Clx-YP5ek3_MrjWYkW-WNvDwhd48mvmqJh/pub?gid=2090823289&single=true&output=csv',
-  futuros_posicion:'https://docs.google.com/spreadsheets/d/e/2PACX-1vSP5-XpHimq5vLl4TO5vIEpkxNWz6G1IoNoemRTJLiR68Clx-YP5ek3_MrjWYkW-WNvDwhd48mvmqJh/pub?gid=802114309&single=true&output=csv',
+  vi_percentiles:  'https://docs.google.com/spreadsheets/d/e/2PACX-1vSP5-XpHimq5vLl4TO5vIEpkxNWz6G1IoNoemRTJLiR68Clx-YP5ek3_MrjWYkW-WNvDwhd48mvmqJh/pub?gid=225525795&single=true&output=csv',
+  skew_historico:  'https://docs.google.com/spreadsheets/d/e/2PACX-1vSP5-XpHimq5vLl4TO5vIEpkxNWz6G1IoNoemRTJLiR68Clx-YP5ek3_MrjWYkW-WNvDwhd48mvmqJh/pub?gid=1025803161&single=true&output=csv',
+  serie_vi_diaria: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSP5-XpHimq5vLl4TO5vIEpkxNWz6G1IoNoemRTJLiR68Clx-YP5ek3_MrjWYkW-WNvDwhd48mvmqJh/pub?gid=1268819511&single=true&output=csv',
+  vi_vs_hv:        'https://docs.google.com/spreadsheets/d/e/2PACX-1vSP5-XpHimq5vLl4TO5vIEpkxNWz6G1IoNoemRTJLiR68Clx-YP5ek3_MrjWYkW-WNvDwhd48mvmqJh/pub?gid=1338878658&single=true&output=csv',
+  futuros_posicion:'https://docs.google.com/spreadsheets/d/e/2PACX-1vSP5-XpHimq5vLl4TO5vIEpkxNWz6G1IoNoemRTJLiR68Clx-YP5ek3_MrjWYkW-WNvDwhd48mvmqJh/pub?gid=980570947&single=true&output=csv',
 };
 
 const ASST_POS = {soja:['JUL26','NOV26','ENE27','MAR27','MAY27','JUL27'],maiz:['JUL26','SEP26','DIC26','ABR27','JUL27'],trigo:['JUL26','SEP26','DIC26','ENE27','MAR27']};
@@ -207,6 +207,7 @@ let tabs, activeTabIdx, tabCounter;
 let _saveIndicatorTimer = null;
 let _globalTimer = null;
 let _renderTimer = null;
+let _calcTimer = null;
 
 // Pases state
 let paseP3Active = false;
