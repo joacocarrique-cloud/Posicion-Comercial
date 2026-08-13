@@ -1824,6 +1824,47 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════
+   ─── Delta de escenario (antes iba con style inline) ─── */
+
+.comp-table .scn-diff{
+  font-size:10px; margin-left:4px; font-weight:600;
+  font-family:var(--mono, 'JetBrains Mono', monospace);
+}
+
+/* ═══════════════════════════════════════════════════
+   ─── Barra de referencias del gráfico (Objetivo / Dolor) ─── */
+
+.ref-bar{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  margin-bottom:10px;
+}
+.ref-field{
+  display:flex; align-items:center; gap:7px;
+  border:1px solid var(--border, #e0e2d8);
+  border-radius:6px; padding:5px 9px; background:#fff;
+}
+.ref-dash{ width:16px; height:0; border-top:2px dashed currentColor; flex-shrink:0; }
+.ref-obj{ color:#7c3aed; }
+.ref-dol{ color:#c43030; }
+.ref-field label{
+  font-size:10px; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
+  color:var(--text-3, #7e8574); white-space:nowrap; cursor:pointer;
+}
+.ref-input{
+  width:62px; border:none; border-bottom:1px solid var(--border, #e0e2d8);
+  background:transparent; padding:2px 0; text-align:right;
+  font-family:var(--mono, 'JetBrains Mono', monospace);
+  font-size:12px; font-weight:600; color:var(--text, #1c2118);
+}
+.ref-input:focus{ outline:none; border-bottom-color:currentColor; }
+.ref-hint{ font-size:10px; color:var(--text-3, #7e8574); margin-left:auto; }
+
+@media (max-width:640px){
+  .ref-hint{ display:none; }
+  .ref-input{ width:54px; }
+}
+
+/* ═══════════════════════════════════════════════════
    ─── @media print — Exportación PDF / Ctrl+P ───
    Landscape A4: estrategias izquierda | gráfico+análisis derecha
    SIN tocar el layout de pantalla
@@ -1869,7 +1910,15 @@ body {
   #desvio-space,
   #alertas-space,
   .leg-row button,
-  .btn-danger {
+  .btn-danger,
+  /* Estos tres son hijos directos de #workspace: si no se ocultan, el grid de
+     impresión les asigna celda y empujan el gráfico a la página siguiente. */
+  .calc-section,
+  #calc-section,
+  .live-panel,
+  #live-panel,
+  #asst-panel,
+  .ref-hint {
     display: none !important;
   }
 
@@ -1972,11 +2021,17 @@ body {
     align-items: start !important;
   }
 
-  /* Columna izquierda: solo estrategias */
+  /* .chart-section vive DENTRO de .builder-area, así que nunca podía ser
+     celda del grid de #workspace. Con display:contents el wrapper desaparece
+     y .strats-list + .chart-section pasan a ser items del grid. */
   .builder-area {
+    display: contents !important;
+  }
+
+  /* Columna izquierda: solo estrategias */
+  .strats-list {
     grid-column: 1 !important;
     grid-row: 1 / 3 !important;
-    display: block !important;
     margin-bottom: 0 !important;
   }
 
@@ -1985,19 +2040,41 @@ body {
     grid-column: 2 !important;
     grid-row: 1 !important;
     height: auto !important;
-    min-height: 180px !important;
-    max-height: 240px !important;
     padding: 10px !important;
     box-shadow: none !important;
     border: 1px solid #e0e2d8 !important;
     border-radius: 7px !important;
     break-inside: avoid;
-    /* Sacamos el chart-section del builder-area en pantalla — en print lo subimos */
   }
 
+  /* El alto inline (600px) se remueve en beforeprint; acá mandamos nosotros. */
   .chart-wrap {
-    flex: 1 !important;
-    height: 200px !important;
+    height: 82mm !important;
+    max-height: 82mm !important;
+  }
+
+  /* Barra de referencias: se imprime como texto, sin cajas ni bordes */
+  .ref-bar {
+    display: flex !important;
+    gap: 14px !important;
+    margin-bottom: 6px !important;
+  }
+  .ref-field {
+    border: none !important;
+    padding: 0 !important;
+    background: transparent !important;
+    gap: 5px !important;
+  }
+  .ref-field label { font-size: 8px !important; }
+  .ref-input {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    border: none !important;
+    background: transparent !important;
+    pointer-events: none !important;
+    width: auto !important;
+    font-size: 10px !important;
+    text-align: left !important;
   }
 
   /* Columna derecha fila 2: tabla + winner */
@@ -2028,7 +2105,7 @@ body {
 
   /* ─── Leg rows: ocultar controles de edición ─── */
   .leg-row select,
-  .leg-row input[type="number"] {
+  .leg-row input {
     -webkit-appearance: none !important;
     appearance: none !important;
     border: none !important;
@@ -2075,10 +2152,30 @@ body {
     break-inside: avoid !important;
   }
   .table-section h2 { font-size: 11px !important; margin-bottom: 7px !important; }
+  .comp-table {
+    width: 100% !important;
+    table-layout: fixed !important;
+  }
   .comp-table th,
   .comp-table td {
-    padding: 4px 7px !important;
+    padding: 4px 6px !important;
     font-size: 9px !important;
+  }
+  /* Sin esto, "Precio Actual / Spot" y "Suba Moderada" se parten en 3 líneas */
+  .comp-table th:first-child,
+  .comp-table td:first-child {
+    width: 26% !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  .comp-table th:nth-child(2),
+  .comp-table td:nth-child(2) { width: 15% !important; }
+  .comp-table td { white-space: nowrap !important; }
+  .comp-table .scn-diff {
+    display: block !important;
+    margin-left: 0 !important;
+    font-size: 8px !important;
   }
 
   /* ─── Winner / Rango de Dominancia ─── */
@@ -2120,33 +2217,4 @@ body {
     color: #7e8574;
     font-family: 'JetBrains Mono', monospace;
   }
-}
-
-/* ═══ SIMULADOR DE POSICIÓN ═══ */
-.sim-leg {
-  position: relative;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 10px;
-  background: var(--bg-card);
-}
-.sim-leg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.sim-leg-grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 8px; }
-.sim-del {
-  position: absolute; top: 8px; right: 8px;
-  background: var(--red); color: #fff; border: none;
-  width: 20px; height: 20px; border-radius: 5px; cursor: pointer; font-size: 11px; line-height: 1;
-}
-.sim-del:hover { background: #a52828; }
-.sim-prima-tag {
-  font-size: 11px; margin-top: 8px; padding: 4px 7px; border-radius: 5px;
-  font-family: var(--mono);
-}
-.sim-prima-tag.ok { background: var(--es-green-light); color: var(--es-green); }
-.sim-prima-tag.manual { background: var(--es-gold-light); color: var(--es-gold); }
-.sim-prima-tag.err { background: #fbebe8; color: var(--red); }
-.sim-alert {
-  background: #fbebe8; border: 1px solid #e8c3ba; color: var(--red);
-  padding: 8px 10px; border-radius: 6px; font-size: 12px; margin-bottom: 12px;
 }

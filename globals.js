@@ -3,6 +3,10 @@
 // ═══════════════════════════════════════════════════
 
 const COLORS = ['#1A6B3C', '#2563eb', '#d97706', '#7c3aed', '#c43030', '#0d9488'];
+
+// Líneas de referencia manuales del gráfico de coberturas
+const REF_OBJ_COLOR = '#7c3aed';  // Precio Objetivo
+const REF_DOL_COLOR = '#c43030';  // Precio Dolor
 const STORAGE_KEY = 'espartina_coberturas_v1';
 
 // ─── Strategy Presets (strikes relative to spot) ───
@@ -88,6 +92,7 @@ const DEFAULT_TABS = [
   {
     id: 1, name: 'Estrategia de Coberturas',
     assetVal: 'soja', spot: 340, min: 270, max: 410,
+    precioObjetivo: null, precioDolor: null,
     stratCounter: 2,
     strategies: [
       { id: 1, name: 'Estrategia 1', color: COLORS[0], legs: [

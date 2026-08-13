@@ -52,11 +52,11 @@ function getAvailableStrikes(optType) {
 
 function renderStrikeField(stratId, legIdx, leg) {
   if (leg.type === 'futuro') {
-    return `<input class="w-num" type="number" step="0.1" title="Strike" value="${leg.strike}" oninput="updateLegInput(${stratId}, ${legIdx}, 'strike', this.value)">`;
+    return `<input class="w-num" type="text" inputmode="decimal" title="Strike" value="${leg.strike}" oninput="updateLegInput(${stratId}, ${legIdx}, 'strike', this.value)" onblur="scheduleFullRender()">`;
   }
   const strikes = getAvailableStrikes(leg.type);
   if (strikes.length === 0) {
-    return `<input class="w-num" type="number" step="0.1" title="Strike" value="${leg.strike}" oninput="updateLegInput(${stratId}, ${legIdx}, 'strike', this.value)">`;
+    return `<input class="w-num" type="text" inputmode="decimal" title="Strike" value="${leg.strike}" oninput="updateLegInput(${stratId}, ${legIdx}, 'strike', this.value)" onblur="scheduleFullRender()">`;
   }
   const options = strikes.map(s => 
     `<option value="${s.strike}" ${s.strike === leg.strike ? 'selected' : ''}>${s.strike}</option>`
@@ -174,14 +174,13 @@ function renderModules() {
 }
 
 function switchToWorkspace() {
-  theoryMode = false; retMode = false; paseMode = false; asstMode = false; spreadMode = false; if (typeof simMode !== 'undefined') simMode = false;
+  theoryMode = false; retMode = false; paseMode = false; asstMode = false; spreadMode = false;
   if (typeof desvioMode !== 'undefined') desvioMode = false;
   document.getElementById('workspace').style.display = 'block';
   document.getElementById('theory-space').style.display = 'none';
   document.getElementById('ret-space').style.display = 'none';
   document.getElementById('pase-space').style.display = 'none';
   document.getElementById('spreads-space').style.display = 'none';
-  if (document.getElementById('simulador-space')) document.getElementById('simulador-space').style.display = 'none';
   if (document.getElementById('desvio-space')) document.getElementById('desvio-space').style.display = 'none';
   if (document.getElementById('alertas-space')) document.getElementById('alertas-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'flex';
@@ -199,7 +198,6 @@ function toggleTheory() {
   document.getElementById('ret-space').style.display = 'none';
   document.getElementById('pase-space').style.display = 'none';
   document.getElementById('spreads-space').style.display = 'none';
-  if (document.getElementById('simulador-space')) document.getElementById('simulador-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'none';
   renderTabs();
   renderModules();
@@ -212,7 +210,6 @@ function toggleRetenciones() {
   document.getElementById('ret-space').style.display = 'block';
   document.getElementById('pase-space').style.display = 'none';
   document.getElementById('spreads-space').style.display = 'none';
-  if (document.getElementById('simulador-space')) document.getElementById('simulador-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'flex';
   document.getElementById('btn-update-primas').style.display = 'none';
   renderTabs();
@@ -223,14 +220,13 @@ function toggleRetenciones() {
 }
 
 function switchTab(idx) {
-  theoryMode = false; retMode = false; paseMode = false; asstMode = false; spreadMode = false; if (typeof simMode !== 'undefined') simMode = false;
+  theoryMode = false; retMode = false; paseMode = false; asstMode = false; spreadMode = false;
   if (typeof desvioMode !== 'undefined') desvioMode = false;
   document.getElementById('workspace').style.display = 'block';
   document.getElementById('theory-space').style.display = 'none';
   document.getElementById('ret-space').style.display = 'none';
   document.getElementById('pase-space').style.display = 'none';
   document.getElementById('spreads-space').style.display = 'none';
-  if (document.getElementById('simulador-space')) document.getElementById('simulador-space').style.display = 'none';
   if (document.getElementById('desvio-space')) document.getElementById('desvio-space').style.display = 'none';
   if (document.getElementById('alertas-space')) document.getElementById('alertas-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'flex';
@@ -257,6 +253,7 @@ function addNewTab() {
   tabs.push({
     id: tabCounter++, name: 'Estrategia de Coberturas',
     assetVal: crop, spot, min, max,
+    precioObjetivo: null, precioDolor: null,
     stratCounter: 2,
     strategies: [{ id: 1, name: 'Estrategia 1', color: COLORS[0], legs: [{ dir: 'buy', type: 'put', ratio: 1, strike: Math.round(spot * 0.97), prima: 3 }] }]
   });
@@ -282,6 +279,10 @@ function syncTopBar() {
   document.getElementById('chart-min').value = t.min;
   document.getElementById('chart-max').value = t.max;
   document.getElementById('tab-name-input').value = t.name;
+  const inObj = document.getElementById('ref-objetivo');
+  const inDol = document.getElementById('ref-dolor');
+  if (inObj) inObj.value = (t.precioObjetivo != null) ? t.precioObjetivo : '';
+  if (inDol) inDol.value = (t.precioDolor    != null) ? t.precioDolor    : '';
   applyChartHeight();
   renderTabs();
   if (retData.fasCTP !== null) {
@@ -358,6 +359,24 @@ function updateGlobalInputs() {
   _globalTimer = setTimeout(() => renderAll(), 250);
 }
 
+// ─── Lineas de referencia manuales (Precio Objetivo / Precio Dolor) ─────────
+// Se guardan en la tab, asi que persisten con el resto del estado.
+function updateRefLines() {
+  const t = getActiveTab();
+  const parseRef = (id) => {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    const raw = String(el.value || '').trim().replace(',', '.');
+    if (raw === '') return null;
+    const v = parseFloat(raw);
+    return (isNaN(v) || v <= 0) ? null : v;
+  };
+  t.precioObjetivo = parseRef('ref-objetivo');
+  t.precioDolor    = parseRef('ref-dolor');
+  clearTimeout(_calcTimer);
+  _calcTimer = setTimeout(() => renderChart(), 250);
+}
+
 function addStrategy() {
   const t = getActiveTab();
   t.strategies.push({ id: t.stratCounter, name: 'Estrategia ' + t.stratCounter, color: COLORS[(t.stratCounter - 1) % COLORS.length], legs: [] });
@@ -371,34 +390,33 @@ function removeLeg(stratId, legIdx) { getActiveTab().strategies.find(x => x.id =
 function updateStratName(stratId, val) { getActiveTab().strategies.find(x => x.id === stratId).name = val; renderChart(); renderTable(); renderWinner(); }
 function updateLegSelect(stratId, legIdx, field, val) { getActiveTab().strategies.find(x => x.id === stratId).legs[legIdx][field] = val; renderAll(); }
 
+// Mientras se escribe NO se reconstruye la fila: el input conserva su texto y
+// su caret. Solo se actualizan grafico, tabla, dominancia y los KPI de la tarjeta.
+// El renderAll() completo se dispara recien al salir del campo (scheduleFullRender).
 function updateLegInput(stratId, legIdx, field, val) {
-  getActiveTab().strategies.find(x => x.id === stratId).legs[legIdx][field] = parseFloat(val) || 0;
+  const strat = getActiveTab().strategies.find(x => x.id === stratId);
+  if (!strat || !strat.legs[legIdx]) return;
+
+  const raw = String(val == null ? '' : val).trim().replace(',', '.');
+  const num = parseFloat(raw);
+  strat.legs[legIdx][field] = isNaN(num) ? 0 : num;
+
+  clearTimeout(_renderTimer);
+  _renderTimer = setTimeout(() => {
+    renderChart(); renderTable(); renderWinner();
+    refreshStratMetrics(stratId);
+  }, 200);
+}
+
+// Al abandonar un campo numerico: render completo (normaliza formato y persiste).
+// Si el foco salto a otro campo numerico, no se reconstruye nada.
+function scheduleFullRender() {
   clearTimeout(_renderTimer);
   _renderTimer = setTimeout(() => {
     const ae = document.activeElement;
-    const focusInfo = ae && ae.closest('.leg-row') ? {
-      stratId, legIdx, field,
-      selStart: ae.selectionStart, selEnd: ae.selectionEnd
-    } : null;
-
+    if (ae && ae.classList && ae.classList.contains('w-num')) return;
     renderAll();
-
-    if (focusInfo) {
-      const rows = document.querySelectorAll('.leg-row');
-      for (const row of rows) {
-        const inputs = row.querySelectorAll('input.w-num');
-        for (const inp of inputs) {
-          const attr = inp.getAttribute('oninput') || '';
-          if (attr.includes(`${focusInfo.stratId}, ${focusInfo.legIdx}, '${focusInfo.field}'`)) {
-            inp.focus();
-            try { inp.setSelectionRange(focusInfo.selStart, focusInfo.selEnd); } catch(e) {}
-            break;
-          }
-        }
-      }
-    }
-  }, 300);
-  renderChart(); renderTable(); renderWinner();
+  }, 150);
 }
 
 function calcPayoff(strat, price) {
@@ -417,40 +435,62 @@ function calcPayoff(strat, price) {
   return price + optionsPayoff - netPrima;
 }
 
+// Calcula piso / techo / break-even / costo de una estrategia.
+// Extraido de renderStrats para poder refrescar los KPI sin rehacer el DOM.
+function computeStratMetrics(s) {
+  const t = getActiveTab();
+  let minPayoff = Infinity; let maxPayoff = -Infinity;
+  for (let p = 0; p <= 1500; p++) {
+    const val = calcPayoff(s, p);
+    if (val < minPayoff) minPayoff = val;
+    if (val > maxPayoff) maxPayoff = val;
+  }
+
+  let cost = 0;
+  s.legs.forEach(l => { const q = l.ratio || 1; if (l.type !== 'futuro') cost += (l.dir === 'buy' ? l.prima : -l.prima) * q; });
+
+  const floorText = minPayoff < (t.spot * 0.5) ? '<span class="red-txt">Riesgo a la baja</span>' : `u$s ${minPayoff.toFixed(1)}`;
+  const ceilText  = maxPayoff > 1400 ? '<span class="green-txt">Ilimitado</span>' : `u$s ${maxPayoff.toFixed(1)}`;
+
+  const bes = []; let prevDiff = calcPayoff(s, 1) - 1;
+  for (let p = 2; p <= 800; p++) {
+    const diff = calcPayoff(s, p) - p;
+    if ((prevDiff < 0 && diff >= 0) || (prevDiff > 0 && diff <= 0)) bes.push(p);
+    prevDiff = diff;
+  }
+  const hasOptions = s.legs.some(l => l.type !== 'futuro');
+  let beText;
+  if (cost === 0 && hasOptions && bes.length === 0) beText = '0 Costo';
+  else if (bes.length === 1) beText = `u$s ${bes[0]}`;
+  else if (bes.length > 1) beText = 'Múltiples';
+  else beText = '-';
+
+  let costDisplay;
+  if (cost > 0) costDisplay = `Costo Neto: <span class="red-txt">$${cost.toFixed(1)}</span> <span style="font-size:10px; font-weight:normal; color:var(--text-3)">(${(cost / t.spot * 100).toFixed(1)}%)</span>`;
+  else if (cost < 0) costDisplay = `Crédito: <span class="green-txt">$${Math.abs(cost).toFixed(1)}</span>`;
+  else costDisplay = `Costo: <span>$0.0</span>`;
+
+  return { floorText, ceilText, beText, costDisplay };
+}
+
+// Reescribe solo los KPI/costo de una tarjeta, sin tocar los inputs.
+function refreshStratMetrics(stratId) {
+  const s = getActiveTab().strategies.find(x => x.id === stratId);
+  if (!s) return;
+  const m = computeStratMetrics(s);
+  const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  set(`k-floor-${s.id}`, m.floorText);
+  set(`k-ceil-${s.id}`,  m.ceilText);
+  set(`k-be-${s.id}`,    m.beText);
+  set(`cost-${s.id}`,    m.costDisplay);
+}
+
 function renderStrats() {
   const cont = document.getElementById('strats-container'); cont.innerHTML = '';
   const t = getActiveTab();
 
   t.strategies.forEach((s) => {
-    let minPayoff = Infinity; let maxPayoff = -Infinity;
-    for (let p = 0; p <= 1500; p++) {
-      let val = calcPayoff(s, p);
-      if (val < minPayoff) minPayoff = val; if (val > maxPayoff) maxPayoff = val;
-    }
-
-    let cost = 0;
-    s.legs.forEach(l => { let q = l.ratio || 1; if (l.type !== 'futuro') cost += (l.dir === 'buy' ? l.prima : -l.prima) * q; });
-
-    let floorText = minPayoff < (t.spot * 0.5) ? '<span class="red-txt">Riesgo a la baja</span>' : `u$s ${minPayoff.toFixed(1)}`;
-    let ceilText = maxPayoff > 1400 ? '<span class="green-txt">Ilimitado</span>' : `u$s ${maxPayoff.toFixed(1)}`;
-
-    let bes = []; let prevDiff = calcPayoff(s, 1) - 1;
-    for (let p = 2; p <= 800; p++) {
-      let diff = calcPayoff(s, p) - p;
-      if ((prevDiff < 0 && diff >= 0) || (prevDiff > 0 && diff <= 0)) bes.push(p);
-      prevDiff = diff;
-    }
-    let beText;
-    let hasOptions = s.legs.some(l => l.type !== 'futuro');
-    if (cost === 0 && hasOptions && bes.length === 0) beText = '0 Costo';
-    else if (bes.length === 1) beText = `u$s ${bes[0]}`;
-    else if (bes.length > 1) beText = 'Múltiples';
-    else beText = '-';
-
-    let costDisplay = '';
-    if (cost > 0) costDisplay = `Costo Neto: <span class="red-txt">$${cost.toFixed(1)}</span> <span style="font-size:10px; font-weight:normal; color:var(--text-3)">(${(cost / t.spot * 100).toFixed(1)}%)</span>`;
-    else if (cost < 0) costDisplay = `Crédito: <span class="green-txt">$${Math.abs(cost).toFixed(1)}</span>`;
-    else costDisplay = `Costo: <span>$0.0</span>`;
+    const { floorText, ceilText, beText, costDisplay } = computeStratMetrics(s);
 
     let legsHtml = s.legs.map((l, idx) => {
       const mktPrima = lookupPrima(l.type, l.strike);
@@ -460,9 +500,9 @@ function renderStrats() {
       <div class="leg-row">
         <select class="w-dir" onchange="updateLegSelect(${s.id}, ${idx}, 'dir', this.value)"><option value="buy" ${l.dir === 'buy' ? 'selected' : ''}>Compra</option><option value="sell" ${l.dir === 'sell' ? 'selected' : ''}>Venta</option></select>
         <select class="w-type" onchange="updateLegSelect(${s.id}, ${idx}, 'type', this.value)"><option value="put" ${l.type === 'put' ? 'selected' : ''}>Put</option><option value="call" ${l.type === 'call' ? 'selected' : ''}>Call</option><option value="futuro" ${l.type === 'futuro' ? 'selected' : ''}>Futuro</option></select>
-        <input class="w-num" type="number" step="0.1" title="Cantidad (Ratio)" value="${l.ratio}" oninput="updateLegInput(${s.id}, ${idx}, 'ratio', this.value)">
+        <input class="w-num" type="text" inputmode="decimal" title="Cantidad (Ratio)" value="${l.ratio}" oninput="updateLegInput(${s.id}, ${idx}, 'ratio', this.value)" onblur="scheduleFullRender()">
         ${renderStrikeField(s.id, idx, l)}
-        <input class="w-num" type="number" step="0.1" title="Prima" value="${l.prima}" oninput="updateLegInput(${s.id}, ${idx}, 'prima', this.value)">
+        <input class="w-num" type="text" inputmode="decimal" title="Prima" value="${l.prima}" oninput="updateLegInput(${s.id}, ${idx}, 'prima', this.value)" onblur="scheduleFullRender()">
         ${mktBtn}
         <button class="btn-sm btn-danger" onclick="removeLeg(${s.id}, ${idx})">✕</button>
       </div>
@@ -475,11 +515,11 @@ function renderStrats() {
           <div style="display:flex;gap:6px;margin-bottom:4px;font-size:10px;color:var(--text-3);padding:0 8px;font-weight:600;letter-spacing:0.3px"><span style="flex:2">Operación</span><span style="flex:2">Instrum.</span><span style="flex:1.5">Cant.</span><span style="flex:1.5">Strike</span><span style="flex:1.5">Prima</span><span style="width:28px"></span></div>
           ${legsHtml}
         </div>
-        <div class="strat-footer"><button class="btn btn-sm btn-outline" onclick="addLeg(${s.id})">+ Agregar Pata</button><div class="cost-display">${costDisplay}</div></div>
+        <div class="strat-footer"><button class="btn btn-sm btn-outline" onclick="addLeg(${s.id})">+ Agregar Pata</button><div class="cost-display" id="cost-${s.id}">${costDisplay}</div></div>
         <div class="kpi-grid">
-          <div class="kpi-card"><div class="k-lbl">Piso Asegurado</div><div class="k-val">${floorText}</div></div>
-          <div class="kpi-card"><div class="k-lbl">Techo Máximo</div><div class="k-val">${ceilText}</div></div>
-          <div class="kpi-card"><div class="k-lbl">Empate (B.E.)</div><div class="k-val">${beText}</div></div>
+          <div class="kpi-card"><div class="k-lbl">Piso Asegurado</div><div class="k-val" id="k-floor-${s.id}">${floorText}</div></div>
+          <div class="kpi-card"><div class="k-lbl">Techo Máximo</div><div class="k-val" id="k-ceil-${s.id}">${ceilText}</div></div>
+          <div class="kpi-card"><div class="k-lbl">Empate (B.E.)</div><div class="k-val" id="k-be-${s.id}">${beText}</div></div>
         </div>
       </div>
     `;
@@ -487,16 +527,15 @@ function renderStrats() {
 }
 
 // ─── Altura del gráfico ───────────────────────────────────────────────────
-// Auto-scale: 280px base + 40px por cada estrategia adicional (desde la 2ª).
-// Si el usuario fijó un valor manual en #chart-height, ese tiene prioridad.
-const CHART_HEIGHT_BASE = 280;
-const CHART_HEIGHT_PER_STRAT = 40;
+// Alto FIJO en 600px (lo que antes era el máximo del auto-scale). Ya no crece
+// ni se achica según la cantidad de estrategias.
+// Si el usuario fija un valor manual en #chart-height, ese sigue teniendo prioridad.
+const CHART_HEIGHT_FIXED = 600;
 const CHART_HEIGHT_MIN = 240;
-const CHART_HEIGHT_MAX = 600;
+const CHART_HEIGHT_MAX = 900;
 
 function calcAutoHeight(numStrats) {
-  const extra = Math.max(0, numStrats - 1) * CHART_HEIGHT_PER_STRAT;
-  return Math.min(CHART_HEIGHT_MAX, Math.max(CHART_HEIGHT_MIN, CHART_HEIGHT_BASE + extra));
+  return CHART_HEIGHT_FIXED;
 }
 
 function alignChartToFirstStrat() {
@@ -567,12 +606,35 @@ function renderChart() {
     });
   });
 
+  // ─── Líneas de referencia manuales (punteadas) ────────────────────────────
+  const refVals = [];
+  [
+    { key: 'precioObjetivo', label: 'Precio Objetivo', color: REF_OBJ_COLOR },
+    { key: 'precioDolor',    label: 'Precio Dolor',    color: REF_DOL_COLOR }
+  ].forEach(r => {
+    const v = parseFloat(t[r.key]);
+    if (isNaN(v) || v <= 0) return;
+    refVals.push(v);
+    datasets.push({
+      label: `${r.label} (${v.toFixed(1)})`,
+      data: prices.map(() => v),
+      borderColor: r.color,
+      borderWidth: 1.8,
+      borderDash: [10, 5],
+      pointRadius: 0,
+      pointHoverRadius: 0,
+      tension: 0,
+      order: 20
+    });
+  });
+
   // ─── Calcular rango Y dinámico con padding ────────────────────────────────
   let allPayoffs = [];
   prices.forEach(p => {
     allPayoffs.push(p); // línea Mercado
     t.strategies.forEach(s => allPayoffs.push(calcPayoff(s, p)));
   });
+  refVals.forEach(v => allPayoffs.push(v));
   const rawMin = Math.min(...allPayoffs);
   const rawMax = Math.max(...allPayoffs);
   const pad = (rawMax - rawMin) * 0.07 || t.spot * 0.05;
@@ -662,7 +724,10 @@ function renderTable() {
     t.strategies.forEach(s => {
       let payoff = calcPayoff(s, sc.val); let diff = payoff - sc.val;
       let color = diff > 0.1 ? 'var(--green)' : (diff < -0.1 ? 'var(--red)' : 'var(--text-3)');
-      row += `<td>$${payoff.toFixed(1)} <span style="color:${color}; font-size:10px; margin-left:4px; font-weight:600">(${diff > 0.1 ? '+' : ''}$${diff.toFixed(1)})</span></td>`;
+      // Signo ANTES del simbolo: -$8.7 / +$54.2 (antes salia ($-8.7))
+      const sign = diff > 0.1 ? '+' : (diff < -0.1 ? '-' : '');
+      const diffTxt = `${sign}$${Math.abs(diff).toFixed(1)}`;
+      row += `<td>$${payoff.toFixed(1)} <span class="scn-diff" style="color:${color}">(${diffTxt})</span></td>`;
     });
     row += `</tr>`; tbody += row;
   });
