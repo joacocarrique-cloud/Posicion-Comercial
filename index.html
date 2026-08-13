@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Builder de Coberturas — Espartina S.A.</title>
+<title>Suite Comercial — Espartina S.A.</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <link rel="stylesheet" href="styles.css">
@@ -17,6 +17,7 @@
       <div class="header-title">Suite Comercial · Espartina S.A.</div>
       <div class="header-subtitle">Coberturas · FAS & Retenciones · Pases & Tasas · Spreads · Desvío de Precios</div>
     </div>
+    <span class="header-badge" id="app-version" title="Versión desplegada de la Suite">v9 · 13-ago-26</span>
   </div>
   <div style="display:flex;align-items:center;gap:12px;">
     <span class="save-indicator" id="save-indicator"></span>
@@ -170,7 +171,7 @@
           <input type="number" id="calc-max" step="0.1" oninput="renderCalc()" placeholder="eje X máx">
         </div>
         <div class="calc-hint">
-          El volumen (tns) se define en cada estrategia. El resultado es <strong>neto del derivado</strong>: valor intrínseco al vencimiento menos la prima, por el volumen.
+          El volumen (tn) se define en cada estrategia. El resultado es <strong>neto del derivado</strong>: valor intrínseco al vencimiento menos la prima, por el volumen.
         </div>
       </div>
       <table class="comp-table" id="calc-table"></table>
@@ -487,13 +488,13 @@
       <div class="pase-pos-card" id="pase-pos-1">
         <span class="pase-pos-tag p1">Posición 1 — cercana</span>
         <div class="field"><label>Posición</label><select id="pase-p1-sel" onchange="paseOnPosChange(1)" style="font-family:var(--font);"><option value="">⚠ Sincronizar A3</option></select></div>
-        <div class="field"><label>Precio USD/tn</label><input type="number" id="pase-p1-price" value="" step="0.1" oninput="paseCalc()" placeholder="Auto desde A3"></div>
+        <div class="field"><label>Precio u$s/tn</label><input type="number" id="pase-p1-price" value="" step="0.1" oninput="paseCalc()" placeholder="Auto desde A3"></div>
         <div class="field"><label>Fecha</label><input type="date" id="pase-p1-date" value="" onchange="paseCalc()"></div>
       </div>
       <div class="pase-pos-card" id="pase-pos-2">
         <span class="pase-pos-tag p2">Posición 2</span>
         <div class="field"><label>Posición</label><select id="pase-p2-sel" onchange="paseOnPosChange(2)" style="font-family:var(--font);"><option value="">⚠ Sincronizar A3</option></select></div>
-        <div class="field"><label>Precio USD/tn</label><input type="number" id="pase-p2-price" value="" step="0.1" oninput="paseCalc()" placeholder="Auto desde A3"></div>
+        <div class="field"><label>Precio u$s/tn</label><input type="number" id="pase-p2-price" value="" step="0.1" oninput="paseCalc()" placeholder="Auto desde A3"></div>
         <div class="field"><label>Fecha</label><input type="date" id="pase-p2-date" value="" onchange="paseCalc()"></div>
       </div>
       <div class="pase-pos-card" id="pase-pos-3">
@@ -501,7 +502,7 @@
         <button class="pase-toggle-p3" id="pase-toggle-p3-btn" onclick="paseToggleP3()" title="Activar/desactivar posición 3">+</button>
         <div id="pase-p3-fields" style="display:none;">
           <div class="field"><label>Posición</label><select id="pase-p3-sel" onchange="paseOnPosChange(3)" style="font-family:var(--font);"><option value="">⚠ Sincronizar A3</option></select></div>
-          <div class="field"><label>Precio USD/tn</label><input type="number" id="pase-p3-price" value="" step="0.1" oninput="paseCalc()" placeholder="Auto desde A3"></div>
+          <div class="field"><label>Precio u$s/tn</label><input type="number" id="pase-p3-price" value="" step="0.1" oninput="paseCalc()" placeholder="Auto desde A3"></div>
           <div class="field"><label>Fecha</label><input type="date" id="pase-p3-date" value="" onchange="paseCalc()"></div>
         </div>
         <div id="pase-p3-placeholder" style="text-align:center; padding:20px 0; color:var(--text-3); font-size:12px;">Click + para agregar<br>una 3ra posición</div>
@@ -520,13 +521,13 @@
       <div class="pase-params-card">
         <div class="pase-params-title">Tasas de referencia y crédito</div>
         <div class="pase-params-row">
-          <div class="field"><label>Crédito USD (TNA %)</label><input type="number" id="pase-tasa-credito-usd" value="8.0" step="0.1" oninput="paseCalc()" style="font-weight:700; border: 2px solid var(--es-green); background: var(--es-green-light); color: var(--es-green-dark);"></div>
+          <div class="field"><label>Crédito u$s (TNA %)</label><input type="number" id="pase-tasa-credito-usd" value="8.0" step="0.1" oninput="paseCalc()" style="font-weight:700; border: 2px solid var(--es-green); background: var(--es-green-light); color: var(--es-green-dark);"></div>
           <div class="field"><label>Crédito ARS (TNA %)</label><input type="number" id="pase-tasa-credito-ars" value="40.0" step="0.1" oninput="paseCalc()" style="font-weight:700; border: 2px solid var(--es-gold); background: var(--es-gold-light); color: #96700e;"></div>
-          <div class="field"><label>Caución USD TNA (%)</label><input type="number" id="pase-tasa-caucion-usd" value="3.5" step="0.1" oninput="paseCalc()"></div>
+          <div class="field"><label>Caución u$s TNA (%)</label><input type="number" id="pase-tasa-caucion-usd" value="3.5" step="0.1" oninput="paseCalc()"></div>
           <div class="field"><label>Caución ARS TNA (%)</label><input type="number" id="pase-tasa-caucion-ars" value="38" step="0.1" oninput="paseCalc()"></div>
           <div class="field"><label>LECAP / PF TNA (%)</label><input type="number" id="pase-tasa-lecap" value="42" step="0.1" oninput="paseCalc()"></div>
           <div class="field"><label>Descuento cheques TNA (%)</label><input type="number" id="pase-tasa-cheques" value="48" step="0.1" oninput="paseCalc()"></div>
-          <div class="field"><label>Almacenaje (USD/tn/mes)</label><input type="number" id="pase-almacenaje" value="2.5" step="0.1" oninput="paseCalc()"></div>
+          <div class="field"><label>Almacenaje (u$s/tn/mes)</label><input type="number" id="pase-almacenaje" value="2.5" step="0.1" oninput="paseCalc()"></div>
         </div>
       </div>
     </div>
@@ -535,7 +536,7 @@
       <button class="btn" onclick="paseCalc()">Calcular</button>
     </div>
 
-    <div class="ret-section-title">Matrix de pases y tasas implícitas</div>
+    <div class="ret-section-title">Matriz de pases y tasas implícitas</div>
 
     <div class="pase-matrix" id="pase-matrix-container">
       <table id="pase-matrix-table">
@@ -543,11 +544,11 @@
           <tr>
             <th style="text-align:left;">Pase</th>
             <th>Días</th>
-            <th>Pase USD/tn</th>
-            <th>Tasa USD bruta</th>
-            <th>Tasa USD neta</th>
+            <th>Pase u$s/tn</th>
+            <th>Tasa u$s bruta</th>
+            <th>Tasa u$s neta</th>
             <th>Tasa ARS</th>
-            <th>vs Crédito USD</th>
+            <th>vs Crédito u$s</th>
           </tr>
         </thead>
         <tbody id="pase-matrix-body"></tbody>
@@ -618,7 +619,7 @@
         <div class="pase-params-card">
           <div class="pase-params-title">Tasas todo-costo (TNA, con gastos, sellos e IVA)</div>
           <div class="fondeo-fields">
-            <div class="field"><label>Crédito USD (TNA %)</label><input type="number" id="fondeo-r-usd" value="9.0" step="0.1" oninput="fondeoCalc()" style="font-weight:700; border:2px solid var(--es-green); background:var(--es-green-light); color:var(--es-green-dark);"></div>
+            <div class="field"><label>Crédito u$s (TNA %)</label><input type="number" id="fondeo-r-usd" value="9.0" step="0.1" oninput="fondeoCalc()" style="font-weight:700; border:2px solid var(--es-green); background:var(--es-green-light); color:var(--es-green-dark);"></div>
             <div class="field"><label>Crédito ARS (TNA %)</label><input type="number" id="fondeo-r-ars" value="38.0" step="0.1" oninput="fondeoCalc()" style="font-weight:700; border:2px solid var(--es-gold); background:var(--es-gold-light); color:#96700e;"></div>
             <div class="field"><label>Descuento cheques (TNA %)</label><input type="number" id="fondeo-r-cheq" value="42.0" step="0.1" oninput="fondeoCalc()"></div>
           </div>
@@ -907,7 +908,7 @@ window.addEventListener('afterprint', function() {
 // En los módulos que consumen datos de A3 se inyecta en su lugar un chip fino
 // que muestra la antigüedad de los datos y, si están viejos o faltan, sincroniza.
 (function () {
-  const SOLO_EN_COBERTURAS = ['tabs-container', 'mkt-bar'];
+  const SOLO_EN_COBERTURAS = ['tabs-container', 'mkt-bar', 'fob-bar'];
   const MODULOS_A3 = ['ret-space', 'pase-space', 'spreads-space', 'desvio-space'];
   const DIAS_RANCIO = 2;
 

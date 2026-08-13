@@ -29,6 +29,21 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* ─── Números tabulares ───
+   Las celdas que usan Montserrat (--font) tienen dígitos de ancho variable y
+   hacen "bailar" las columnas. Esto las fija sin cambiar la tipografía.
+   En las celdas que ya usan JetBrains Mono es inocuo (mono ya es tabular). */
+.comp-table th, .comp-table td,
+.live-mini-table th, .live-mini-table td,
+.live-opp-table th, .live-opp-table td,
+.live-pnl-table th, .live-pnl-table td,
+.pase-matrix th, .pase-matrix td,
+.dv-table th, .dv-table td,
+.fic-val, .fic-spread, .pase-tasa-usd {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
 body {
   font-family: var(--font);
   background: var(--bg);
