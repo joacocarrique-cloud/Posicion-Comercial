@@ -647,17 +647,26 @@ function paseRenderStrategies(pairs, calcs, inp) {
   `;
 
   const rowsEl = document.getElementById('pase-strat-rows');
-  rowsEl.innerHTML = strats.map((s, i) => {
-    const isBest = i === 0;
+
+  // La estrategia ganadora ya se muestra destacada en el banner de arriba,
+  // así que acá abajo van SOLO las alternativas (strats viene ordenado, best first).
+  const alternativas = strats.slice(1);
+
+  if (!alternativas.length) {
+    rowsEl.innerHTML = `<div style="padding:16px; font-size:12px; color:var(--text-3);">No hay alternativas para comparar contra la óptima.</div>`;
+    return;
+  }
+
+  const caption = `<div style="padding:0 16px 10px; font-size:11px; font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:.4px;">Alternativas — cuánto se resigna frente a la óptima</div>`;
+
+  rowsEl.innerHTML = caption + alternativas.map((s) => {
     const isBase = s.isBase;
     const diffToBest = best.resultUSD - s.resultUSD;
-    
+
     const catLabel = s.category === 'usd' ? '💵 USD' : s.category === 'ars' ? '🇦🇷 ARS' : '⚠️ ARS riesgo';
     const catColor = s.category === 'usd' ? 'var(--green)' : s.category === 'ars' ? 'var(--blue)' : 'var(--amber)';
-    
-    const barHtml = isBest 
-      ? `<div style="color:var(--green); font-weight:700; font-size:12px;">🏆 Máximo retorno</div>`
-      : `<div style="display:flex; align-items:center; gap:8px;">
+
+    const barHtml = `<div style="display:flex; align-items:center; gap:8px;">
            <div style="flex:1; height:6px; background:#fde8e8; border-radius:3px; overflow:hidden; display:flex; justify-content:flex-end;">
              <div style="width:${Math.min((diffToBest/(spreadMejorPeor||1))*100, 100)}%; background:var(--red); height:100%;"></div>
            </div>
@@ -665,10 +674,10 @@ function paseRenderStrategies(pairs, calcs, inp) {
          </div>`;
 
     return `
-    <div style="border-bottom: 1px solid var(--border); background: ${isBest ? '#fff' : 'transparent'}; ${isBest ? 'border-left: 4px solid var(--green); border-radius: 0 8px 8px 0;' : ''}">
+    <div style="border-bottom: 1px solid var(--border); background: transparent;">
       <div style="display:grid; grid-template-columns: 2fr 0.5fr 1fr 1.5fr; gap: 12px; align-items: center; padding: 14px 16px;">
         <div>
-          <div style="font-weight:700; font-size:13px; color: ${isBest ? 'var(--text)' : 'var(--text-2)'};">${s.name} ${isBase ? '<span style="font-size:9px; background:var(--bg-input); padding:2px 6px; border-radius:4px; margin-left:6px; color:var(--text-3);">BENCHMARK</span>' : ''} ${s.riskTC ? '<span style="font-size:9px; background:#fff3cd; padding:2px 6px; border-radius:4px; margin-left:4px; color:var(--amber);">⚠ TC</span>' : ''}</div>
+          <div style="font-weight:700; font-size:13px; color: var(--text-2);">${s.name} ${isBase ? '<span style="font-size:9px; background:var(--bg-input); padding:2px 6px; border-radius:4px; margin-left:6px; color:var(--text-3);">BENCHMARK</span>' : ''} ${s.riskTC ? '<span style="font-size:9px; background:#fff3cd; padding:2px 6px; border-radius:4px; margin-left:4px; color:var(--amber);">⚠ TC</span>' : ''}</div>
           <div style="font-size:11px; color:var(--text-3); margin-top:2px;">${s.desc}</div>
         </div>
         <div style="text-align:center;"><span style="font-size:10px; color:${catColor}; font-weight:700;">${catLabel}</span></div>

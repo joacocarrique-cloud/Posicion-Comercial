@@ -1824,6 +1824,25 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════
+   ─── Botón Exportar PDF (header) ─── */
+
+.btn-export-pdf{
+  background:transparent;
+  border:1px solid var(--border, #e0e2d8);
+  color:var(--text-2, #4a5245);
+  font-family:var(--font, 'Montserrat', sans-serif);
+  font-size:12px; font-weight:600;
+  padding:7px 12px; border-radius:7px;
+  cursor:pointer; white-space:nowrap;
+  transition:background .15s, border-color .15s, color .15s;
+}
+.btn-export-pdf:hover{
+  background:var(--es-green, #1A6B3C);
+  border-color:var(--es-green, #1A6B3C);
+  color:#fff;
+}
+
+/* ═══════════════════════════════════════════════════
    ─── Delta de escenario (antes iba con style inline) ─── */
 
 .comp-table .scn-diff{
@@ -1903,12 +1922,7 @@ body {
   #asst-results,
   #asst-sync-bar,
   #asst-vi-context,
-  .theory-section,
-  .ret-section,
-  .pase-section,
-  #spreads-space,
-  #desvio-space,
-  #alertas-space,
+  .btn-export-pdf,
   .leg-row button,
   .btn-danger,
   /* Estos tres son hijos directos de #workspace: si no se ocultan, el grid de
@@ -1937,6 +1951,34 @@ body {
     max-width: 100% !important;
     padding: 0 !important;
     margin: 0 !important;
+  }
+
+  /* ─── Solo se imprime el módulo activo ─── */
+  #workspace, #ret-space, #pase-space,
+  #spreads-space, #desvio-space, #theory-space {
+    display: none !important;
+  }
+  body[data-print-mod="ret-space"]     #ret-space,
+  body[data-print-mod="pase-space"]    #pase-space,
+  body[data-print-mod="spreads-space"] #spreads-space,
+  body[data-print-mod="desvio-space"]  #desvio-space,
+  body[data-print-mod="theory-space"]  #theory-space {
+    display: block !important;
+  }
+
+  /* Baseline para los módulos que no son Coberturas: sin botones de acción,
+     sin sombras, y evitando cortes feos de página. */
+  body:not([data-print-mod="workspace"]) .btn,
+  body:not([data-print-mod="workspace"]) .btn-outline {
+    display: none !important;
+  }
+  body:not([data-print-mod="workspace"]) * {
+    box-shadow: none !important;
+  }
+  body:not([data-print-mod="workspace"]) table,
+  body:not([data-print-mod="workspace"]) canvas {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   /* ─── PRINT HEADER ─── */
@@ -2013,7 +2055,7 @@ body {
   /* ─── LAYOUT: workspace como grid de 2 columnas ─── */
   /* El truco: convertimos #workspace en un grid de 2 cols
      y usamos `order` para reubicar los hijos sin mover el HTML */
-  #workspace {
+  body[data-print-mod="workspace"] #workspace {
     display: grid !important;
     grid-template-columns: 195mm 1fr !important;
     grid-template-rows: auto auto !important;

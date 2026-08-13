@@ -15,7 +15,7 @@
     <div class="header-logo">🌾</div>
     <div>
       <div class="header-title">Suite Comercial · Espartina S.A.</div>
-      <div class="header-subtitle">Coberturas · FAS & Retenciones · Pases & Tasas · Desvío de Precios · Inteligencia</div>
+      <div class="header-subtitle">Coberturas · FAS & Retenciones · Pases & Tasas · Spreads · Desvío de Precios</div>
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:12px;">
@@ -26,10 +26,9 @@
       <button class="mod-pill" onclick="togglePases()">📊 Pases & Tasas</button>
       <button class="mod-pill" onclick="toggleSpreads()">📈 Spreads</button>
       <button class="mod-pill" onclick="toggleDesvio()">📉 Desvío</button>
-      <button class="mod-pill" onclick="toggleAlertas()">🧠 Inteligencia</button>
-      <button class="mod-pill" onclick="togglePnL()">💰 P&amp;L</button>
       <button class="mod-pill" onclick="toggleTheory()">📙 Manual</button>
     </nav>
+    <button class="btn-export-pdf" onclick="exportarPDF()" title="Exportar a PDF el módulo activo">🖨 PDF</button>
   </div>
 </header>
 
@@ -813,20 +812,8 @@
   </div>
 
   <!-- ═══ ALERTAS ═══ -->
-  <div id="alertas-space" style="display:none;"></div>
 
   <!-- ═══ P&L / PRESUPUESTO Y DESARME ═══ -->
-  <div id="pnl-space" style="display:none;">
-    <div class="pnl-h">
-      <span style="font-size:26px;">💰</span>
-      <div style="flex:1;">
-        <h2>P&amp;L — Presupuesto y Desarme</h2>
-        <div class="s">Pata financiera: cuánto cuesta, cuánto vale según precio y fecha, y a qué nivel se desarma</div>
-      </div>
-      <button class="btn" onclick="document.body.classList.add('pnl-only');window.print();setTimeout(()=>document.body.classList.remove('pnl-only'),500)">Exportar PDF</button>
-    </div>
-    <div id="pnl-content"></div>
-  </div>
 
 <!-- ═══ FOOTER DE IMPRESIÓN (oculto en pantalla, visible al imprimir) ═══ -->
 <div id="print-footer" style="display:none;">
@@ -835,17 +822,54 @@
 </div>
 
 <script>
+// ═══ IMPRESIÓN: qué módulo se imprime ═══
+// Los -space se muestran/ocultan con style inline (sin !important), que pierde
+// contra las reglas !important de @media print. Por eso marcamos el módulo
+// activo en <body data-print-mod="..."> y el CSS resuelve a partir de ahí.
+var PRINT_SPACES = ['workspace', 'ret-space', 'pase-space', 'spreads-space', 'desvio-space', 'theory-space'];
+var PRINT_TITLES = {
+  'ret-space':     'FAS & Retenciones',
+  'pase-space':    'Pases & Tasas',
+  'spreads-space': 'Spreads',
+  'desvio-space':  'Desvío de Precios',
+  'theory-space':  'Manual de Estrategias'
+};
+
+function moduloActivoParaImprimir() {
+  // Se lee el style inline, no el layout: en beforeprint el navegador ya puede
+  // haber aplicado las reglas de print y offsetParent daría siempre null.
+  for (var i = 0; i < PRINT_SPACES.length; i++) {
+    var el = document.getElementById(PRINT_SPACES[i]);
+    if (el && el.style.display && el.style.display !== 'none') return PRINT_SPACES[i];
+  }
+  return 'workspace';
+}
+
+function exportarPDF() {
+  document.body.dataset.printMod = moduloActivoParaImprimir();
+  window.print();
+}
+
 window.addEventListener('beforeprint', function() {
+  var mod = moduloActivoParaImprimir();
+  document.body.dataset.printMod = mod;
   try {
-    var t = (typeof getActiveTab === 'function') ? getActiveTab() : null;
-    var title = (t && t.name) ? t.name : 'Comparativa de Coberturas';
+    var title, chips = [];
+    if (mod === 'workspace') {
+      var t = (typeof getActiveTab === 'function') ? getActiveTab() : null;
+      title = (t && t.name) ? t.name : 'Comparativa de Coberturas';
+      var cropNames = { soja: 'Soja', maiz: 'Maíz', trigo: 'Trigo', girasol: 'Girasol' };
+      if (t) chips.push(cropNames[t.assetVal] || t.assetVal || '');
+      var posEl = document.getElementById('mkt-pos-select');
+      if (posEl && posEl.value) chips.push(posEl.value);
+      if (t && t.spot) chips.push('Spot: u$s ' + t.spot.toFixed(1));
+    } else {
+      title = PRINT_TITLES[mod] || 'Suite Comercial';
+      var cropEl = document.getElementById('mkt-crop-select');
+      var cropNames2 = { soja: 'Soja', maiz: 'Maíz', trigo: 'Trigo', girasol: 'Girasol' };
+      if (cropEl && cropEl.value) chips.push(cropNames2[cropEl.value] || cropEl.value);
+    }
     document.getElementById('print-title').textContent = title;
-    var chips = [];
-    var cropNames = { soja: 'Soja', maiz: 'Maíz', trigo: 'Trigo', girasol: 'Girasol' };
-    if (t) chips.push(cropNames[t.assetVal] || t.assetVal || '');
-    var posEl = document.getElementById('mkt-pos-select');
-    if (posEl && posEl.value) chips.push(posEl.value);
-    if (t && t.spot) chips.push('Spot: u$s ' + t.spot.toFixed(1));
     document.getElementById('print-chips').innerHTML = chips.filter(Boolean).map(function(c) {
       return '<span class="ph-chip">' + c + '</span>';
     }).join('');
@@ -888,7 +912,7 @@ window.addEventListener('afterprint', function() {
   const DIAS_RANCIO = 2;
 
   const SPACES = ['workspace', 'ret-space', 'pase-space', 'spreads-space',
-                  'desvio-space', 'alertas-space', 'pnl-space', 'theory-space'];
+                  'desvio-space', 'theory-space'];
 
   const visible = el => el && el.offsetParent !== null;
   const moduloActivo = () => SPACES.find(id => visible(document.getElementById(id))) || null;
@@ -985,8 +1009,6 @@ window.addEventListener('afterprint', function() {
 <script src="vol_greeks.js"></script>
 <script src="spreads.js"></script>
 <script src="desvio.js"></script>
-<script src="alertas.js"></script>
 <script src="app.js"></script>
-<script src="pnl.js"></script>
 </body>
 </html>

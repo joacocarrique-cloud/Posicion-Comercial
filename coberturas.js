@@ -136,10 +136,8 @@ function loadPreset(idx) {
 
 function renderTabs() {
   const container = document.getElementById('tabs-container');
-  const alSpace = document.getElementById('alertas-space');
   const inOtherModule = theoryMode || retMode || paseMode || spreadMode
-    || (typeof desvioMode !== 'undefined' && desvioMode)
-    || (alSpace && alSpace.style.display === 'block');
+    || (typeof desvioMode !== 'undefined' && desvioMode);
   if (inOtherModule) {
     container.style.display = 'none';
     return;
@@ -161,15 +159,13 @@ function renderModules() {
   const pills = document.querySelectorAll('.mod-pill');
   pills.forEach(p => p.classList.remove('active'));
   // Índices alineados al orden de las pills en index.html:
-  // 0 Coberturas · 1 FAS&Ret · 2 Pases · 3 Spreads · 4 Desvío · 5 Inteligencia · 6 Manual
+  // 0 Coberturas · 1 FAS&Ret · 2 Pases · 3 Spreads · 4 Desvío · 5 Manual
   let idx = 0;
   if (retMode)     idx = 1;
   if (paseMode)    idx = 2;
   if (spreadMode)  idx = 3;
   if (typeof desvioMode !== 'undefined' && desvioMode) idx = 4;
-  const alSpace = document.getElementById('alertas-space');
-  if (alSpace && alSpace.style.display === 'block') idx = 5;
-  if (theoryMode)  idx = 7;
+  if (theoryMode)  idx = 5;
   if (pills[idx]) pills[idx].classList.add('active');
 }
 
@@ -182,7 +178,6 @@ function switchToWorkspace() {
   document.getElementById('pase-space').style.display = 'none';
   document.getElementById('spreads-space').style.display = 'none';
   if (document.getElementById('desvio-space')) document.getElementById('desvio-space').style.display = 'none';
-  if (document.getElementById('alertas-space')) document.getElementById('alertas-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'flex';
   document.getElementById('fob-bar').style.display = 'flex';
   document.getElementById('tabs-container').style.display = 'flex';
@@ -228,7 +223,6 @@ function switchTab(idx) {
   document.getElementById('pase-space').style.display = 'none';
   document.getElementById('spreads-space').style.display = 'none';
   if (document.getElementById('desvio-space')) document.getElementById('desvio-space').style.display = 'none';
-  if (document.getElementById('alertas-space')) document.getElementById('alertas-space').style.display = 'none';
   document.getElementById('mkt-bar').style.display = 'flex';
   document.getElementById('fob-bar').style.display = 'flex';
   document.getElementById('tabs-container').style.display = 'flex';
