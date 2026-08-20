@@ -50,6 +50,165 @@ function dvCalcMetrics(prices){
 function dvFmt(n,d){return n.toFixed(d===undefined?1:d);}
 function dvUSD(n){return '$'+n.toFixed(1);}
 
+// ═══════════════════════════════════════════════════════
+// PRECIO OBJETIVO / PRECIO DOLOR
+// Se guardan por cultivo + posición (ej. soja|NOV) y se aplican
+// a todas las campañas de esa posición, para poder comparar contra
+// una misma vara: ¿qué % de las ruedas estuvimos arriba del objetivo
+// o abajo del dolor en cada campaña?
+// ═══════════════════════════════════════════════════════
+
+const DV_REF_STORE_KEY='espartina_dv_refs_v1';
+const DV_REF_OBJ_COLOR=(typeof REF_OBJ_COLOR!=='undefined')?REF_OBJ_COLOR:'#7c3aed';
+const DV_REF_DOL_COLOR=(typeof REF_DOL_COLOR!=='undefined')?REF_DOL_COLOR:'#c43030';
+
+let dvRefs=(function(){
+  try{const raw=localStorage.getItem(DV_REF_STORE_KEY);return raw?(JSON.parse(raw)||{}):{};}
+  catch(e){return{};}
+})();
+let _dvRefTimer=null;
+
+function dvRefKey(crop,pos){return (crop||dvCrop)+'|'+(pos||dvPos);}
+
+function dvGetRefs(crop,pos){
+  const r=dvRefs[dvRefKey(crop,pos)]||{};
+  const clean=v=>(typeof v==='number'&&isFinite(v)&&v>0)?v:null;
+  return{obj:clean(r.obj),dol:clean(r.dol)};
+}
+
+function dvSaveRefs(){
+  try{localStorage.setItem(DV_REF_STORE_KEY,JSON.stringify(dvRefs));}catch(e){}
+  if(typeof showSaveIndicator==='function')showSaveIndicator();
+}
+
+// Refleja en los inputs los valores guardados para el cultivo+posición actual
+function dvSyncRefInputs(){
+  const r=dvGetRefs();
+  const io=document.getElementById('dv-ref-objetivo');
+  const id=document.getElementById('dv-ref-dolor');
+  if(io)io.value=(r.obj!=null)?r.obj:'';
+  if(id)id.value=(r.dol!=null)?r.dol:'';
+  const hint=document.getElementById('dv-ref-hint');
+  if(hint&&dvCrop&&dvPos){
+    const cropLabel=dvCrop.charAt(0).toUpperCase()+dvCrop.slice(1);
+    hint.textContent='Valores de '+cropLabel+' '+dvPos+' · se guardan por posición y aplican a todas sus campañas';
+  }
+}
+
+function dvUpdateRefLines(){
+  const parseRef=id=>{
+    const el=document.getElementById(id);
+    if(!el)return null;
+    const raw=String(el.value||'').trim().replace(',','.');
+    if(raw==='')return null;
+    const v=parseFloat(raw);
+    return (isNaN(v)||!isFinite(v)||v<=0)?null:v;
+  };
+  const obj=parseRef('dv-ref-objetivo');
+  const dol=parseRef('dv-ref-dolor');
+  const key=dvRefKey();
+  if(obj==null&&dol==null)delete dvRefs[key];
+  else dvRefs[key]={obj,dol};
+  dvSaveRefs();
+  clearTimeout(_dvRefTimer);
+  _dvRefTimer=setTimeout(()=>{
+    dvRenderRefSummary();dvRenderModeButtons();dvRenderTable();dvRenderChart();
+  },250);
+}
+
+// % de ruedas por encima del objetivo / por debajo del dolor.
+// Criterio: alcanzar el objetivo cuenta (≥), tocar el dolor cuenta (≤).
+function dvCalcRefStats(prices,refs){
+  if(!prices||!prices.length)return null;
+  const r=refs||dvGetRefs();
+  if(r.obj==null&&r.dol==null)return null;
+  const n=prices.length;
+  let above=0,below=0;
+  prices.forEach(p=>{
+    if(r.obj!=null&&p.precio>=r.obj)above++;
+    if(r.dol!=null&&p.precio<=r.dol)below++;
+  });
+  const inverted=(r.obj!=null&&r.dol!=null&&r.dol>=r.obj);
+  // La zona intermedia solo tiene sentido con los dos extremos cargados
+  const mid=(r.obj!=null&&r.dol!=null&&!inverted)?Math.max(n-above-below,0):null;
+  return{
+    n,obj:r.obj,dol:r.dol,inverted,
+    aboveDays:above,belowDays:below,midDays:mid,
+    abovePct:(r.obj!=null)?(above/n)*100:null,
+    belowPct:(r.dol!=null)?(below/n)*100:null,
+    midPct:(mid==null)?null:(mid/n)*100
+  };
+}
+
+// Datasets de líneas punteadas horizontales para los gráficos
+function dvRefDatasets(len){
+  const r=dvGetRefs();
+  const out=[];
+  [{v:r.obj,label:'Precio Objetivo',color:DV_REF_OBJ_COLOR},
+   {v:r.dol,label:'Precio Dolor',   color:DV_REF_DOL_COLOR}].forEach(x=>{
+    if(x.v==null)return;
+    out.push({
+      label:x.label+' ('+x.v.toFixed(1)+')',
+      data:Array(len).fill(x.v),
+      borderColor:x.color,borderWidth:1.8,borderDash:[10,5],
+      pointRadius:0,pointHoverRadius:0,tension:0,fill:false,order:20
+    });
+  });
+  return out;
+}
+
+function dvRenderRefSummary(){
+  const el=document.getElementById('dv-ref-summary');
+  if(!el)return;
+  const r=dvGetRefs();
+  if(r.obj==null&&r.dol==null){el.style.display='none';el.innerHTML='';return;}
+
+  const tree=dvGetAllPositions();
+  const campaigns=tree[dvCrop]?.[dvPos]||{};
+  const campKeys=Object.keys(campaigns).sort((a,b)=>b-a);
+  const scope=dvSingleMode?[dvSingleMode]:campKeys.filter(k=>dvActiveCamps[k]);
+  const prices=scope.flatMap(k=>campaigns[k]||[]);
+  const st=dvCalcRefStats(prices,r);
+  if(!st){el.style.display='none';el.innerHTML='';return;}
+
+  const scopeLabel=dvSingleMode
+    ?('Campaña '+dvGetCampLabel(parseInt(dvSingleMode)))
+    :(scope.length+' campaña'+(scope.length===1?'':'s')+' seleccionada'+(scope.length===1?'':'s'));
+
+  const warn=st.inverted
+    ?'<div class="dv-ref-warn">⚠ El Precio Dolor ($'+st.dol.toFixed(1)+') está por encima del Objetivo ($'+st.obj.toFixed(1)+'). Revisá los valores: las zonas se solapan.</div>'
+    :'';
+
+  // Barra apilada: dolor / medio / objetivo
+  let bar='';
+  if(!st.inverted){
+    const pa=st.abovePct||0,pb=st.belowPct||0,pm=st.midPct!=null?st.midPct:(100-pa-pb);
+    bar='<div class="dv-ref-bar-track">'+
+      (pb>0?'<div class="dv-ref-seg" style="width:'+pb+'%;background:'+DV_REF_DOL_COLOR+';" title="Abajo del dolor: '+dvFmt(pb)+'%"></div>':'')+
+      (pm>0?'<div class="dv-ref-seg" style="width:'+pm+'%;background:var(--text-3,#7e8574);opacity:.35;" title="Zona intermedia: '+dvFmt(pm)+'%"></div>':'')+
+      (pa>0?'<div class="dv-ref-seg" style="width:'+pa+'%;background:'+DV_REF_OBJ_COLOR+';" title="Arriba del objetivo: '+dvFmt(pa)+'%"></div>':'')+
+      '</div>';
+  }
+
+  const cell=(label,pct,days,color)=>pct==null?'':
+    '<div class="dv-ref-stat"><div class="dv-ref-stat-lbl">'+label+'</div>'+
+    '<div class="dv-ref-stat-val" style="color:'+color+';">'+dvFmt(pct)+'%</div>'+
+    '<div class="dv-ref-stat-sub">'+days+' de '+st.n+' ruedas</div></div>';
+
+  el.style.display='block';
+  el.innerHTML=
+    '<div class="dv-ref-summary-head">'+
+      '<span class="dv-ref-summary-title">Tiempo en zona</span>'+
+      '<span class="dv-ref-summary-scope">'+scopeLabel+' · '+st.n+' ruedas</span>'+
+    '</div>'+
+    warn+bar+
+    '<div class="dv-ref-stats">'+
+      cell('Arriba del Objetivo',st.abovePct,st.aboveDays,DV_REF_OBJ_COLOR)+
+      (st.midPct!=null?cell('Zona intermedia',st.midPct,st.midDays,'var(--text-2)'):'')+
+      cell('Abajo del Dolor',st.belowPct,st.belowDays,DV_REF_DOL_COLOR)+
+    '</div>';
+}
+
 function toggleDesvio(){
   const pills=document.querySelectorAll('.mod-pill');
   pills.forEach(p=>p.classList.remove('active'));
@@ -184,6 +343,7 @@ function dvEnterDetail(){
   const campKeys=Object.keys(campaigns).sort((a,b)=>b-a);
   dvActiveCamps={};campKeys.forEach(k=>dvActiveCamps[k]=true);
   dvSingleMode=null;
+  dvSyncRefInputs();
   dvRenderCampChips();dvRenderModeButtons();dvRenderTable();dvRenderChart();dvRenderVolPanel();
 }
 
@@ -202,6 +362,7 @@ function dvResetAndRender(){
   const campKeys=Object.keys(campaigns).sort((a,b)=>b-a);
   dvActiveCamps={};campKeys.forEach(k=>dvActiveCamps[k]=true);
   dvSingleMode=null;
+  dvSyncRefInputs();
   dvRenderCampChips();dvRenderModeButtons();dvRenderTable();dvRenderChart();dvRenderVolPanel();
 }
 function dvBackToOverview(){
@@ -249,14 +410,21 @@ function dvRenderModeButtons(){
     const m=dvCalcMetrics(campaigns[dvSingleMode]);
     if(m){
       kpiContainer.style.display='grid';
-      kpiContainer.innerHTML=[
+      const kpis=[
         {l:'Promedio',v:dvUSD(m.avg),c:'var(--text)'},
         {l:'Máximo',v:dvUSD(m.max),s:'+'+dvFmt(m.desvMaxPct)+'%',c:'var(--es-green)'},
         {l:'Mínimo',v:dvUSD(m.min),s:'−'+dvFmt(m.desvMinPct)+'%',c:'var(--red)'},
         {l:'Rango',v:dvUSD(m.rango),s:dvFmt(m.rangoPct)+'%',c:'var(--es-gold)'},
         {l:'CV',v:dvFmt(m.cv)+'%',s:'σ '+dvUSD(m.stdDev),c:'var(--es-gold)'},
         {l:'Ruedas',v:m.count,c:'var(--text-2)'},
-      ].map(kpi=>`<div class="dv-kpi"><div class="dv-kpi-lbl">${kpi.l}</div><div class="dv-kpi-val" style="color:${kpi.c}">${kpi.v}</div>${kpi.s?'<div class="dv-kpi-sub">'+kpi.s+'</div>':''}</div>`).join('');
+      ];
+      // KPIs de Precio Objetivo / Precio Dolor (si están cargados para esta posición)
+      const st=dvCalcRefStats(campaigns[dvSingleMode]);
+      if(st){
+        if(st.abovePct!=null)kpis.push({l:'Tiempo > Objetivo',v:dvFmt(st.abovePct)+'%',s:st.aboveDays+'/'+st.n+' ruedas · $'+st.obj.toFixed(1),c:DV_REF_OBJ_COLOR});
+        if(st.belowPct!=null)kpis.push({l:'Tiempo < Dolor',v:dvFmt(st.belowPct)+'%',s:st.belowDays+'/'+st.n+' ruedas · $'+st.dol.toFixed(1),c:DV_REF_DOL_COLOR});
+      }
+      kpiContainer.innerHTML=kpis.map(kpi=>`<div class="dv-kpi"><div class="dv-kpi-lbl">${kpi.l}</div><div class="dv-kpi-val" style="color:${kpi.c}">${kpi.v}</div>${kpi.s?'<div class="dv-kpi-sub">'+kpi.s+'</div>':''}</div>`).join('');
     }
   }else{kpiContainer.style.display='none';}
 }
@@ -276,9 +444,16 @@ function dvRenderTable(){
   const tree=dvGetAllPositions();
   const campaigns=tree[dvCrop]?.[dvPos]||{};
   const campKeys=Object.keys(campaigns).sort((a,b)=>b-a);
-  const metrics=campKeys.map(k=>({k,m:dvCalcMetrics(campaigns[k])})).filter(x=>x.m);
+  const refs=dvGetRefs();
+  const metrics=campKeys.map(k=>({k,m:dvCalcMetrics(campaigns[k]),st:dvCalcRefStats(campaigns[k],refs)})).filter(x=>x.m);
   const maxCV=Math.max(...metrics.map(x=>x.m.cv),1);
-  tbody.innerHTML=metrics.map(({k,m},i)=>{
+  const pctCell=(pct,days,total,color,last)=>{
+    const radius=last?'border-radius:0 6px 6px 0;':'';
+    if(pct==null)return `<td style="color:var(--text-3);${radius}">—</td>`;
+    const dim=pct<0.05?'opacity:.45;':'';
+    return `<td title="${days} de ${total} ruedas" style="color:${color};font-weight:700;${dim}${radius}">${dvFmt(pct)}%</td>`;
+  };
+  tbody.innerHTML=metrics.map(({k,m,st},i)=>{
     const color=DV_CAMP_COLORS[i%DV_CAMP_COLORS.length];
     const barW=(m.cv/maxCV)*85;
     const label=dvGetCampLabel(parseInt(k));
@@ -289,13 +464,16 @@ function dvRenderTable(){
       <td style="color:var(--red);">${dvUSD(m.min)}</td>
       <td style="color:var(--es-green);">+${dvFmt(m.desvMaxPct)}%</td>
       <td style="color:var(--red);">−${dvFmt(m.desvMinPct)}%</td>
-      <td style="border-radius:0 6px 6px 0;position:relative;min-width:70px;">
+      <td style="position:relative;min-width:70px;">
         <div style="position:absolute;left:2px;top:50%;transform:translateY(-50%);height:4px;width:${barW}%;background:${color}33;border-radius:2px;"></div>
-        <span style="position:relative;color:${color};font-weight:700;">${dvFmt(m.cv)}%</span></td></tr>`;
+        <span style="position:relative;color:${color};font-weight:700;">${dvFmt(m.cv)}%</span></td>
+      ${pctCell(st?st.abovePct:null,st?st.aboveDays:0,m.count,DV_REF_OBJ_COLOR,false)}
+      ${pctCell(st?st.belowPct:null,st?st.belowDays:0,m.count,DV_REF_DOL_COLOR,true)}</tr>`;
   }).join('');
 }
 
 function dvRenderChart(){
+  dvRenderRefSummary();
   const tree=dvGetAllPositions();
   const campaigns=tree[dvCrop]?.[dvPos];
   if(!campaigns)return;
@@ -336,6 +514,7 @@ function dvRenderOverlayChart(campaigns){
     const m=dvCalcMetrics(campaigns[k]);
     if(m)datasets.push({label:'Prom '+dvGetCampLabel(parseInt(k)),data:Array(campaigns[k].length).fill(m.avg),borderColor:color+'55',borderWidth:1,borderDash:[6,6],pointRadius:0,tension:0});
   });
+  dvRefDatasets(maxLen).forEach(d=>datasets.push(d));
   const ctx=document.getElementById('dv-chart-overlay').getContext('2d');
   dvOverlayChart=new Chart(ctx,{type:'line',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
     plugins:{legend:{display:true,position:'top',labels:{filter:item=>!item.text.startsWith('Prom'),font:{family:'JetBrains Mono',size:11},boxWidth:16,boxHeight:2,padding:12}},
@@ -363,19 +542,33 @@ function dvRenderSingleChart(campaigns){
   const avgLine=prices.map(()=>m.avg);
   const aboveData=prices.map(p=>p.precio>=m.avg?p.precio:m.avg);
   const belowData=prices.map(p=>p.precio<m.avg?p.precio:m.avg);
-  const ctx=document.getElementById('dv-chart-single').getContext('2d');
-  dvSingleChart=new Chart(ctx,{type:'line',data:{labels,datasets:[
+  const singleDatasets=[
     {label:'Sobre promedio',data:aboveData,borderColor:'transparent',backgroundColor:'rgba(26,107,60,0.15)',fill:{target:'+1',above:'rgba(26,107,60,0.15)'},pointRadius:0,tension:0.3,order:3},
     {label:'Promedio',data:avgLine,borderColor:'#c8a44a',borderWidth:1.5,borderDash:[8,4],pointRadius:0,fill:false,order:2},
     {label:'Bajo promedio',data:belowData,borderColor:'transparent',backgroundColor:'rgba(196,48,48,0.12)',fill:{target:'-1',below:'rgba(196,48,48,0.12)'},pointRadius:0,tension:0.3,order:3},
-    {label:'Precio',data:priceData,borderColor:lineColor,borderWidth:2,pointRadius:0,tension:0.3,fill:false,order:1}]},
+    {label:'Precio',data:priceData,borderColor:lineColor,borderWidth:2,pointRadius:0,tension:0.3,fill:false,order:1}];
+  // Líneas de Precio Objetivo / Precio Dolor (van al final: los fill target relativos de arriba no se alteran)
+  const refLines=dvRefDatasets(prices.length);
+  refLines.forEach(d=>singleDatasets.push(d));
+  const refVals=refLines.map(d=>d.data[0]);
+  const yMin=Math.min(m.min,...refVals)-5;
+  const yMax=Math.max(m.max,...refVals)+5;
+  const stRef=dvCalcRefStats(prices);
+  if(stRef){
+    let extra='';
+    if(stRef.abovePct!=null)extra+=' · <span style="color:'+DV_REF_OBJ_COLOR+';">'+dvFmt(stRef.abovePct)+'% sobre objetivo</span>';
+    if(stRef.belowPct!=null)extra+=' · <span style="color:'+DV_REF_DOL_COLOR+';">'+dvFmt(stRef.belowPct)+'% bajo dolor</span>';
+    document.getElementById('dv-chart-legend').innerHTML+=extra;
+  }
+  const ctx=document.getElementById('dv-chart-single').getContext('2d');
+  dvSingleChart=new Chart(ctx,{type:'line',data:{labels,datasets:singleDatasets},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       plugins:{legend:{display:false},tooltip:{backgroundColor:'#fff',titleColor:'#1c2118',bodyColor:'#505845',borderColor:'#dde0d5',borderWidth:1,
         titleFont:{family:'Montserrat',weight:'700',size:12},bodyFont:{family:'JetBrains Mono',size:11},padding:10,cornerRadius:8,
         callbacks:{title:items=>{const idx=items[0]?.dataIndex;return prices[idx]?.fecha||'';},
           label:ctx=>{if(ctx.dataset.label==='Precio'){const diff=ctx.parsed.y-m.avg;const pct=(diff/m.avg)*100;return['Precio: $'+ctx.parsed.y.toFixed(1),'Promedio: $'+m.avg.toFixed(1),'Desvío: '+(diff>=0?'+':'')+diff.toFixed(1)+' ('+(diff>=0?'+':'')+pct.toFixed(1)+'%)'];}return null;}}}},
       scales:{x:{ticks:{font:{family:'JetBrains Mono',size:9},color:'#7e8574',maxTicksLimit:12},grid:{color:'#dde0d522'}},
-        y:{min:m.min-5,max:m.max+5,ticks:{font:{family:'JetBrains Mono',size:10},color:'#7e8574',callback:v=>'$'+v},grid:{color:'#dde0d544'}}}}});
+        y:{min:yMin,max:yMax,ticks:{font:{family:'JetBrains Mono',size:10},color:'#7e8574',callback:v=>'$'+v},grid:{color:'#dde0d544'}}}}});
 }
 
 // ── Seasonality chart: deviation % by DTE ──

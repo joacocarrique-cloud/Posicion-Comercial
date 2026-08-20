@@ -752,6 +752,24 @@
         <button class="dv-back-btn" onclick="dvBackToOverview()" style="margin-left:auto;">← Resumen</button>
       </div>
 
+      <!-- Precio Objetivo / Precio Dolor (se guardan por cultivo + posición) -->
+      <div class="ref-bar dv-ref-bar">
+        <div class="ref-field ref-obj">
+          <span class="ref-dash"></span>
+          <label for="dv-ref-objetivo">Precio Objetivo</label>
+          <input id="dv-ref-objetivo" class="ref-input" type="text" inputmode="decimal" placeholder="—" oninput="dvUpdateRefLines()">
+        </div>
+        <div class="ref-field ref-dol">
+          <span class="ref-dash"></span>
+          <label for="dv-ref-dolor">Precio Dolor</label>
+          <input id="dv-ref-dolor" class="ref-input" type="text" inputmode="decimal" placeholder="—" oninput="dvUpdateRefLines()">
+        </div>
+        <span class="ref-hint" id="dv-ref-hint">Se guardan por cultivo + posición. Vacío = no se dibuja.</span>
+      </div>
+
+      <!-- Resumen: % de ruedas arriba del objetivo / abajo del dolor -->
+      <div id="dv-ref-summary" class="dv-ref-summary" style="display:none;"></div>
+
       <!-- Campaign chips -->
       <div style="margin-bottom:14px;">
         <label style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--text-3);letter-spacing:0.6px;display:block;margin-bottom:6px;">Campañas</label>
@@ -804,6 +822,8 @@
               <th>Desv+</th>
               <th>Desv−</th>
               <th>CV</th>
+              <th title="% de ruedas de la campaña con precio ≥ Precio Objetivo">% &gt; Obj</th>
+              <th title="% de ruedas de la campaña con precio ≤ Precio Dolor">% &lt; Dolor</th>
             </tr>
           </thead>
           <tbody id="dv-table-body"></tbody>

@@ -1899,6 +1899,56 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════
+   ─── Desvío: Objetivo / Dolor y "Tiempo en zona" ─── */
+
+.dv-ref-bar{ margin-bottom:12px; }
+.dv-ref-bar .ref-input{ width:74px; }
+
+.dv-ref-summary{
+  border:1px solid var(--border, #e0e2d8);
+  border-radius:10px; padding:12px 14px; margin-bottom:16px;
+  background:#fff;
+}
+.dv-ref-summary-head{
+  display:flex; align-items:baseline; gap:10px; margin-bottom:10px;
+}
+.dv-ref-summary-title{
+  font-size:11px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.06em; color:var(--text-2, #505845);
+}
+.dv-ref-summary-scope{
+  font-size:10px; color:var(--text-3, #7e8574);
+  font-family:var(--mono, 'JetBrains Mono', monospace); margin-left:auto;
+}
+.dv-ref-warn{
+  font-size:11px; color:#c43030; background:#c4303010;
+  border-radius:6px; padding:6px 9px; margin-bottom:10px;
+}
+.dv-ref-bar-track{
+  display:flex; height:8px; border-radius:4px; overflow:hidden;
+  background:var(--border, #e0e2d8); margin-bottom:12px;
+}
+.dv-ref-seg{ height:100%; }
+.dv-ref-stats{
+  display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px;
+}
+.dv-ref-stat{
+  border-left:2px solid var(--border, #e0e2d8); padding-left:10px;
+}
+.dv-ref-stat-lbl{
+  font-size:9px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.06em; color:var(--text-3, #7e8574); margin-bottom:3px;
+}
+.dv-ref-stat-val{
+  font-size:20px; font-weight:700;
+  font-family:var(--mono, 'JetBrains Mono', monospace); line-height:1.1;
+}
+.dv-ref-stat-sub{
+  font-size:10px; color:var(--text-3, #7e8574);
+  font-family:var(--mono, 'JetBrains Mono', monospace); margin-top:2px;
+}
+
+/* ═══════════════════════════════════════════════════
    ─── @media print — Exportación PDF / Ctrl+P ───
    Landscape A4: estrategias izquierda | gráfico+análisis derecha
    SIN tocar el layout de pantalla
