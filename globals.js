@@ -174,11 +174,11 @@ function getRetencionForPos(cultivo, label) {
 
 // ─── Asistente constants ───
 const ASST_DRIVE = {
-  vi_percentiles:  'https://docs.google.com/spreadsheets/d/e/2PACX-1vSP5-XpHimq5vLl4TO5vIEpkxNWz6G1IoNoemRTJLiR68Clx-YP5ek3_MrjWYkW-WNvDwhd48mvmqJh/pub?gid=225525795&single=true&output=csv',
-  skew_historico:  'https://docs.google.com/spreadsheets/d/e/2PACX-1vSP5-XpHimq5vLl4TO5vIEpkxNWz6G1IoNoemRTJLiR68Clx-YP5ek3_MrjWYkW-WNvDwhd48mvmqJh/pub?gid=1025803161&single=true&output=csv',
-  serie_vi_diaria: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSP5-XpHimq5vLl4TO5vIEpkxNWz6G1IoNoemRTJLiR68Clx-YP5ek3_MrjWYkW-WNvDwhd48mvmqJh/pub?gid=1268819511&single=true&output=csv',
-  vi_vs_hv:        'https://docs.google.com/spreadsheets/d/e/2PACX-1vSP5-XpHimq5vLl4TO5vIEpkxNWz6G1IoNoemRTJLiR68Clx-YP5ek3_MrjWYkW-WNvDwhd48mvmqJh/pub?gid=1338878658&single=true&output=csv',
-  futuros_posicion:'https://docs.google.com/spreadsheets/d/e/2PACX-1vSP5-XpHimq5vLl4TO5vIEpkxNWz6G1IoNoemRTJLiR68Clx-YP5ek3_MrjWYkW-WNvDwhd48mvmqJh/pub?gid=980570947&single=true&output=csv',
+  vi_percentiles:  'https://docs.google.com/spreadsheets/d/1XBwsmTKJl_Vp9_4kLF_K6NS-eOFBLT9z3hme1w7n2ug/gviz/tq?tqx=out:csv&sheet=vi_percentiles',
+  skew_historico:  'https://docs.google.com/spreadsheets/d/1XBwsmTKJl_Vp9_4kLF_K6NS-eOFBLT9z3hme1w7n2ug/gviz/tq?tqx=out:csv&sheet=skew_historico',
+  serie_vi_diaria: 'https://docs.google.com/spreadsheets/d/1XBwsmTKJl_Vp9_4kLF_K6NS-eOFBLT9z3hme1w7n2ug/gviz/tq?tqx=out:csv&sheet=serie_vi_diaria',
+  vi_vs_hv:        'https://docs.google.com/spreadsheets/d/1XBwsmTKJl_Vp9_4kLF_K6NS-eOFBLT9z3hme1w7n2ug/gviz/tq?tqx=out:csv&sheet=vi_vs_hv',
+  futuros_posicion:'https://docs.google.com/spreadsheets/d/1XBwsmTKJl_Vp9_4kLF_K6NS-eOFBLT9z3hme1w7n2ug/gviz/tq?tqx=out:csv&sheet=futuros_posicion',
 };
 
 const ASST_POS = {soja:['JUL26','NOV26','ENE27','MAR27','MAY27','JUL27'],maiz:['JUL26','SEP26','DIC26','ABR27','JUL27'],trigo:['JUL26','SEP26','DIC26','ENE27','MAR27']};
