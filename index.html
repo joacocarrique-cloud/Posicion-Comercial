@@ -613,6 +613,18 @@
               </label>
               <div class="fondeo-prefix"><span>$</span><input type="text" inputmode="numeric" id="fondeo-forward-ars" class="is-auto" readonly oninput="fondeoForwardInput(this)"></div>
             </div>
+            <div class="field">
+              <label class="fondeo-lbl-row">
+                <span>Grano disponible</span>
+                <span class="fondeo-edit">
+                  <select id="fondeo-disp-cur" onchange="fondeoCalc()" style="font:inherit;font-size:12px;border:1px solid var(--border);border-radius:5px;padding:1px 5px;background:var(--bg-input);color:var(--text-2);cursor:pointer;">
+                    <option value="usd">u$s/tn</option>
+                    <option value="ars">$/tn</option>
+                  </select>
+                </span>
+              </label>
+              <input type="number" id="fondeo-disp" step="0.1" oninput="fondeoCalc()" placeholder="opcional — vender hoy">
+            </div>
           </div>
         </div>
 
@@ -637,7 +649,7 @@
       <div id="fondeo-alert"></div>
 
       <div class="pase-note" style="margin-top:16px;">
-        <strong>Cómo leerlo.</strong> Las tres alternativas se comparan por lo mismo: cuántos dólares netos te entran hoy por cada tonelada que comprometés. Gana la que más te deja. Cargá las tasas <strong>todo-costo</strong> — con gastos de otorgamiento, sellos e IVA sobre intereses. Si comparás TNAs nominales limpias, el crédito bancario siempre parece más barato de lo que es.
+        <strong>Cómo leerlo.</strong> Todas las vías se comparan por lo mismo: cuántos dólares netos te entran hoy por cada tonelada que comprometés. La fila punteada <strong>“Venta de disponible hoy”</strong> es la vara de costo cero — sin deuda ni tasa — contra la que se mide si conviene endeudarse: financiarse sólo gana si el crédito cuesta menos que el <strong>carry</strong> que resignás al no vender ya. Cargá las tasas <strong>todo-costo</strong> — con gastos de otorgamiento, sellos e IVA sobre intereses. Si comparás TNAs nominales limpias, el crédito bancario siempre parece más barato de lo que es.
       </div>
 
     </div><!-- /fondeo-block -->

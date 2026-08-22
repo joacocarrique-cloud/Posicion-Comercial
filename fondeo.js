@@ -1,8 +1,10 @@
 // ═══════════════════════════════════════════════════
 // ─── FONDEO ───
-// Comparador de fuentes de financiamiento cuando NO hay mercadería disponible.
-// Necesito plata hoy y la devuelvo contra la cosecha: ¿qué fuente me deja más
-// u$s netos hoy por tonelada comprometida?
+// Necesito caja hoy: ¿la saco endeudándome contra la cosecha, o vendiendo el grano
+// que ya tengo? Compara las fuentes de financiamiento entre sí y contra el benchmark
+// de costo cero: vender el disponible hoy al TC spot (sin deuda ni tasa).
+// Métrica común: u$s netos hoy por tonelada comprometida. Regla de oro: financiarse
+// sólo conviene si el costo del crédito es menor que el carry del mercado.
 // Independiente de paseCalcStrategies(), que asume que tenés grano para vender hoy.
 // ═══════════════════════════════════════════════════
 
@@ -119,7 +121,33 @@ function fondeoGetInputs() {
     tcFut:      fondeoNum('fondeo-tc-fut'),
     rUSD:       fondeoNum('fondeo-r-usd'),
     rARS:       fondeoNum('fondeo-r-ars'),
-    rCheq:      fondeoNum('fondeo-r-cheq')
+    rCheq:      fondeoNum('fondeo-r-cheq'),
+    disp:       fondeoNum('fondeo-disp'),
+    dispCur:    (document.getElementById('fondeo-disp-cur') || {}).value || 'usd'
+  };
+}
+
+// ─── Benchmark: vender el grano disponible hoy al TC spot ───
+// No es una fuente de financiamiento: es la vara de costo cero (sin deuda ni tasa)
+// contra la que se mide si conviene endeudarse. Devuelve null si no hay disponible cargado.
+function fondeoBenchmark(inp) {
+  if (inp.disp <= 0) return null;
+  const usdHoy = inp.dispCur === 'ars'
+    ? (inp.tcSpot > 0 ? inp.disp / inp.tcSpot : 0)
+    : inp.disp;
+  if (usdHoy <= 0) return null;
+  const a = 365 / (inp.dias || 1);
+  // Carry del mercado = costo de oportunidad de vender ya, anualizado (futuro vs. disponible)
+  const carry = inp.precioUSD > 0 ? ((inp.precioUSD / usdHoy) - 1) * a * 100 : 0;
+  const desc = inp.dispCur === 'ars'
+    ? `Vendés hoy a $${fondeoMiles(inp.disp)}/tn (≈ ${fondeoDec(usdHoy)} u$s al spot). Sin deuda ni tasa.`
+    : `Vendés hoy a ${fondeoDec(inp.disp)} u$s/tn al spot. Cerrado: sin deuda ni obligación futura.`;
+  return {
+    key: 'disp', short: 'Vender disponible', benchmark: true,
+    name: 'Venta de disponible hoy',
+    desc, usdHoy, carry,
+    toneladas: usdHoy > 0 ? inp.monto / usdHoy : 0,
+    detail: `Entran ${fondeoDec(usdHoy)} u$s/tn netos hoy, sin tasa ni deuda y sin obligación de entrega futura. Sobre un futuro MATBA de ${fondeoDec(inp.precioUSD)} u$s/tn, resignás un carry de ${fondeoDec(carry)}% TNA por vender ya en vez de esperar. Regla: financiarse sólo conviene si el crédito cuesta menos que ese carry.`
   };
 }
 
@@ -231,22 +259,75 @@ function fondeoCalc() {
   if (inp.precioUSD <= 0) return vacio('Cargá el precio del futuro MATBA para comparar');
 
   const ops = fondeoCalcOpciones(inp, im);
-  if (!ops.length) return vacio('Cargá al menos una tasa: crédito USD, crédito ARS o descuento de cheques');
+  const bench = fondeoBenchmark(inp);
+
+  // ─── Fila del benchmark (venta de disponible): estilo propio, fuera del ranking ───
+  const benchRowHtml = (b, winner) => !b ? '' : `
+    <div class="fondeo-row" style="border-style:dashed; border-color:${winner ? 'var(--es-green)' : 'var(--border-2)'}; background:var(--bg-input);${winner ? ' box-shadow:0 0 0 1px var(--es-green) inset;' : ''}">
+      <div class="fondeo-row-top">
+        <div class="fondeo-row-name">
+          <span class="fondeo-rank" style="border-style:dashed; color:${winner ? 'var(--es-green)' : 'var(--es-gold)'};">◇</span>
+          <div>
+            <div class="fondeo-row-title">${b.name}<span class="fondeo-badge" style="background:${winner ? 'var(--es-green)' : 'var(--es-gold-light)'}; color:${winner ? '#fff' : '#96700e'};">${winner ? 'CONVIENE VENDER' : 'BENCHMARK · SIN DEUDA'}</span></div>
+            <div class="fondeo-row-desc">${b.desc}</div>
+          </div>
+        </div>
+        <div class="fondeo-metric">
+          <span class="fondeo-metric-val">${fondeoDec(b.usdHoy)}</span>
+          <span class="fondeo-metric-lbl">u$s hoy/tn</span>
+        </div>
+        <div class="fondeo-metric">
+          <span class="fondeo-metric-val">${fondeoDec(b.carry)}%</span>
+          <span class="fondeo-metric-lbl">carry resignado</span>
+        </div>
+        <div class="fondeo-metric">
+          <span class="fondeo-metric-val">${fondeoMiles(b.toneladas)}</span>
+          <span class="fondeo-metric-lbl">tn a vender</span>
+        </div>
+      </div>
+      <div class="fondeo-row-detail">${b.detail}</div>
+    </div>`;
+
+  if (!ops.length) {
+    // Sin tasas cargadas: si hay disponible, igual mostramos la vara; si no, vacío.
+    if (bench) {
+      if (kpiEl) kpiEl.innerHTML = '';
+      if (altEl) altEl.innerHTML = '';
+      rowEl.innerHTML = benchRowHtml(bench, false) +
+        `<div class="fondeo-empty" style="margin-top:10px;">Cargá una tasa (crédito USD/ARS o descuento de cheques) para comparar el financiamiento contra vender el disponible.</div>`;
+      return;
+    }
+    return vacio('Cargá al menos una tasa: crédito USD, crédito ARS o descuento de cheques');
+  }
 
   const best = ops[0], second = ops[1];
+  const finConviene = !bench || best.usdHoy > bench.usdHoy;
 
   if (kpiEl) {
-    kpiEl.innerHTML = `
-      <div class="pase-reading-card">
-        <div class="pase-reading-lbl">Fuente más barata</div>
-        <div class="pase-reading-val" style="color:var(--es-green);">${best.short}</div>
-        <div class="pase-reading-sub">${fondeoDec(best.costo)}% TNA en u$s · ${fondeoDec(best.usdHoy)} u$s hoy/tn</div>
-      </div>
+    const verdictCard = !bench ? '' : (() => {
+      const dif = Math.abs(best.usdHoy - bench.usdHoy);
+      const col = finConviene ? 'var(--es-green)' : 'var(--es-gold)';
+      return `
+      <div class="pase-reading-card" style="border-color:${col};">
+        <div class="pase-reading-lbl">Veredicto</div>
+        <div class="pase-reading-val" style="color:${col};">${finConviene ? 'Financiarse' : 'Vender disponible'}</div>
+        <div class="pase-reading-sub">+${fondeoDec(dif)} u$s/tn vs. ${finConviene ? 'vender hoy' : 'financiarte'} · carry ${fondeoDec(bench.carry)}% ${finConviene ? '>' : '<'} crédito ${fondeoDec(best.costo)}%</div>
+      </div>`;
+    })();
+
+    const ventajaCard = bench ? '' : `
       <div class="pase-reading-card">
         <div class="pase-reading-lbl">Ventaja vs. 2ª opción</div>
         <div class="pase-reading-val" style="font-family:var(--mono); color:var(--es-green);">${second ? '+' + fondeoDec(best.usdHoy - second.usdHoy) : '—'}</div>
         <div class="pase-reading-sub">${second ? 'u$s/tn contra ' + second.short.toLowerCase() : 'única alternativa cargada'}</div>
-      </div>
+      </div>`;
+
+    kpiEl.innerHTML = verdictCard + `
+      <div class="pase-reading-card">
+        <div class="pase-reading-lbl">Fuente más barata</div>
+        <div class="pase-reading-val" style="color:var(--es-green);">${best.short}</div>
+        <div class="pase-reading-sub">${fondeoDec(best.costo)}% TNA en u$s · ${fondeoDec(best.usdHoy)} u$s hoy/tn</div>
+      </div>` + ventajaCard + `
       <div class="pase-reading-card gold">
         <div class="pase-reading-lbl">Toneladas a comprometer</div>
         <div class="pase-reading-val" style="font-family:var(--mono); color:var(--es-gold);">${fondeoMiles(best.toneladas)}</div>
@@ -254,24 +335,25 @@ function fondeoCalc() {
       </div>`;
   }
 
-  rowEl.innerHTML = ops.map((o, i) => {
+  const opsHtml = ops.map((o, i) => {
     const isBest = i === 0;
+    const showBadge = isBest && finConviene;
     const cColor = (best.costo >= 0 && o.costo > best.costo * 1.5) ? 'var(--red)'
       : isBest ? 'var(--es-green)' : 'var(--text-2)';
     return `
-    <div class="fondeo-row ${isBest ? 'best' : ''}">
+    <div class="fondeo-row ${showBadge ? 'best' : ''}">
       <div class="fondeo-row-top">
         <div class="fondeo-row-name">
           <span class="fondeo-rank">${i + 1}</span>
           <div>
-            <div class="fondeo-row-title">${o.name}${isBest ? '<span class="fondeo-badge">MÁS BARATA</span>' : ''}</div>
+            <div class="fondeo-row-title">${o.name}${showBadge ? '<span class="fondeo-badge">MÁS BARATA</span>' : ''}</div>
             <div class="fondeo-row-desc">${o.desc}</div>
           </div>
         </div>
         <div class="fondeo-metric">
           <span class="fondeo-metric-val">${fondeoDec(o.usdHoy)}</span>
           <span class="fondeo-metric-lbl">u$s hoy/tn</span>
-          <span class="fondeo-metric-delta ${isBest ? 'ok' : ''}">${isBest ? 'benchmark' : fondeoDec(o.delta)}</span>
+          <span class="fondeo-metric-delta ${isBest ? 'ok' : ''}">${isBest ? 'mejor vía' : fondeoDec(o.delta)}</span>
         </div>
         <div class="fondeo-metric">
           <span class="fondeo-metric-val" style="color:${cColor};">${fondeoDec(o.costo)}%</span>
@@ -285,6 +367,8 @@ function fondeoCalc() {
       <div class="fondeo-row-detail">${o.detail}</div>
     </div>`;
   }).join('');
+
+  rowEl.innerHTML = opsHtml + benchRowHtml(bench, bench && !finConviene);
 
   if (altEl) {
     if (inp.forwardARS > 0 && inp.tcFut > 0 && im.gapTC < -1) {
