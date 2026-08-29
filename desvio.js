@@ -10,6 +10,10 @@ let dvOverlayChart=null,dvSingleChart=null,dvSeasonChart=null;
 let dvVolCvChart=null,dvVolRealChart=null,dvVolRangoChart=null;
 
 const DV_KEY_POS={soja:['MAY','JUL','NOV'],maiz:['ABR','JUL'],trigo:['DIC','JUL']};
+// Mes en que arranca la cosecha nueva de cada cultivo: una posición en ese mes
+// (o posterior) pertenece a la campaña anio/anio+1, no a la del año anterior.
+// El trigo se cosecha en diciembre, así que Dic-26 = campaña 26/27.
+const DV_NEWCROP_MONTH={trigo:12};
 const DV_CAMP_COLORS=['#1a6b3c','#c8a44a','#5b9bd5','#d4844a','#8b7db5','#c06080','#4a9aaa','#9a6aaa','#6aaa7a','#c0504a'];
 
 function dvGetAllPositions(){
@@ -30,8 +34,11 @@ function dvGetAllPositions(){
   return tree;
 }
 
-function dvGetCampLabel(anio){
-  const prev=(anio-1)%100,cur=anio%100;
+function dvGetCampLabel(anio,crop,mes){
+  crop=crop||dvCrop; mes=mes||dvPos;
+  const start=DV_NEWCROP_MONTH[crop], m=(typeof ASST_MES!=='undefined'?ASST_MES[mes]:0)||0;
+  const campYear=(start&&m>=start)?anio+1:anio;
+  const prev=(campYear-1)%100,cur=campYear%100;
   return String(prev).padStart(2,'0')+'/'+String(cur).padStart(2,'0');
 }
 
@@ -328,7 +335,7 @@ function dvBuildCard(item){
       <div class="dv-ov-metric"><div class="dv-ov-metric-lbl">Desv−</div><div class="dv-ov-metric-val" style="color:var(--red);">−${dvFmt(m.desvMinPct)}%</div></div>
       <div class="dv-ov-metric"><div class="dv-ov-metric-lbl">CV</div><div class="dv-ov-metric-val" style="color:var(--es-gold);">${dvFmt(m.cv)}%</div></div>
     </div>
-    <div class="dv-ov-footer">Última campaña (${dvGetCampLabel(parseInt(item.latestKey))})</div>`;
+    <div class="dv-ov-footer">Última campaña (${dvGetCampLabel(parseInt(item.latestKey),item.crop,item.mes)})</div>`;
   return card;
 }
 
