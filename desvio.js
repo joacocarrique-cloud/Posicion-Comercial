@@ -186,14 +186,14 @@ function dvRenderRefSummary(){
     ?'<div class="dv-ref-warn">⚠ El Precio Dolor ($'+st.dol.toFixed(1)+') está por encima del Objetivo ($'+st.obj.toFixed(1)+'). Revisá los valores: las zonas se solapan.</div>'
     :'';
 
-  // Barra apilada: dolor / medio / objetivo
+  // Barra apilada: objetivo / medio / dolor — mismo orden que las columnas de abajo
   let bar='';
   if(!st.inverted){
     const pa=st.abovePct||0,pb=st.belowPct||0,pm=st.midPct!=null?st.midPct:(100-pa-pb);
     bar='<div class="dv-ref-bar-track">'+
-      (pb>0?'<div class="dv-ref-seg" style="width:'+pb+'%;background:'+DV_REF_DOL_COLOR+';" title="Abajo del dolor: '+dvFmt(pb)+'%"></div>':'')+
-      (pm>0?'<div class="dv-ref-seg" style="width:'+pm+'%;background:var(--text-3,#7e8574);opacity:.35;" title="Zona intermedia: '+dvFmt(pm)+'%"></div>':'')+
       (pa>0?'<div class="dv-ref-seg" style="width:'+pa+'%;background:'+DV_REF_OBJ_COLOR+';" title="Arriba del objetivo: '+dvFmt(pa)+'%"></div>':'')+
+      (pm>0?'<div class="dv-ref-seg" style="width:'+pm+'%;background:var(--text-3,#7e8574);opacity:.35;" title="Zona intermedia: '+dvFmt(pm)+'%"></div>':'')+
+      (pb>0?'<div class="dv-ref-seg" style="width:'+pb+'%;background:'+DV_REF_DOL_COLOR+';" title="Abajo del dolor: '+dvFmt(pb)+'%"></div>':'')+
       '</div>';
   }
 
