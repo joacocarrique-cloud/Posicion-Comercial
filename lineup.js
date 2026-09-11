@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════════════
 
 // URL de la aplicación web de Apps Script (termina en /exec). Pegarla acá.
-const LU_API = '';
+const LU_API = 'https://script.google.com/macros/s/AKfycbxI0nrK6OaeStQDHtvHBVosB73CibGJA7l_YuPNBuo-u6cf3Mw7aEp0zXCstKUJ8eeX/exec';
 
 const LU_CACHE_KEY = 'esp_lineup_cache_v1';
 const LU_REFRESCO_MIN = 30;      // al abrir, si el dato tiene más de 30 min, se vuelve a pedir
