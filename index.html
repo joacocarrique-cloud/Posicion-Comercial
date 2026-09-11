@@ -15,7 +15,7 @@
     <div class="header-logo">🌾</div>
     <div>
       <div class="header-title">Suite Comercial · Espartina S.A.</div>
-      <div class="header-subtitle">Coberturas · FAS & Retenciones · Pases & Tasas · Spreads · Desvío de Precios</div>
+      <div class="header-subtitle">Coberturas · FAS & Retenciones · Pases & Tasas · Spreads · Desvío de Precios · Line-Up</div>
     </div>
     <span class="header-badge" id="app-version" title="Versión desplegada de la Suite">v9 · 13-ago-26</span>
   </div>
@@ -28,6 +28,7 @@
       <button class="mod-pill" onclick="toggleSpreads()">📈 Spreads</button>
       <button class="mod-pill" onclick="toggleDesvio()">📉 Desvío</button>
       <button class="mod-pill" onclick="toggleTheory()">📙 Manual</button>
+      <button class="mod-pill" id="pill-lineup" onclick="toggleLineUp()">🚢 Line-Up</button>
     </nav>
     <button class="btn-export-pdf" onclick="exportarPDF()" title="Exportar a PDF el módulo activo">🖨 PDF</button>
   </div>
@@ -1042,6 +1043,7 @@ window.addEventListener('afterprint', function() {
 <script src="vol_greeks.js"></script>
 <script src="spreads.js"></script>
 <script src="desvio.js"></script>
+<script src="lineup.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
