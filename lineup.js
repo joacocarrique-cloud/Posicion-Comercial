@@ -105,6 +105,10 @@ function luZona(p) {
 .lu-table .r{text-align:right;font-family:var(--mono)}
 .lu-table .b{font-weight:700}
 .lu-table .t{color:var(--text-3);font-size:11px}
+.lu-sect{font-size:11.5px}
+.lu-sect td,.lu-sect th{padding-left:5px;padding-right:5px}
+.lu-sect th{white-space:normal;line-height:1.25;vertical-align:bottom}
+.lu-sect tr.tot td{background:var(--bg-input);font-weight:700}
 .lu-eta{display:inline-block;font:500 11px var(--mono);background:var(--bg-input);padding:2px 6px;border-radius:4px}
 .lu-eta.hoy{background:var(--es-gold-light);color:#96700e}
 .lu-chart text{font-family:var(--mono);font-size:11px;fill:var(--text-3)}
@@ -251,18 +255,40 @@ function luEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({
 function luCompras(prodKey, camp) {
   const P = LU_PRODS[prodKey], co = luData && luData.compras && luData.compras.productos;
   if (!co) return null;
-  const acc = { total: 0, hecho: 0, saldo: 0, djve: 0, prevTotal: 0, prevDjve: 0, ind: null, hay: false };
+  const CAMPOS = ['semanal', 'total', 'hecho', 'afijar', 'fijado', 'saldo', 'djve'];
+  const vacio = () => ({ semanal: 0, total: 0, hecho: 0, afijar: 0, fijado: 0, saldo: 0, djve: 0, prevTotal: 0, hayPrev: false, fecha: null, hay: false });
+  const S = { exp: vacio(), ind: vacio(), tot: vacio() };
   P.compras.forEach(k => {
-    const e = co[k] && co[k][camp] && co[k][camp].exp;
-    if (!e) return;
-    acc.hay = true;
-    acc.total += e.total || 0; acc.hecho += e.hecho || 0; acc.saldo += e.saldo || 0; acc.djve += e.djve || 0;
-    if (e.prev) { acc.prevTotal += e.prev.total || 0; acc.prevDjve += e.prev.djve || 0; }
-    const i = P.industria && co[k][camp].ind;
-    if (i) acc.ind = { total: i.total || 0, saldo: i.saldo || 0, prev: i.prev ? i.prev.total : null };
+    const c = co[k] && co[k][camp];
+    if (!c) return;
+    ['exp', 'ind', 'tot'].forEach(sec => {
+      const e = c[sec];
+      if (!e) return;
+      const a = S[sec]; a.hay = true;
+      CAMPOS.forEach(f => a[f] += e[f] || 0);
+      if (e.prev && e.prev.total != null) { a.prevTotal += e.prev.total; a.hayPrev = true; }
+      if (e.fecha) a.fecha = e.fecha;
+    });
   });
-  acc.afijar = Math.max(0, acc.total - acc.hecho);
-  return acc.hay ? acc : null;
+  if (!S.exp.hay) return null;
+  const e = S.exp;
+  return { total: e.total, hecho: e.hecho, afijar: e.afijar, saldo: e.saldo, djve: e.djve, prevTotal: e.prevTotal, sect: S };
+}
+
+// Tabla igual al cuadro de SAGyP (miles de t), para poder controlar fila por fila.
+function luTablaSectores(co) {
+  const f = v => v == null ? '–' : v.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const fechaGral = luData.compras && luData.compras.fecha;
+  const fila = (lbl, a, cls) => {
+    if (!a.hay) return '';
+    const yoy = a.hayPrev && a.prevTotal > 0 ? a.total / a.prevTotal - 1 : null;
+    const nota = a.fecha && a.fecha !== fechaGral ? ` <span class="t">al ${luEsc(a.fecha.replace(/\/\d{4}$/, ''))}</span>` : '';
+    return `<tr class="${cls || ''}"><td>${lbl}${nota}</td><td class="r">${f(a.total)}</td><td class="r">${f(a.hecho)}</td><td class="r">${f(a.afijar)}</td><td class="r">${f(a.fijado)}</td><td class="r">${f(a.saldo)}</td><td class="r">${f(a.djve)}</td>
+      <td class="r">${yoy == null ? '–' : `<span class="${yoy >= 0 ? 'lu-dn' : 'lu-up'}">${yoy >= 0 ? '+' : ''}${Math.round(yoy * 100)}%</span>`}</td></tr>`;
+  };
+  return `<div class="lu-tw" style="margin-top:14px"><table class="lu-table lu-sect">
+    <thead><tr><th>Miles de t · ${luEsc(luCamp)}</th><th class="r">Comprado</th><th class="r">Precio hecho</th><th class="r">A fijar</th><th class="r">Fijado</th><th class="r">Saldo a fijar</th><th class="r">DJVE</th><th class="r">vs año ant.</th></tr></thead>
+    <tbody>${fila('Exportación', co.sect.exp)}${fila('Industria', co.sect.ind)}${fila('<b>Total</b>', co.sect.tot, 'tot')}</tbody></table></div>`;
 }
 
 function luCampanas(prodKey) {
@@ -363,7 +389,7 @@ function luRender() {
       <div class="lu-kpis">
         <div class="lu-kpi"><div class="k">Line-up nominado · ${luEsc(P.nombre)}</div><div class="v">${luT(totLU)}</div><div class="d">${P.unidad} · ${nBuques} buques · foto ${luFechaCorta(fotoIso)}</div></div>
         <div class="lu-kpi"><div class="k">vs misma fecha año anterior</div>${prevTot ? `<div class="v ${totLU >= prevTot ? 'lu-up' : 'lu-dn'}">${totLU >= prevTot ? '+' : ''}${Math.round((totLU / prevTot - 1) * 100)}%</div><div class="d">${luT(prevTot)} el ${luFechaCorta(aa.fecha)}-${aa.fecha.slice(2, 4)}</div>` : `<div class="v" style="font-size:15px;color:var(--text-3)">Sin histórico</div><div class="d">se completa con cargarHistorico() en el Apps Script</div>`}</div>
-        <div class="lu-kpi"><div class="k">Saldo a fijar · exportación</div><div class="v">${co ? luMilT(co.saldo) : '–'}</div><div class="d">${co && co.ind ? 'industria: ' + luMilT(co.ind.saldo) : 'comprado sin precio aún'}</div></div>
+        <div class="lu-kpi"><div class="k">Saldo a fijar · exportación + industria</div><div class="v">${co ? luMilT(co.sect.tot.hay ? co.sect.tot.saldo : co.saldo) : '–'}</div><div class="d">${co ? 'exportación ' + luMilT(co.sect.exp.saldo) + (co.sect.ind.hay ? ' · industria ' + luMilT(co.sect.ind.saldo) : '') : ''}</div></div>
         <div class="lu-kpi"><div class="k">DJVE con embarque en ${djm ? djm.lbl : 'el mes'}</div><div class="v">${djm ? luT(djm.t) : '–'}</div><div class="d">${djm1 ? djm1.lbl + ': ' + luT(djm1.t) : ''}</div></div>
       </div>
     </div>
@@ -410,8 +436,7 @@ function luPanelCompras(P, co) {
   const dAbs = Math.abs(diff);
   const bigTxt = (diff >= 0 ? '+' : '−') + (dAbs < 1000 ? Math.round(dAbs).toLocaleString('es-AR') + '<small>mil t</small>' : luF1(dAbs / 1000) + '<small>Mt</small>');
   const yoy = co.prevTotal > 0 ? co.total / co.prevTotal - 1 : null;
-  let extra = '';
-  if (co.ind) extra += `La industria compró ${luMilT(co.ind.total)}${co.ind.prev ? ' (' + luMilT(co.ind.prev) + ' un año atrás)' : ''} y tiene ${luMilT(co.ind.saldo)} a fijar. `;
+  let extra = 'La cobertura se mide solo con la exportación, porque las DJVE son sus ventas al exterior; la industria compra para procesar y aparece en la tabla de abajo. ';
   if (LU_PRODS[luProd].compras.length > 1) extra += 'Suma cebada forrajera y cervecera. ';
   return `
     <div class="lu-card">
@@ -420,7 +445,7 @@ function luPanelCompras(P, co) {
         <div><div class="lu-big" style="color:${diff >= 0 ? 'var(--es-green)' : '#a54132'}">${bigTxt}</div><div class="lu-lbl">${diff >= 0 ? 'Compras por encima de DJVE' : 'Falta comprar para cubrir DJVE'}</div></div>
         <div><div class="lu-big" style="font-size:26px">${cob == null ? '–' : Math.round(cob * 100) + '%'}</div><div class="lu-lbl">DJVE cubiertas con compras</div></div>
         <div><span class="lu-pres ${lvl}">${lvl.toUpperCase()}</span><div class="lu-lbl">Presión compradora</div></div>
-        <div><div class="lu-big" style="font-size:20px">${yoy == null ? '–' : `<span class="${yoy >= 0 ? 'lu-dn' : 'lu-up'}">${yoy >= 0 ? '+' : ''}${Math.round(yoy * 100)}%</span>`}</div><div class="lu-lbl">Compras vs año anterior</div></div>
+        <div><div class="lu-big" style="font-size:20px">${yoy == null ? '–' : `<span class="${yoy >= 0 ? 'lu-dn' : 'lu-up'}">${yoy >= 0 ? '+' : ''}${Math.round(yoy * 100)}%</span>`}</div><div class="lu-lbl">Compras export. vs año anterior</div></div>
       </div>
       <div class="lu-stack" title="Compras de la exportación frente a DJVE registradas">
         <div style="width:${pct(co.hecho)};background:var(--es-green)"></div>
@@ -434,6 +459,7 @@ function luPanelCompras(P, co) {
         <div><span class="lu-sw" style="background:${diff >= 0 ? 'var(--text)' : '#a54132'}"></span>${diff >= 0 ? 'Excedente sobre DJVE' : 'Falta comprar'}<b>${luMilT(dAbs)}</b></div>
       </div>
       <div class="lu-note sep">La línea negra marca las DJVE registradas (${luMilT(co.djve)}). Por encima del 100% la exportación ya compró más de lo que declaró vender (está larga de físico); por debajo, tiene que salir a comprar. ${extra}</div>
+      ${luTablaSectores(co)}
     </div>`;
 }
 
