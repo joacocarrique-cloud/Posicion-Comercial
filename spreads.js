@@ -166,11 +166,12 @@ function spCalcSpread(){
   const vals=filtered.map(s=>spMode==='basis'?s.basis:s.ratio).filter(v=>v!==null);
   if(vals.length<3){document.getElementById('sp-stats').innerHTML='<div style="grid-column:span 6;color:var(--text-3);font-size:12px;">Datos insuficientes después del filtro.</div>';return;}
 
-  const current=vals[vals.length-1];
+  // El valor actual es SIEMPRE el último dato de la serie, aunque se excluya su año del análisis.
+  const lastS=series[series.length-1];
+  const current=spMode==='basis'?lastS.basis:(lastS.ratio!=null?lastS.ratio:vals[vals.length-1]);
   const avg=vals.reduce((a,b)=>a+b,0)/vals.length;
   const min=Math.min(...vals);const max=Math.max(...vals);
   const std=Math.sqrt(vals.reduce((a,v)=>a+(v-avg)**2,0)/vals.length);
-  const percentile=Math.round(vals.filter(v=>v<=current).length/vals.length*100);
   const fmt=v=>spMode==='basis'?v.toFixed(1):v.toFixed(4);
   const diffVsAvg=current-avg;
   const diffPct=avg!==0?((current/avg-1)*100).toFixed(1):'—';
@@ -203,6 +204,12 @@ function spCalcSpread(){
   const campAvg=histCampMeans.length>0?histCampMeans.reduce((a,b)=>a+b,0)/histCampMeans.length:avg;
   const diffVsCamp=current-campAvg;
   const diffCampPct=campAvg!==0?((current/campAvg-1)*100).toFixed(1):'—';
+  // Percentil contra las campañas anteriores equivalentes (misma relación de posiciones);
+  // si no hay suficiente historia, contra la propia serie del par.
+  const histVals=histKeys.flatMap(k=>seasonData[k].map(p=>p.val));
+  const pctBase=histVals.length>=20?histVals:vals;
+  const pctVsHist=pctBase===histVals;
+  const percentile=Math.round(pctBase.filter(v=>v<=current).length/pctBase.length*100);
 
   // Y axis
   const yMinInput=document.getElementById('sp-ymin').value;
@@ -212,37 +219,37 @@ function spCalcSpread(){
   const yMax=yMaxInput!==''?parseFloat(yMaxInput):Math.ceil((max+padding)*10)/10;
 
   // Stats
-  document.getElementById('sp-stats').style.gridTemplateColumns='repeat(6,1fr)';
+  document.getElementById('sp-stats').style.gridTemplateColumns='repeat(auto-fit,minmax(130px,1fr))';
   document.getElementById('sp-stats').innerHTML=`
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center;">
-      <div style="font-size:9px;font-weight:700;color:var(--text-3);text-transform:uppercase;">${modeLabel} Actual</div>
+      <div style="font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;">${modeLabel} Actual</div>
       <div style="font-size:20px;font-weight:700;font-family:var(--mono);">${fmt(current)}</div>
       <div style="font-size:10px;color:var(--text-3);">${lbl1} vs ${lbl2}</div>
     </div>
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center;">
-      <div style="font-size:9px;font-weight:700;color:var(--text-3);text-transform:uppercase;">Prom. ${modeLabel}</div>
+      <div style="font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;">Prom. ${modeLabel}</div>
       <div style="font-size:20px;font-weight:700;font-family:var(--mono);">${fmt(avg)}</div>
       <div style="font-size:10px;color:${diffVsAvg>0?'var(--green)':'var(--red)'};">${diffVsAvg>0?'+':''}${fmt(diffVsAvg)} (${diffPct}%)</div>
     </div>
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center;">
-      <div style="font-size:9px;font-weight:700;color:var(--text-3);text-transform:uppercase;">Prom. Histórico</div>
+      <div style="font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;">Prom. Histórico</div>
       <div style="font-size:20px;font-weight:700;font-family:var(--mono);">${fmt(campAvg)}</div>
       <div style="font-size:10px;color:${diffVsCamp>0?'var(--green)':'var(--red)'};">${diffVsCamp>0?'+':''}${fmt(diffVsCamp)} (${diffCampPct}%)</div>
     </div>
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center;">
-      <div style="font-size:9px;font-weight:700;color:var(--text-3);text-transform:uppercase;">Percentil</div>
+      <div style="font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;">Percentil</div>
       <div style="font-size:20px;font-weight:700;font-family:var(--mono);color:${percentile>70?'var(--green)':percentile<30?'var(--red)':'var(--text)'};">P${percentile}</div>
-      <div style="font-size:10px;color:var(--text-3);">${percentile>70?'Alto vs historia':percentile<30?'Bajo vs historia':'Rango normal'}</div>
+      <div style="font-size:10px;color:var(--text-3);">${percentile>70?'Alto':percentile<30?'Bajo':'Rango normal'} vs ${pctVsHist?histKeys.length+' campañas previas':'serie actual'}</div>
     </div>
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center;">
-      <div style="font-size:9px;font-weight:700;color:var(--text-3);text-transform:uppercase;">Rango ${modeLabel}</div>
+      <div style="font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;">Rango ${modeLabel}</div>
       <div style="font-size:13px;font-weight:700;font-family:var(--mono);">${fmt(min)} / ${fmt(max)}</div>
       <div style="font-size:10px;color:var(--text-3);">Mín / Máx</div>
     </div>
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center;">
-      <div style="font-size:9px;font-weight:700;color:var(--text-3);text-transform:uppercase;">Desvío Std</div>
+      <div style="font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;">Desvío Std</div>
       <div style="font-size:13px;font-weight:700;font-family:var(--mono);">${fmt(std)}</div>
-      <div style="font-size:10px;color:var(--text-3);">${Math.abs(current-avg)>std*1.5?'⚠️ Fuera de 1.5σ':'Dentro de 1σ'}</div>
+      <div style="font-size:10px;color:var(--text-3);">${Math.abs(current-avg)>std*1.5?'⚠️ Fuera de 1,5σ':'Dentro de 1,5σ'}</div>
     </div>`;
 
   // ─── Chart 1: Serie actual (solo este par) ───
@@ -255,7 +262,7 @@ function spCalcSpread(){
       {label:'Promedio',data:filtered.map(()=>avg),borderColor:'#C8A44A',borderWidth:1,borderDash:[5,5],pointRadius:0}
     ]
   },options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{font:{size:9},boxWidth:12}},tooltip:{mode:'index',intersect:false}},
-    scales:{x:{ticks:{maxTicksToRender:8,font:{size:9}},grid:{display:false}},y:{min:yMin,max:yMax,ticks:{font:{size:10,family:'JetBrains Mono'}}}}}});
+    scales:{x:{ticks:{maxTicksLimit:8,font:{size:10}},grid:{display:false}},y:{min:yMin,max:yMax,ticks:{font:{size:10,family:'JetBrains Mono'}}}}}});
 
   // ─── Chart 2: Estacionalidad por DTE ───
   if(spChartSeason){spChartSeason.destroy();}
@@ -269,11 +276,11 @@ function spCalcSpread(){
     sDatasets.push({label:key,data:pts.map(p=>({x:p.dte,y:p.val})),showLine:true,
       borderColor:dsColors[ci%dsColors.length],backgroundColor:dsColors[ci%dsColors.length],
       borderWidth:isCurr?2.5:1.5,pointRadius:isCurr?3:2,tension:0.3,
-      borderDash:isCurr?[]:[3,3],hidden:true});ci++;
+      borderDash:isCurr?[]:[3,3],hidden:!isCurr});ci++;
   }
-  // ─── Línea promedio (siempre usa TODAS las campañas) ───
+  // ─── Línea promedio: campañas ANTERIORES (sin la actual, para poder compararla) ───
   const avgByDte={};
-  for(const key of sKeys.slice(0,8)){
+  for(const key of sKeys.filter(k=>k!==currentKey)){
     (seasonData[key]||[]).forEach(p=>{
       const dteBin=Math.round(p.dte/5)*5;
       if(!avgByDte[dteBin])avgByDte[dteBin]={sum:0,count:0};
@@ -281,9 +288,9 @@ function spCalcSpread(){
     });
   }
   const avgPts=Object.keys(avgByDte).map(d=>({x:parseInt(d),y:avgByDte[d].sum/avgByDte[d].count})).sort((a,b)=>b.x-a.x);
-  // Auto Y-axis inicial: solo Promedio (datasets de campañas arrancan hidden)
+  // Auto Y-axis inicial: Promedio + campaña actual (el resto arranca oculto)
   let sYMin=Infinity,sYMax=-Infinity;
-  avgPts.forEach(p=>{if(p.y<sYMin)sYMin=p.y;if(p.y>sYMax)sYMax=p.y;});
+  avgPts.concat((seasonData[currentKey]||[]).map(p=>({y:p.val}))).forEach(p=>{if(p.y<sYMin)sYMin=p.y;if(p.y>sYMax)sYMax=p.y;});
   const sPad=(sYMax-sYMin)*0.1||1;
   const sAxisMin=yMinInput!==''?parseFloat(yMinInput):Math.floor((sYMin-sPad)*10)/10;
   const sAxisMax=yMaxInput!==''?parseFloat(yMaxInput):Math.ceil((sYMax+sPad)*10)/10;
@@ -342,14 +349,14 @@ function spCalcSpread(){
   const binWidth=(max-min)/nBins||1;
   const bins=Array(nBins).fill(0);
   const binLabels=[];
-  for(let i=0;i<nBins;i++){const lo=min+i*binWidth;binLabels.push(fmt(lo));vals.forEach(v=>{if(v>=lo&&v<lo+binWidth)bins[i]++;});}
+  for(let i=0;i<nBins;i++){const lo=min+i*binWidth;binLabels.push(fmt(lo));vals.forEach(v=>{if(v>=lo&&(v<lo+binWidth||(i===nBins-1&&v<=max)))bins[i]++;});}
   const currentBin=Math.min(Math.floor((current-min)/binWidth),nBins-1);
   const barColors=bins.map((_,i)=>i===currentBin?'#1A6B3C':'#85B7EB');
 
   const ctxD=document.getElementById('sp-chart-dist').getContext('2d');
   spChartDist=new Chart(ctxD,{type:'bar',data:{labels:binLabels,datasets:[{data:bins,backgroundColor:barColors,borderRadius:2}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{title:(items)=>{const i=items[0].dataIndex;return `Rango: ${fmt(min+i*binWidth)} a ${fmt(min+(i+1)*binWidth)}`;},label:(item)=>`${item.raw} observaciones`}}},
-      scales:{x:{ticks:{maxTicksToRender:10,font:{size:9,family:'JetBrains Mono'}},grid:{display:false}},y:{ticks:{font:{size:9}},grid:{color:'rgba(0,0,0,.05)'}}}}});
+      scales:{x:{ticks:{maxTicksLimit:10,font:{size:10,family:'JetBrains Mono'}},grid:{display:false}},y:{ticks:{font:{size:9}},grid:{color:'rgba(0,0,0,.05)'}}}}});
 
   // Insight
   const lowLabel=crop1===crop2?`${pos1} barato vs ${pos2}`:`${crop1} barato vs ${crop2}`;

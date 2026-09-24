@@ -19,6 +19,8 @@
 
   --green: #1a854a;
   --red: #c43030;
+  --amber: #b7791f;
+  --blue: #2563eb;
 
   --font: 'Montserrat', sans-serif;
   --mono: 'JetBrains Mono', monospace;
@@ -400,7 +402,7 @@ body {
   border: 1px solid var(--border);
 }
 .kpi-card .k-lbl {
-  font-size: 9px;
+  font-size: 10px;
   text-transform: uppercase;
   color: var(--text-3);
   font-weight: 700;
@@ -411,6 +413,30 @@ body {
 .kpi-card .k-val { font-size: 13px; font-weight: 700; font-family: var(--mono); }
 .green-txt { color: var(--green); }
 .red-txt { color: var(--red); }
+
+/* Header en pantallas angostas: las pills bajan a una segunda línea en vez de desbordar */
+@media (max-width: 1320px) {
+  .app-header { flex-wrap: wrap; padding: 12px 20px; row-gap: 10px; }
+  .app-header > div:last-child { flex-wrap: wrap; width: 100%; justify-content: flex-start; }
+  #mod-pills { flex-wrap: wrap; }
+  .header-subtitle { display: none; }
+}
+@media (max-width: 700px) {
+  .header-title { font-size: 15px; }
+  .mod-pill { padding: 5px 10px; font-size: 11px; }
+}
+
+/* Volumen por estrategia y primas de referencia (no encontradas en A3) */
+.strat-footer { gap: 10px; flex-wrap: wrap; }
+.strat-vol { font-size: 11px; font-weight: 600; color: var(--text-3); display: inline-flex; align-items: center; gap: 4px; }
+.strat-vol .w-vol {
+  width: 72px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 5px;
+  background: var(--bg-input); font-family: var(--mono); font-size: 12px; text-align: right; color: var(--text);
+}
+.leg-row .w-num.is-estimada { background: #fff4d6; border-color: var(--es-gold); }
+.prima-estimada-note { font-size: 10.5px; color: #8a6d1f; padding: 4px 8px 0; }
+.calc-section .comp-table td.pos { color: var(--green); font-weight: 600; }
+.calc-section .comp-table td.neg { color: var(--red); font-weight: 600; }
 
 /* ─── Chart ─── */
 .chart-section {
@@ -722,7 +748,7 @@ body {
 
 /* ─── Responsive ─── */
 @media (max-width: 1000px) {
-  .builder-area, .bottom-area { grid-template-columns: 1fr; }
+  .builder-area, .bottom-area { grid-template-columns: minmax(0, 1fr); }
   .app-header { padding: 14px 16px; }
   .container { padding: 16px; }
   .theory-section { padding: 24px; }
@@ -856,7 +882,7 @@ body {
   border-radius: 7px;
   border: 1px solid var(--border);
 }
-.ret-panel-inputs .field label { font-size: 9px; }
+.ret-panel-inputs .field label { font-size: 10px; }
 .ret-panel-inputs .field input { font-size: 12px; padding: 5px 7px; }
 .ret-bw { margin-bottom: 5px; }
 .ret-br { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 2px; }
@@ -1201,7 +1227,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   color: var(--es-green);
   cursor: pointer;
@@ -1252,7 +1278,7 @@ body {
   gap: 4px;
 }
 .fondeo-chip-lbl {
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .6px;
@@ -1313,7 +1339,7 @@ body {
 .fondeo-badge {
   display: inline-block;
   margin-left: 7px;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: .5px;
   padding: 2px 7px;
@@ -1324,9 +1350,9 @@ body {
 }
 .fondeo-metric { text-align: right; display: flex; flex-direction: column; gap: 1px; }
 .fondeo-metric-val { font-family: var(--mono); font-size: 17px; font-weight: 700; color: var(--text); line-height: 1.15; }
-.fondeo-metric-lbl { font-size: 9.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-3); font-weight: 600; }
+.fondeo-metric-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-3); font-weight: 600; }
 .fondeo-metric-delta { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--red); }
-.fondeo-metric-delta.ok { font-family: var(--font); font-size: 9.5px; color: var(--es-green); text-transform: uppercase; letter-spacing: .5px; }
+.fondeo-metric-delta.ok { font-family: var(--font); font-size: 10px; color: var(--es-green); text-transform: uppercase; letter-spacing: .5px; }
 .fondeo-row-detail {
   font-size: 11.5px;
   line-height: 1.65;
@@ -1504,7 +1530,7 @@ body {
 .pase-bar-c { width: 100%; height: 8px; background: var(--bg-input); border-radius: 4px; overflow: hidden; }
 .pase-bar-f { height: 100%; border-radius: 4px; }
 .pase-best-tag {
-  font-size: 9px;
+  font-size: 10px;
   background: var(--es-green);
   color: #fff;
   padding: 2px 8px;
@@ -1589,7 +1615,7 @@ body {
 .pase-carry-decision.hold .pase-carry-title { color: var(--es-green-dark); }
 .pase-carry-decision.sell .pase-carry-title { color: var(--red); }
 .pase-carry-detail { font-size: 12px; color: var(--text-2); margin-top: 3px; line-height: 1.5; }
-.pase-type-label { font-size: 9px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 1px; }
+.pase-type-label { font-size: 10px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 1px; }
 
 @media (max-width: 900px) {
   .pase-pos-grid { grid-template-columns: 1fr; }
@@ -1671,7 +1697,7 @@ body {
   gap: 6px;
 }
 .dv-ov-metric-lbl {
-  font-size: 9px; color: var(--text-3);
+  font-size: 10px; color: var(--text-3);
   font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.4px;
 }
@@ -1748,7 +1774,7 @@ body {
   padding: 10px 12px;
 }
 .dv-kpi-lbl {
-  font-size: 9px; color: var(--text-3);
+  font-size: 10px; color: var(--text-3);
   font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.3px; margin-bottom: 3px;
 }
@@ -1801,7 +1827,7 @@ body {
   font-size: 12px;
 }
 .dv-table th {
-  font-size: 9px; font-weight: 700;
+  font-size: 10px; font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.4px;
   color: var(--text-3);
@@ -1936,7 +1962,7 @@ body {
   border-left:2px solid var(--border, #e0e2d8); padding-left:10px;
 }
 .dv-ref-stat-lbl{
-  font-size:9px; font-weight:700; text-transform:uppercase;
+  font-size:10px; font-weight:700; text-transform:uppercase;
   letter-spacing:.06em; color:var(--text-3, #7e8574); margin-bottom:3px;
 }
 .dv-ref-stat-val{

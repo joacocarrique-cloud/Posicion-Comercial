@@ -2,11 +2,58 @@
 // ─── COBERTURAS: Strategy Builder, Payoff, Charts ───
 // ═══════════════════════════════════════════════════
 
+// Prima de mercado para el cultivo de la solapa activa en la posición seleccionada.
+// Una prima 0 se trata como "sin dato" (A3 publica 0 en strikes sin operación).
 function lookupPrima(type, strike) {
-  if (!marketData || !marketPosition) return null;
-  const list = type === 'put' ? marketData.opciones.puts : marketData.opciones.calls;
-  const match = list.find(o => o.posicion === marketPosition && o.strike === strike);
-  return match ? match.prima : null;
+  if (!marketPosition) return null;
+  let list = null;
+  if (sheetData) {
+    const byPos = (sheetData.opciones[getActiveTab().assetVal] || {})[marketPosition];
+    list = byPos ? (type === 'put' ? byPos.puts : byPos.calls) : [];
+  } else if (marketData) {
+    list = (type === 'put' ? marketData.opciones.puts : marketData.opciones.calls)
+      .filter(o => o.posicion === marketPosition);
+  }
+  if (!list) return null;
+  const match = list.find(o => Math.abs(o.strike - strike) < 1e-9);
+  return match && match.prima > 0 ? match.prima : null;
+}
+
+// Ajusta las patas de una plantilla a strikes que existen en la cadena de A3 y toma sus
+// primas. Si dos patas del mismo tipo caen en el mismo strike, separa la de menor strike
+// original hacia abajo (o la de mayor hacia arriba) para no anular la estructura.
+// Devuelve { legs, missing } — missing = patas sin prima de mercado (quedan marcadas).
+function buildPresetLegs(legs) {
+  let missing = 0;
+  const grid = {};
+  ['put', 'call'].forEach(tp => {
+    grid[tp] = getAvailableStrikes(tp).filter(o => o.prima > 0).map(o => o.strike).sort((a, b) => a - b);
+  });
+  const nearestIdx = (arr, k) => arr.reduce((bi, v, i) => Math.abs(v - k) < Math.abs(arr[bi] - k) ? i : bi, 0);
+
+  const out = legs.map(l => ({ ...l, _orig: l.strike }));
+  ['put', 'call'].forEach(tp => {
+    const g = grid[tp];
+    if (!g.length) return;
+    const same = out.filter(l => l.type === tp).sort((a, b) => a._orig - b._orig);
+    const used = new Set();
+    // de afuera hacia adentro respecto del spot: primero la de strike original más alto
+    same.slice().reverse().forEach(l => {
+      let i = nearestIdx(g, l._orig);
+      while (used.has(i) && i > 0) i--;
+      while (used.has(i) && i < g.length - 1) i++;
+      used.add(i);
+      l.strike = g[i];
+    });
+  });
+  out.forEach(l => {
+    delete l._orig;
+    if (l.type === 'futuro') { l.prima = 0; return; }
+    const p = lookupPrima(l.type, l.strike);
+    if (p !== null) { l.prima = p; delete l.estimada; }
+    else { l.estimada = true; missing++; }
+  });
+  return { legs: out, missing };
 }
 
 function autoFillPrima(stratId, legIdx) {
@@ -16,6 +63,7 @@ function autoFillPrima(stratId, legIdx) {
   const prima = lookupPrima(leg.type, leg.strike);
   if (prima !== null) {
     leg.prima = prima;
+    delete leg.estimada;
     renderAll();
   } else {
     alert(`No se encontró prima para ${leg.type.toUpperCase()} strike ${leg.strike} en ${marketPosition}`);
@@ -30,7 +78,7 @@ function autoFillAllPrimas() {
     s.legs.forEach(l => {
       if (l.type === 'futuro') return;
       const prima = lookupPrima(l.type, l.strike);
-      if (prima !== null) { l.prima = prima; filled++; }
+      if (prima !== null) { l.prima = prima; delete l.estimada; filled++; }
     });
   });
   renderAll();
@@ -41,7 +89,7 @@ function getActiveTab() { return tabs[activeTabIdx]; }
 
 function getAvailableStrikes(optType) {
   if (!sheetData) return [];
-  const crop = document.getElementById('mkt-crop-select').value || getActiveTab().assetVal;
+  const crop = getActiveTab().assetVal || document.getElementById('mkt-crop-select').value;
   const pos = marketPosition || document.getElementById('mkt-pos-select').value;
   if (!crop || !pos) return [];
   const cropOpts = sheetData.opciones[crop];
@@ -71,7 +119,7 @@ function onStrikeSelect(stratId, legIdx, value) {
   const leg = t.strategies.find(x => x.id === stratId).legs[legIdx];
   leg.strike = parseFloat(value) || 0;
   const prima = lookupPrima(leg.type, leg.strike);
-  if (prima !== null) leg.prima = prima;
+  if (prima !== null) { leg.prima = prima; delete leg.estimada; }
   renderAll();
 }
 
@@ -111,15 +159,8 @@ function loadPreset(idx) {
   const preset = PRESETS[idx];
   if (!preset || preset.sep) return;
 
-  const legs = preset.legs(t.spot);
-  
-  if (marketData && marketPosition) {
-    legs.forEach(l => {
-      if (l.type === 'futuro') { l.prima = 0; return; }
-      const mktPrima = lookupPrima(l.type, l.strike);
-      if (mktPrima !== null) l.prima = mktPrima;
-    });
-  }
+  // Las patas sin prima en A3 quedan marcadas (amarillo + nota en la tarjeta).
+  const { legs } = buildPresetLegs(preset.legs(t.spot));
 
   const color = COLORS[(t.stratCounter - 1) % COLORS.length];
   t.strategies.push({
@@ -147,8 +188,8 @@ function renderTabs() {
   tabs.forEach((t, idx) => {
     const isActive = (idx === activeTabIdx) ? 'active' : '';
     html += `<button class="tab-btn ${isActive}" onclick="switchTab(${idx})">
-               ${t.name}
-               ${tabs.length > 1 ? `<span style="font-size:10px; margin-left:4px; opacity:0.6" onclick="event.stopPropagation(); deleteTab(${idx})">✕</span>` : ''}
+               ${escHtml(t.name)}
+               ${tabs.length > 1 ? `<span style="font-size:10px; margin-left:4px; opacity:0.6" title="Borrar solapa" onclick="event.stopPropagation(); deleteTab(${idx})">✕</span>` : ''}
              </button>`;
   });
   html += `<button class="tab-add" onclick="addNewTab()">+ Nueva cobertura</button>`;
@@ -187,7 +228,7 @@ function switchToWorkspace() {
 }
 
 function toggleTheory() {
-  theoryMode = true; retMode = false; paseMode = false; asstMode = false; spreadMode = false;
+  theoryMode = true; retMode = false; paseMode = false; asstMode = false; spreadMode = false; desvioMode = false;
   document.getElementById('workspace').style.display = 'none';
   document.getElementById('theory-space').style.display = 'block';
   document.getElementById('ret-space').style.display = 'none';
@@ -199,7 +240,7 @@ function toggleTheory() {
 }
 
 function toggleRetenciones() {
-  retMode = true; theoryMode = false; paseMode = false; asstMode = false; spreadMode = false;
+  retMode = true; theoryMode = false; paseMode = false; asstMode = false; spreadMode = false; desvioMode = false;
   document.getElementById('workspace').style.display = 'none';
   document.getElementById('theory-space').style.display = 'none';
   document.getElementById('ret-space').style.display = 'block';
@@ -229,6 +270,8 @@ function switchTab(idx) {
   document.getElementById('btn-update-primas').style.display = '';
   activeTabIdx = idx;
   syncTopBar();
+  // Restaurar cultivo + posición propios de la solapa (y su cadena de opciones).
+  if (sheetData) changeMarketCrop();
   renderAll();
   renderModules();
 }
@@ -237,31 +280,40 @@ function addNewTab() {
   const defaults = { soja: 340, maiz: 195, trigo: 215, girasol: 340 };
   const crop = 'soja';
   let spot = defaults[crop];
-  // If A3 data is loaded, use real price
+  let pos = null;
+  // If A3 data is loaded, use real price (posición más cercana con opciones)
   if (sheetData && sheetData.futuros[crop]) {
-    const fut = sheetData.futuros[crop].find(f => f.precio > 0);
+    pos = defaultPositionFor(crop) || null;
+    const fut = sheetData.futuros[crop].find(f => f.pos === pos && f.precio > 0);
     if (fut) spot = fut.precio;
   }
   const min = Math.floor(spot * 0.80 / 5) * 5;
   const max = Math.ceil(spot * 1.20 / 5) * 5;
   tabs.push({
     id: tabCounter++, name: 'Estrategia de Coberturas',
-    assetVal: crop, spot, min, max,
+    assetVal: crop, pos, spot, min, max,
     precioObjetivo: null, precioDolor: null,
     stratCounter: 2,
-    strategies: [{ id: 1, name: 'Estrategia 1', color: COLORS[0], legs: [{ dir: 'buy', type: 'put', ratio: 1, strike: Math.round(spot * 0.97), prima: 3 }] }]
+    strategies: [{ id: 1, name: 'Estrategia 1', color: COLORS[0], legs: [] }]
   });
+  // Pata inicial: put ~3% OTM ajustado a un strike real de la cadena
+  const nt = tabs[tabs.length - 1];
+  activeTabIdx = tabs.length - 1;
+  marketPosition = pos || marketPosition;
+  nt.strategies[0].legs = buildPresetLegs([{ dir: 'buy', type: 'put', ratio: 1, strike: Math.round(spot * 0.97), prima: 3 }]).legs;
   switchTab(tabs.length - 1);
 }
 
 function deleteTab(idx) {
   if (tabs.length === 1) return;
+  const n = tabs[idx].strategies ? tabs[idx].strategies.length : 0;
+  if (!confirm(`¿Borrar la solapa "${tabs[idx].name}" y sus ${n} estrategia(s)? No se puede deshacer.`)) return;
   tabs.splice(idx, 1);
   if (activeTabIdx >= tabs.length) activeTabIdx = tabs.length - 1;
   if (!theoryMode && !retMode && !paseMode) switchTab(activeTabIdx);
 }
 
-function updateTabName(val) { getActiveTab().name = val || 'Sin título'; renderTabs(); }
+function updateTabName(val) { getActiveTab().name = val || 'Sin título'; renderTabs(); saveState(); }
 
 function syncTopBar() {
   const t = getActiveTab();
@@ -368,7 +420,7 @@ function updateRefLines() {
   t.precioObjetivo = parseRef('ref-objetivo');
   t.precioDolor    = parseRef('ref-dolor');
   clearTimeout(_calcTimer);
-  _calcTimer = setTimeout(() => renderChart(), 250);
+  _calcTimer = setTimeout(() => { renderChart(); saveState(); }, 250);
 }
 
 function addStrategy() {
@@ -377,11 +429,21 @@ function addStrategy() {
   t.stratCounter++; renderAll();
 }
 
-function removeStrategy(id) { getActiveTab().strategies = getActiveTab().strategies.filter(s => s.id !== id); renderAll(); }
+function removeStrategy(id) {
+  const t = getActiveTab();
+  const s = t.strategies.find(x => x.id === id);
+  if (s && !confirm(`¿Borrar la estrategia "${s.name}"?`)) return;
+  t.strategies = t.strategies.filter(x => x.id !== id);
+  renderAll();
+}
 function addLeg(stratId) { getActiveTab().strategies.find(x => x.id === stratId).legs.push({ dir: 'buy', type: 'put', ratio: 1, strike: getActiveTab().spot, prima: 5 }); renderAll(); }
 function removeLeg(stratId, legIdx) { getActiveTab().strategies.find(x => x.id === stratId).legs.splice(legIdx, 1); renderAll(); }
 
-function updateStratName(stratId, val) { getActiveTab().strategies.find(x => x.id === stratId).name = val; renderChart(); renderTable(); renderWinner(); }
+function updateStratName(stratId, val) {
+  getActiveTab().strategies.find(x => x.id === stratId).name = val;
+  renderChart(); renderTable(); renderWinner(); renderCalc();
+  saveState();
+}
 function updateLegSelect(stratId, legIdx, field, val) { getActiveTab().strategies.find(x => x.id === stratId).legs[legIdx][field] = val; renderAll(); }
 
 // Mientras se escribe NO se reconstruye la fila: el input conserva su texto y
@@ -394,11 +456,13 @@ function updateLegInput(stratId, legIdx, field, val) {
   const raw = String(val == null ? '' : val).trim().replace(',', '.');
   const num = parseFloat(raw);
   strat.legs[legIdx][field] = isNaN(num) ? 0 : num;
+  if (field === 'prima') delete strat.legs[legIdx].estimada;
 
   clearTimeout(_renderTimer);
   _renderTimer = setTimeout(() => {
-    renderChart(); renderTable(); renderWinner();
+    renderChart(); renderTable(); renderWinner(); renderCalc();
     refreshStratMetrics(stratId);
+    saveState();
   }, 200);
 }
 
@@ -429,12 +493,103 @@ function calcPayoff(strat, price) {
   return price + optionsPayoff - netPrima;
 }
 
+// ─── Volumen y P&L del derivado ────────────────────────────────────────────
+const STRAT_VOL_DEFAULT = 1000; // tn
+let _volTimer = null;
+
+function getStratVol(s) {
+  const v = parseFloat(s && s.vol);
+  return v > 0 ? v : STRAT_VOL_DEFAULT;
+}
+
+// Resultado neto SOLO del derivado a vencimiento (intrínseco − prima), u$s/tn.
+function calcDerivativePnl(s, price) {
+  return calcPayoff(s, price) - price;
+}
+
+function updateStratVol(stratId, val) {
+  const s = getActiveTab().strategies.find(x => x.id === stratId);
+  if (!s) return;
+  const num = parseFloat(String(val).replace(/\./g, '').replace(',', '.'));
+  s.vol = num > 0 ? num : null;
+  clearTimeout(_volTimer);
+  _volTimer = setTimeout(() => {
+    renderCalc();
+    if (typeof renderLivePanel === 'function') renderLivePanel();
+    saveState();
+  }, 250);
+}
+
+function fmtUsd0(n) {
+  return (n < 0 ? '−' : '') + 'u$s ' + Math.abs(n).toLocaleString('es-AR', { maximumFractionDigits: 0 });
+}
+
+// Calculadora de Resultado: P&L del derivado por volumen, a un precio objetivo
+// y peor/mejor caso dentro de un rango de precios.
+function renderCalc() {
+  const table = document.getElementById('calc-table');
+  if (!table) return;
+  const t = getActiveTab();
+  const num = id => { const el = document.getElementById(id); const v = el ? parseFloat(el.value) : NaN; return isNaN(v) ? null : v; };
+  const target = num('calc-target') ?? t.spot;
+  let lo = num('calc-min') ?? t.min;
+  let hi = num('calc-max') ?? t.max;
+  if (lo > hi) [lo, hi] = [hi, lo];
+
+  const strats = t.strategies.filter(s => s.legs && s.legs.length);
+  if (!strats.length) {
+    table.innerHTML = '<tbody><tr><td style="text-align:center;color:var(--text-3);padding:16px;">Agregá una estrategia con patas para calcular el resultado.</td></tr></tbody>';
+    return;
+  }
+
+  const cls = v => v > 0.005 ? 'pos' : (v < -0.005 ? 'neg' : '');
+  const sgn = v => (v > 0.005 ? '+' : '');
+  let totVol = 0, totPrima = 0, totTarget = 0;
+  const rows = strats.map(s => {
+    const vol = getStratVol(s);
+    let prima = 0;
+    s.legs.forEach(l => { if (l.type !== 'futuro') prima += (l.dir === 'buy' ? l.prima : -l.prima) * (l.ratio || 1); });
+    const pnlT = calcDerivativePnl(s, target);
+    let worst = { v: Infinity, p: lo }, best = { v: -Infinity, p: lo };
+    const step = Math.max(0.5, (hi - lo) / 400);
+    for (let p = lo; p <= hi + 1e-9; p += step) {
+      const v = calcDerivativePnl(s, p);
+      if (v < worst.v) worst = { v, p };
+      if (v > best.v) best = { v, p };
+    }
+    totVol += vol; totPrima += prima * vol; totTarget += pnlT * vol;
+    return `<tr>
+      <td style="font-family:var(--font);font-weight:600;color:${s.color}">${escHtml(s.name)}</td>
+      <td>${vol.toLocaleString('es-AR')}</td>
+      <td>${prima >= 0 ? 'Paga ' : 'Cobra '}${Math.abs(prima).toFixed(2)}</td>
+      <td class="${prima > 0 ? 'neg' : 'pos'}">${fmtUsd0(-prima * vol)}</td>
+      <td class="${cls(pnlT)}">${sgn(pnlT)}${pnlT.toFixed(2)}</td>
+      <td class="${cls(pnlT)}">${fmtUsd0(pnlT * vol)}</td>
+      <td class="${cls(worst.v)}">${fmtUsd0(worst.v * vol)} <span class="scn-diff">@ ${worst.p.toFixed(1)}</span></td>
+      <td class="${cls(best.v)}">${fmtUsd0(best.v * vol)} <span class="scn-diff">@ ${best.p.toFixed(1)}</span></td>
+    </tr>`;
+  }).join('');
+
+  const foot = strats.length > 1 ? `<tr style="background:var(--bg-input);font-weight:700;">
+      <td style="font-family:var(--font)">Total</td><td>${totVol.toLocaleString('es-AR')}</td><td></td>
+      <td class="${totPrima > 0 ? 'neg' : 'pos'}">${fmtUsd0(-totPrima)}</td><td></td>
+      <td class="${cls(totTarget)}">${fmtUsd0(totTarget)}</td><td></td><td></td></tr>` : '';
+
+  table.innerHTML = `<thead><tr>
+      <th>Estrategia</th><th>Volumen (tn)</th><th>Prima neta (u$s/tn)</th><th>Caja inicial</th>
+      <th>P&amp;L @ ${target.toFixed(1)} (u$s/tn)</th><th>P&amp;L total @ ${target.toFixed(1)}</th>
+      <th>Peor caso ${lo.toFixed(0)}–${hi.toFixed(0)}</th><th>Mejor caso ${lo.toFixed(0)}–${hi.toFixed(0)}</th>
+    </tr></thead><tbody>${rows}${foot}</tbody>`;
+}
+
 // Calcula piso / techo / break-even / costo de una estrategia.
 // Extraido de renderStrats para poder refrescar los KPI sin rehacer el DOM.
+const PAYOFF_SCAN_MAX = 1500; // u$s: rango de barrido para piso/techo/break-even
+
 function computeStratMetrics(s) {
   const t = getActiveTab();
   let minPayoff = Infinity; let maxPayoff = -Infinity;
-  for (let p = 0; p <= 1500; p++) {
+  for (let p = 0; p <= PAYOFF_SCAN_MAX; p++) {
     const val = calcPayoff(s, p);
     if (val < minPayoff) minPayoff = val;
     if (val > maxPayoff) maxPayoff = val;
@@ -443,26 +598,46 @@ function computeStratMetrics(s) {
   let cost = 0;
   s.legs.forEach(l => { const q = l.ratio || 1; if (l.type !== 'futuro') cost += (l.dir === 'buy' ? l.prima : -l.prima) * q; });
 
-  const floorText = minPayoff < (t.spot * 0.5) ? '<span class="red-txt">Riesgo a la baja</span>' : `u$s ${minPayoff.toFixed(1)}`;
-  const ceilText  = maxPayoff > 1400 ? '<span class="green-txt">Ilimitado</span>' : `u$s ${maxPayoff.toFixed(1)}`;
+  // Con puts vendidos (put spread, gaviota, ratio) el piso vale solo hasta el strike vendido
+  // más bajo: se informa ese piso local y a partir de dónde se pierde la protección.
+  let floorText;
+  if (minPayoff < t.spot * 0.5) {
+    const shortPuts = s.legs.filter(l => l.type === 'put' && l.dir === 'sell').map(l => l.strike);
+    if (shortPuts.length) {
+      const kMin = Math.min(...shortPuts);
+      let local = Infinity;
+      for (let p = Math.ceil(kMin); p <= PAYOFF_SCAN_MAX; p++) local = Math.min(local, calcPayoff(s, p));
+      floorText = `u$s ${local.toFixed(1)} <span class="red-txt" style="font-size:10px">hasta ${kMin}</span>`;
+    } else {
+      floorText = '<span class="red-txt">Riesgo a la baja</span>';
+    }
+  } else {
+    floorText = `u$s ${minPayoff.toFixed(1)}`;
+  }
+  const ceilText = maxPayoff > PAYOFF_SCAN_MAX - 100 ? '<span class="green-txt">Ilimitado</span>' : `u$s ${maxPayoff.toFixed(1)}`;
 
-  const bes = []; let prevDiff = calcPayoff(s, 1) - 1;
-  for (let p = 2; p <= 800; p++) {
+  // Precio de indiferencia vs. vender sin cobertura, interpolado entre enteros.
+  const bes = [];
+  let prevDiff = calcPayoff(s, 0);
+  for (let p = 1; p <= PAYOFF_SCAN_MAX; p++) {
     const diff = calcPayoff(s, p) - p;
-    if ((prevDiff < 0 && diff >= 0) || (prevDiff > 0 && diff <= 0)) bes.push(p);
+    if ((prevDiff < 0 && diff >= 0) || (prevDiff > 0 && diff <= 0)) {
+      bes.push(diff === prevDiff ? p : (p - 1) + prevDiff / (prevDiff - diff));
+    }
     prevDiff = diff;
   }
   const hasOptions = s.legs.some(l => l.type !== 'futuro');
   let beText;
-  if (cost === 0 && hasOptions && bes.length === 0) beText = '0 Costo';
-  else if (bes.length === 1) beText = `u$s ${bes[0]}`;
+  if (Math.abs(cost) < 1e-9 && hasOptions && bes.length === 0) beText = '0 Costo';
+  else if (bes.length === 1) beText = `u$s ${bes[0].toFixed(1)}`;
   else if (bes.length > 1) beText = 'Múltiples';
   else beText = '-';
 
   let costDisplay;
-  if (cost > 0) costDisplay = `Costo Neto: <span class="red-txt">$${cost.toFixed(1)}</span> <span style="font-size:10px; font-weight:normal; color:var(--text-3)">(${(cost / t.spot * 100).toFixed(1)}%)</span>`;
-  else if (cost < 0) costDisplay = `Crédito: <span class="green-txt">$${Math.abs(cost).toFixed(1)}</span>`;
-  else costDisplay = `Costo: <span>$0.0</span>`;
+  const pct = t.spot > 0 ? ` <span style="font-size:10px; font-weight:normal; color:var(--text-3)">(${(cost / t.spot * 100).toFixed(1)}%)</span>` : '';
+  if (cost > 1e-9) costDisplay = `Costo Neto: <span class="red-txt">u$s ${cost.toFixed(1)}</span>${pct}`;
+  else if (cost < -1e-9) costDisplay = `Crédito: <span class="green-txt">u$s ${Math.abs(cost).toFixed(1)}</span>`;
+  else costDisplay = `Costo: <span>u$s 0.0</span>`;
 
   return { floorText, ceilText, beText, costDisplay };
 }
@@ -480,8 +655,9 @@ function refreshStratMetrics(stratId) {
 }
 
 function renderStrats() {
-  const cont = document.getElementById('strats-container'); cont.innerHTML = '';
+  const cont = document.getElementById('strats-container');
   const t = getActiveTab();
+  let html = '';
 
   t.strategies.forEach((s) => {
     const { floorText, ceilText, beText, costDisplay } = computeStratMetrics(s);
@@ -496,20 +672,24 @@ function renderStrats() {
         <select class="w-type" onchange="updateLegSelect(${s.id}, ${idx}, 'type', this.value)"><option value="put" ${l.type === 'put' ? 'selected' : ''}>Put</option><option value="call" ${l.type === 'call' ? 'selected' : ''}>Call</option><option value="futuro" ${l.type === 'futuro' ? 'selected' : ''}>Futuro</option></select>
         <input class="w-num" type="text" inputmode="decimal" title="Cantidad (Ratio)" value="${l.ratio}" oninput="updateLegInput(${s.id}, ${idx}, 'ratio', this.value)" onblur="scheduleFullRender()">
         ${renderStrikeField(s.id, idx, l)}
-        <input class="w-num" type="text" inputmode="decimal" title="Prima" value="${l.prima}" oninput="updateLegInput(${s.id}, ${idx}, 'prima', this.value)" onblur="scheduleFullRender()">
+        <input class="w-num${l.estimada ? ' is-estimada' : ''}" type="text" inputmode="decimal" title="${l.estimada ? 'Prima de referencia: este strike no tiene prima en A3. Revisala.' : 'Prima'}" value="${l.prima}" oninput="updateLegInput(${s.id}, ${idx}, 'prima', this.value)" onblur="scheduleFullRender()">
         ${mktBtn}
         <button class="btn-sm btn-danger" onclick="removeLeg(${s.id}, ${idx})">✕</button>
       </div>
     `}).join('');
 
-    cont.innerHTML += `
+    const hayEstimadas = s.legs.some(l => l.estimada);
+    html += `
       <div class="strat-card" style="border-left: 4px solid ${s.color}">
-        <div class="strat-header"><input type="text" class="strat-name" value="${s.name}" oninput="updateStratName(${s.id}, this.value)" style="color:${s.color}"><button class="btn btn-sm btn-outline" onclick="removeStrategy(${s.id})">Borrar</button></div>
+        <div class="strat-header"><input type="text" class="strat-name" value="${escHtml(s.name)}" oninput="updateStratName(${s.id}, this.value)" style="color:${s.color}"><button class="btn btn-sm btn-outline" onclick="removeStrategy(${s.id})">Borrar</button></div>
         <div class="legs-container">
           <div style="display:flex;gap:6px;margin-bottom:4px;font-size:10px;color:var(--text-3);padding:0 8px;font-weight:600;letter-spacing:0.3px"><span style="flex:2">Operación</span><span style="flex:2">Instrum.</span><span style="flex:1.5">Cant.</span><span style="flex:1.5">Strike</span><span style="flex:1.5">Prima</span><span style="width:28px"></span></div>
           ${legsHtml}
+          ${hayEstimadas ? '<div class="prima-estimada-note">⚠ Primas en amarillo: de referencia, el strike no tiene prima en A3.</div>' : ''}
         </div>
-        <div class="strat-footer"><button class="btn btn-sm btn-outline" onclick="addLeg(${s.id})">+ Agregar Pata</button><div class="cost-display" id="cost-${s.id}">${costDisplay}</div></div>
+        <div class="strat-footer"><button class="btn btn-sm btn-outline" onclick="addLeg(${s.id})">+ Agregar Pata</button>
+          <label class="strat-vol" title="Volumen a cubrir con esta estrategia (usado en la Calculadora de Resultado y el Panel en Vivo)">Vol. <input class="w-vol" type="text" inputmode="numeric" value="${getStratVol(s).toLocaleString('es-AR')}" oninput="updateStratVol(${s.id}, this.value)"> tn</label>
+          <div class="cost-display" id="cost-${s.id}">${costDisplay}</div></div>
         <div class="kpi-grid">
           <div class="kpi-card"><div class="k-lbl">Piso Asegurado</div><div class="k-val" id="k-floor-${s.id}">${floorText}</div></div>
           <div class="kpi-card"><div class="k-lbl">Techo Máximo</div><div class="k-val" id="k-ceil-${s.id}">${ceilText}</div></div>
@@ -518,6 +698,7 @@ function renderStrats() {
       </div>
     `;
   });
+  cont.innerHTML = html;
 }
 
 // ─── Altura del gráfico ───────────────────────────────────────────────────
@@ -567,13 +748,41 @@ function applyChartHeight() {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Línea vertical punteada en el precio spot (sin depender del plugin de anotaciones).
+const spotLinePlugin = {
+  id: 'spotLine',
+  afterDatasetsDraw(ch, args, opts) {
+    const v = opts && opts.value;
+    const x = ch.scales.x;
+    if (!(v > 0) || v < x.min || v > x.max) return;
+    const px = x.getPixelForValue(v), { top, bottom } = ch.chartArea, ctx = ch.ctx;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(26,107,60,0.55)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px, bottom); ctx.stroke();
+    ctx.setLineDash([]);
+    const txt = `Spot ${v.toFixed(1)}`;
+    ctx.font = '600 11px Montserrat, sans-serif';
+    const w = ctx.measureText(txt).width + 10;
+    ctx.fillStyle = 'rgba(232,245,236,0.95)'; ctx.fillRect(px - w / 2, top + 4, w, 18);
+    ctx.fillStyle = '#1A6B3C'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(txt, px, top + 13);
+    ctx.restore();
+  }
+};
+
 function renderChart() {
-  const t = getActiveTab(); const prices = [];
-  for (let p = t.min; p <= t.max; p += 2) prices.push(p);
+  const t = getActiveTab();
+  // Grilla de precios: paso fino + cada strike exacto, para que los quiebres caigan donde van.
+  const step = (t.max - t.min) > 600 ? 2 : 1;
+  const pset = new Set();
+  for (let p = t.min; p <= t.max; p += step) pset.add(+p.toFixed(2));
+  t.strategies.forEach(s => s.legs.forEach(l => { if (l.strike >= t.min && l.strike <= t.max) pset.add(+l.strike); }));
+  if (t.spot >= t.min && t.spot <= t.max) pset.add(+t.spot);
+  const prices = [...pset].sort((a, b) => a - b);
 
   const datasets = [{
-    label: 'Mercado',
-    data: prices.map(p => p),
+    label: 'Mercado (sin cobertura)',
+    data: prices.map(p => ({ x: p, y: p })),
     borderColor: '#b0afa8',
     borderWidth: 2,
     borderDash: [6, 4],
@@ -588,7 +797,7 @@ function renderChart() {
   t.strategies.forEach(s => {
     datasets.push({
       label: s.name,
-      data: prices.map(p => calcPayoff(s, p)),
+      data: prices.map(p => ({ x: p, y: calcPayoff(s, p) })),
       borderColor: s.color,
       borderWidth: 2.5,
       pointRadius: 0,
@@ -611,7 +820,7 @@ function renderChart() {
     refVals.push(v);
     datasets.push({
       label: `${r.label} (${v.toFixed(1)})`,
-      data: prices.map(() => v),
+      data: prices.map(p => ({ x: p, y: v })),
       borderColor: r.color,
       borderWidth: 1.8,
       borderDash: [10, 5],
@@ -639,39 +848,34 @@ function renderChart() {
   // Ajustar altura del wrapper antes de crear/recrear el chart
   applyChartHeight();
 
-  const spotAnnotation = {
-    type: 'line',
-    xMin: t.spot, xMax: t.spot,
-    borderColor: 'rgba(26,107,60,0.25)',
-    borderWidth: 1,
-    borderDash: [3, 3],
-    label: {
-      display: true,
-      content: `Spot: ${t.spot.toFixed(1)}`,
-      position: 'start',
-      font: { size: 10, family: 'Montserrat' },
-      backgroundColor: 'rgba(26,107,60,0.08)',
-      color: '#1A6B3C'
-    }
-  };
-
   if (chart) chart.destroy();
   chart = new Chart(document.getElementById('main-chart'), {
     type: 'line',
-    data: { labels: prices, datasets: datasets },
+    data: { datasets: datasets },
+    plugins: [spotLinePlugin],
     options: {
       responsive: true,
       maintainAspectRatio: false,
       animation: { duration: 0 },
+      parsing: false,
       plugins: {
-        tooltip: { mode: 'index', intersect: false },
+        spotLine: { value: t.spot },
+        tooltip: {
+          mode: 'index', intersect: false,
+          callbacks: {
+            title: items => items.length ? `Precio a vencimiento: u$s ${items[0].parsed.x.toFixed(1)}` : '',
+            label: ctx => `${ctx.dataset.label}: u$s ${ctx.parsed.y.toFixed(1)}`
+          }
+        },
         legend: { labels: { font: { family: 'Montserrat', size: 12 }, usePointStyle: true, pointStyle: 'line' } }
       },
       scales: {
         x: {
+          type: 'linear',
+          min: t.min, max: t.max,
           title: { display: true, text: 'Precio a Vencimiento (u$s)', font: { family: 'Montserrat', size: 12, weight: '600' }, color: '#505845' },
           grid: { color: 'rgba(0,0,0,.05)' },
-          ticks: { font: { family: 'JetBrains Mono', size: 10 }, color: '#7e8574' }
+          ticks: { font: { family: 'JetBrains Mono', size: 10 }, color: '#7e8574', maxTicksLimit: 16 }
         },
         y: {
           min: yMin,
@@ -707,26 +911,28 @@ function renderTable() {
   scenarios.sort((a, b) => a.val - b.val);
 
   let thead = `<tr><th>Escenario</th><th>Mercado</th>`;
-  t.strategies.forEach(s => { thead += `<th style="color:${s.color}">${s.name}</th>`; }); thead += `</tr>`;
+  t.strategies.forEach(s => { thead += `<th style="color:${s.color}">${escHtml(s.name)}</th>`; }); thead += `</tr>`;
 
   let tbody = '';
   scenarios.forEach(sc => {
     const isSpot = Math.abs(sc.val - t.spot) < 0.5;
     let row = `<tr${isSpot ? ' style="background:var(--es-green-light)"' : ''}>
       <td style="font-family:var(--font); font-weight:500">${sc.name}</td>
-      <td>$${sc.val.toFixed(1)}</td>`;
+      <td>u$s ${sc.val.toFixed(1)}</td>`;
     t.strategies.forEach(s => {
       let payoff = calcPayoff(s, sc.val); let diff = payoff - sc.val;
       let color = diff > 0.1 ? 'var(--green)' : (diff < -0.1 ? 'var(--red)' : 'var(--text-3)');
-      // Signo ANTES del simbolo: -$8.7 / +$54.2 (antes salia ($-8.7))
+      // Diferencia contra vender sin cobertura, con el signo adelante: -8.7 / +54.2
       const sign = diff > 0.1 ? '+' : (diff < -0.1 ? '-' : '');
-      const diffTxt = `${sign}$${Math.abs(diff).toFixed(1)}`;
-      row += `<td>$${payoff.toFixed(1)} <span class="scn-diff" style="color:${color}">(${diffTxt})</span></td>`;
+      const diffTxt = `${sign}${Math.abs(diff).toFixed(1)}`;
+      row += `<td>u$s ${payoff.toFixed(1)} <span class="scn-diff" style="color:${color}">(${diffTxt})</span></td>`;
     });
     row += `</tr>`; tbody += row;
   });
   document.getElementById('scenario-table').innerHTML = `<thead>${thead}</thead><tbody>${tbody}</tbody>`;
 }
+
+const MKT_WINNER = '__mercado__';
 
 function renderWinner() {
   const t = getActiveTab();
@@ -739,7 +945,8 @@ function renderWinner() {
   let rangeStart = t.min;
 
   prices.forEach(p => {
-    let bestName = 'Mercado';
+    // Se identifica por id (no por nombre) para que dos estrategias homónimas no se mezclen.
+    let bestName = MKT_WINNER;
     let bestPayoff = p;
     let bestColor = '#b0afa8';
 
@@ -747,7 +954,7 @@ function renderWinner() {
       let payoff = calcPayoff(s, p);
       if (payoff > bestPayoff + 0.05) {
         bestPayoff = payoff;
-        bestName = s.name;
+        bestName = s.id;
         bestColor = s.color;
       }
     });
@@ -766,7 +973,9 @@ function renderWinner() {
     html += `
       <div class="winner-box" style="border-left-color: ${r.color}">
         <div class="winner-range">Si el mercado cierra entre u$s ${r.start.toFixed(1)} y u$s ${r.end.toFixed(1)}</div>
-        <div class="winner-name" style="color: ${r.color}">Conviene: ${r.name}</div>
+        <div class="winner-name" style="color: ${r.color}">${r.name === MKT_WINNER
+          ? 'Ninguna estrategia supera a vender sin cobertura'
+          : 'Conviene: ' + escHtml((t.strategies.find(s => s.id === r.name) || {}).name)}</div>
       </div>
     `;
   });

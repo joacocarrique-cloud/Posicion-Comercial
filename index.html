@@ -17,7 +17,7 @@
       <div class="header-title">Suite Comercial · Espartina S.A.</div>
       <div class="header-subtitle">Coberturas · FAS & Retenciones · Pases & Tasas · Spreads · Desvío de Precios · Line-Up</div>
     </div>
-    <span class="header-badge" id="app-version" title="Versión desplegada de la Suite">v9 · 13-ago-26</span>
+    <span class="header-badge" id="app-version" title="Versión desplegada de la Suite">v10 · 24-sep-26</span>
   </div>
   <div style="display:flex;align-items:center;gap:12px;">
     <span class="save-indicator" id="save-indicator"></span>
@@ -215,7 +215,7 @@
         <div id="asst-vi-context" style="padding:6px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;margin-bottom:14px;font-family:'JetBrains Mono',monospace;font-size:11px;min-height:28px;"></div>
 
         <!-- Mode selector -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:20px;">
           <div class="asst-mode-card active" id="asst-mode1" onclick="asstSetMode(1)" style="background:var(--bg-card);border:2px solid var(--es-green);border-radius:14px;padding:20px;cursor:pointer;position:relative;overflow:hidden;">
             <div style="font-size:24px;margin-bottom:8px;">🧭</div>
             <div style="font-size:15px;font-weight:700;">¿Qué hago?</div>
@@ -514,9 +514,9 @@
       <div class="pase-params-card">
         <div class="pase-params-title">Tipo de cambio</div>
         <div class="pase-params-row">
-          <div class="field"><label>TC Spot (ARS/USD)</label><input type="number" id="pase-tc-spot" value="1200" step="1" oninput="paseCalc()"></div>
-          <div class="field"><label>TC Futuro Pos 2</label><input type="number" id="pase-tc-fut2" value="1380" step="1" oninput="paseCalc()"></div>
-          <div class="field" id="pase-tc-fut3-field" style="display:none;"><label>TC Futuro Pos 3</label><input type="number" id="pase-tc-fut3" value="1620" step="1" oninput="paseCalc()"></div>
+          <div class="field"><label>TC Spot (ARS/USD)</label><input type="number" id="pase-tc-spot" value="1480" step="1" oninput="paseCalc()"></div>
+          <div class="field"><label>TC Futuro Pos 2 (ROFEX)</label><input type="number" id="pase-tc-fut2" value="1555" step="1" oninput="paseCalc()" title="Cargá el dólar futuro ROFEX al vencimiento de la posición 2"></div>
+          <div class="field" id="pase-tc-fut3-field" style="display:none;"><label>TC Futuro Pos 3 (ROFEX)</label><input type="number" id="pase-tc-fut3" value="1630" step="1" oninput="paseCalc()" title="Cargá el dólar futuro ROFEX al vencimiento de la posición 3"></div>
         </div>
       </div>
       <div class="pase-params-card">
@@ -708,21 +708,21 @@
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px;" id="sp-stats"></div>
 
     <!-- Gráficos 1 y 2 -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-bottom:16px;">
       <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);">
         <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Serie actual</div>
-        <div style="position:relative;height:260px;"><canvas id="sp-chart-current"></canvas></div>
+        <div style="position:relative;height:300px;"><canvas id="sp-chart-current"></canvas></div>
       </div>
       <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);">
         <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Estacionalidad (por días al vencimiento)</div>
-        <div style="position:relative;height:260px;"><canvas id="sp-chart-season"></canvas></div>
+        <div style="position:relative;height:300px;"><canvas id="sp-chart-season"></canvas></div>
       </div>
     </div>
 
     <!-- Gráfico 3: Distribución -->
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);margin-bottom:16px;">
       <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Distribución histórica</div>
-      <div style="position:relative;height:200px;"><canvas id="sp-chart-dist"></canvas></div>
+      <div style="position:relative;height:240px;"><canvas id="sp-chart-dist"></canvas></div>
       <div id="sp-dist-insight" style="margin-top:8px;"></div>
     </div>
 
@@ -785,7 +785,7 @@
 
       <!-- Campaign chips -->
       <div style="margin-bottom:14px;">
-        <label style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--text-3);letter-spacing:0.6px;display:block;margin-bottom:6px;">Campañas</label>
+        <label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-3);letter-spacing:0.6px;display:block;margin-bottom:6px;">Campañas</label>
         <div id="dv-camp-chips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       </div>
 

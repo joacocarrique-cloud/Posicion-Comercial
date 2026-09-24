@@ -10,7 +10,8 @@ const asstNpdf=x=>Math.exp(-0.5*x*x)/Math.sqrt(2*Math.PI);
 function asstErf(x){const a1=.254829592,a2=-.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=.3275911;const s=x<0?-1:1;x=Math.abs(x);const t=1/(1+p*x);return s*(1-(((((a5*t+a4)*t)+a3)*t+a2)*t+a1)*t*Math.exp(-x*x));}
 function asstB76(F,K,T,r,sig,tp='put'){if(T<=0||sig<=0)return Math.max(0,tp==='put'?K-F:F-K);const sq=Math.sqrt(T),d1=(Math.log(F/K)+.5*sig*sig*T)/(sig*sq),d2=d1-sig*sq,dc=Math.exp(-r*T);return tp==='call'?dc*(F*asstN(d1)-K*asstN(d2)):dc*(K*asstN(-d2)-F*asstN(-d1));}
 function asstIV(price,F,K,T,r=.05,tp='put'){if(T<=0||price<=0)return NaN;let s=.25;for(let i=0;i<50;i++){const bp=asstB76(F,K,T,r,s,tp),sq=Math.sqrt(T),d1=(Math.log(F/K)+.5*s*s*T)/(s*sq),v=F*Math.exp(-r*T)*asstNpdf(d1)*sq;if(v<1e-10)return NaN;s-=(bp-price)/v;if(s<=.001)s=.001;if(Math.abs(bp-price)<.001)break;}return(s>.01&&s<3)?s:NaN;}
-function asstGreeks(F,K,T,r,sig,tp='put'){if(T<=0||sig<=0)return{delta:0,gamma:0,theta:0,vega:0};const sq=Math.sqrt(T),d1=(Math.log(F/K)+.5*sig*sig*T)/(sig*sq),dc=Math.exp(-r*T);return{delta:+(tp==='call'?dc*asstN(d1):-dc*asstN(-d1)).toFixed(4),gamma:+(dc*asstNpdf(d1)/(F*sig*sq)).toFixed(6),theta:+(-F*dc*asstNpdf(d1)*sig/(2*sq)/365).toFixed(4),vega:+(F*dc*asstNpdf(d1)*sq/100).toFixed(4)};}
+// Theta Black-76 por día calendario: −F·e^(−rT)·n(d1)·σ/(2√T) + r·V
+function asstGreeks(F,K,T,r,sig,tp='put'){if(T<=0||sig<=0)return{delta:0,gamma:0,theta:0,vega:0};const sq=Math.sqrt(T),d1=(Math.log(F/K)+.5*sig*sig*T)/(sig*sq),dc=Math.exp(-r*T);const V=asstB76(F,K,T,r,sig,tp);return{delta:+(tp==='call'?dc*asstN(d1):-dc*asstN(-d1)).toFixed(4),gamma:+(dc*asstNpdf(d1)/(F*sig*sq)).toFixed(6),theta:+((-F*dc*asstNpdf(d1)*sig/(2*sq)+r*V)/365).toFixed(4),vega:+(F*dc*asstNpdf(d1)*sq/100).toFixed(4)};}
 
 // MATBA expiry
 function asstBizDay(d){if(d.getDay()===0||d.getDay()===6)return false;return!ASST_FER.has(d.toISOString().slice(0,10));}
@@ -147,7 +148,22 @@ function asstShowContext(){
 // UI helpers
 function asstSetMode(n){asstModeNum=n;document.getElementById('asst-mode1').style.borderColor=n===1?'var(--es-green)':'var(--border)';document.getElementById('asst-mode2').style.borderColor=n===2?'var(--es-green)':'var(--border)';document.getElementById('asst-vision-wrap').style.display=n===1?'block':'none';document.getElementById('asst-tol-wrap').style.display=n===1?'':'none';document.getElementById('asst-btn-label').textContent=n===1?'Generar recomendaciones':'Analizar cadena';}
 function asstVision(el){document.querySelectorAll('#asst-vision-chips button').forEach(b=>{b.className='btn btn-outline';b.style.background='';b.style.color='';});el.className='btn';el.style.background='var(--es-green)';el.style.color='#fff';asstVisionSel=el.dataset.v;}
-function asstUpdatePos(){const cropEl=document.getElementById('asst-crop');const sel=document.getElementById('asst-pos');if(!cropEl||!sel)return;const c=cropEl.value;sel.innerHTML=(ASST_POS[c]||[]).map(p=>`<option value="${p}">${p}</option>`).join('');const fwdEl=document.getElementById('asst-fwd');if(fwdEl)fwdEl.value=ASST_FWD[c]||300;asstUpdateVto();}
+// Posiciones del asistente: las de A3 (con precio) si ya se sincronizó; si no, la lista de respaldo.
+// Se descartan las ya vencidas.
+function asstUpdatePos(){
+  const cropEl=document.getElementById('asst-crop');const sel=document.getElementById('asst-pos');if(!cropEl||!sel)return;
+  const c=cropEl.value;
+  const hoy=new Date();hoy.setHours(0,0,0,0);
+  const futs=(typeof sheetData!=='undefined'&&sheetData&&sheetData.futuros[c])?sheetData.futuros[c].filter(f=>f.precio>0):[];
+  const posList=(futs.length?futs.map(f=>f.pos):(ASST_POS[c]||[])).filter(p=>{const e=asstExpiry(p);return !e||e>=hoy;});
+  sel.innerHTML=posList.map(p=>`<option value="${p}">${p}</option>`).join('');
+  const def=(typeof defaultPositionFor==='function'&&futs.length)?defaultPositionFor(c):'';
+  if(def&&posList.includes(def))sel.value=def;
+  const fwdEl=document.getElementById('asst-fwd');
+  const fut=futs.find(f=>f.pos===sel.value);
+  if(fwdEl)fwdEl.value=fut?fut.precio:(ASST_FWD[c]||300);
+  asstUpdateVto();
+}
 function asstUpdateVto(){const posEl=document.getElementById('asst-pos');const dispEl=document.getElementById('asst-vto-display');if(!posEl||!dispEl)return;const p=posEl.value,exp=asstExpiry(p),dias=exp?asstDays(new Date(),exp):0;dispEl.innerHTML=exp?`<div style="background:var(--bg-input);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;font-family:var(--mono);">📅 Vto: <strong style="color:var(--es-green);">${exp.getDate().toString().padStart(2,'0')}/${ASST_MNAMES[exp.getMonth()+1]}/${exp.getFullYear()}</strong> · ${dias}d</div>`:'';}
 
 function asstRenderChain(){
@@ -183,7 +199,7 @@ function asstAnalyze(chain,F,T,crop){
 }
 
 function asstGenStrategies(analyzed,F,T,vision,tol,crop,vol){
-  const r=.05,mes=new Date().getMonth()+1,weather=mes>=6&&mes<=8;
+  const r=.05,mes=new Date().getMonth()+1,weather=!!asstWeatherNow(mes);
   const perc=ASST_VI_PERC.find(v=>v.cultivo===crop&&v.mes===mes);
   const puts=analyzed.filter(o=>o.type==='put').sort((a,b)=>b.strike-a.strike);
   const calls=analyzed.filter(o=>o.type==='call').sort((a,b)=>a.strike-b.strike);
@@ -243,7 +259,7 @@ function asstGenStrategies(analyzed,F,T,vision,tol,crop,vol){
       legs,cost,floor:p.strike-cost,maxProt:'∞',ceiling:c.strike,greeks:g,
       prob:Math.round(Math.abs(gk(F,p.strike,T,r,p.vi,'put').delta)*100),ww:weather,
       cpd:Math.abs(g.delta)>.01?Math.abs(cost)/Math.abs(g.delta):999,
-      narrative:`Piso en ${(p.strike-cost).toFixed(1)} u$s con costo ${cost>0?'de '+cost.toFixed(1):'cero (o crédito de '+Math.abs(cost).toFixed(1)+')'} u$s/tn. A cambio, resignás suba por encima de ${c.strike} u$s (+${techo_dist}% sobre el futuro). ${weather?'⚠️ ATENCIÓN: estamos en ventana de weather market (Jun-Ago), la suba puede ser explosiva y el techo te limita. Considerá alternativas sin techo.':''}Ideal si estás conforme con el precio actual y querés protección barata.`,
+      narrative:`Piso en ${(p.strike-cost).toFixed(1)} u$s con costo ${cost>0?'de '+cost.toFixed(1):'cero (o crédito de '+Math.abs(cost).toFixed(1)+')'} u$s/tn. A cambio, resignás suba por encima de ${c.strike} u$s (+${techo_dist}% sobre el futuro). ${weather?'⚠️ ATENCIÓN: estamos en ventana de weather market ('+asstWeatherLbl(mes)+'), la suba puede ser explosiva y el techo te limita. Considerá alternativas sin techo.':''}Ideal si estás conforme con el precio actual y querés protección barata.`,
     });
   }
 
@@ -346,9 +362,9 @@ function asstGenStrategies(analyzed,F,T,vision,tol,crop,vol){
 
     // R3: Estacionalidad agro
     if(weather){
-      if(s.ceiling){sc-=20;bd.r3=`-20 · R3 Weather market (Jun-Ago). Venta de call penalizada — suba explosiva posible. [CME Grain Course]`;}
+      if(s.ceiling){sc-=20;bd.r3=`-20 · R3 Weather market (${asstWeatherLbl(mes)}). Venta de call penalizada — suba explosiva posible. [CME Grain Course]`;}
       else if(s.tipo==='put_seco'||s.tipo==='sintetico'){sc+=5;bd.r3=`+5 · R3 Weather market. Sin techo: favorecido. [CME]`;}
-    }else if(mes>=9&&mes<=10&&perc&&av<perc.p50){sc+=5;bd.r3=`+5 · R3 Pre-cosecha sudamericana. VI baja — buen momento para comprar.`;}
+    }else if(mes>=9&&mes<=10&&perc&&av<perc.p50){sc+=5;bd.r3=`+5 · R3 Siembra gruesa (sep–oct). VI baja — buen momento para comprar.`;}
 
     // R4: Alineación con visión del productor
     if(vision==='floor'){
@@ -363,7 +379,9 @@ function asstGenStrategies(analyzed,F,T,vision,tol,crop,vol){
       if(s.maxProt==='∞'){sc+=10;bd.r4=`+10 · R4 Visión "Bajista": Protección ilimitada ante caída.`;}
       else{sc-=5;bd.r4=`-5 · R4 Visión "Bajista": Protección limitada a ${s.maxProt} u$s.`;}
     }else if(vision==='highvol'){
-      if(Math.abs(s.greeks.vega)>.15){sc+=12;bd.r4=`+12 · R4 Visión "Alta vol": Vega alto, se beneficia de suba de VI.`;}
+      // Vega con signo: solo gana con suba de VI la estructura con vega POSITIVA (neta compradora).
+      if(s.greeks.vega>.15){sc+=12;bd.r4=`+12 · R4 Visión "Alta vol": Vega +${s.greeks.vega.toFixed(2)}, se beneficia de suba de VI.`;}
+      else if(s.greeks.vega<0){sc-=10;bd.r4=`-10 · R4 Visión "Alta vol": Vega negativa (${s.greeks.vega.toFixed(2)}) — pierde si sube la VI.`;}
       else{sc-=5;bd.r4=`-5 · R4 Visión "Alta vol": Vega bajo — poco beneficio.`;}
     }else if(vision==='neutral'){
       if(s.tipo==='collar'||s.tipo==='gaviota'){sc+=8;bd.r4=`+8 · R4 Visión "Neutral": Rango acotado ideal. [CME]`;}
@@ -391,11 +409,11 @@ function asstGenStrategies(analyzed,F,T,vision,tol,crop,vol){
     }
 
     // R7: Costo como % del futuro
-    if(costPct<1&&s.cost>0){sc+=10;bd.r7=`+10 · R7 Prima/Futuro: ${costPct.toFixed(1)}% (<1%). Protección muy barata.`;}
+    if(s.cost<=0){sc+=8;bd.r7=`+8 · R7 Prima/Futuro: Crédito neto o costo cero.`;}
+    else if(costPct<1){sc+=10;bd.r7=`+10 · R7 Prima/Futuro: ${costPct.toFixed(1)}% (<1%). Protección muy barata.`;}
     else if(costPct<=2){sc+=5;bd.r7=`+5 · R7 Prima/Futuro: ${costPct.toFixed(1)}% (1-2%). Costo razonable.`;}
     else if(costPct<=4){bd.r7=`0 · R7 Prima/Futuro: ${costPct.toFixed(1)}% (2-4%). Costo alto.`;}
-    else if(costPct>4&&s.cost>0){sc-=8;bd.r7=`-8 · R7 Prima/Futuro: ${costPct.toFixed(1)}% (>4%). Muy caro.`;}
-    else if(s.cost<=0){sc+=8;bd.r7=`+8 · R7 Prima/Futuro: Crédito neto o costo cero.`;}
+    else{sc-=8;bd.r7=`-8 · R7 Prima/Futuro: ${costPct.toFixed(1)}% (>4%). Muy caro.`;}
 
     // Tolerancia y piso
     if(tol==='low'&&s.cost>2){sc-=12;bd.tol=`-12 · Tolerancia: Costo ${s.cost.toFixed(1)} supera límite 2 u$s.`;}
@@ -430,14 +448,16 @@ function asstRenderInsights(analyzed,crop,F){
   const mes=new Date().getMonth()+1,perc=ASST_VI_PERC.find(v=>v.cultivo===crop&&v.mes===mes);
   const avgVi=analyzed.reduce((a,o)=>a+o.vi,0)/analyzed.length;
   const rank=perc?(avgVi<=perc.p10?5:avgVi<=perc.p25?20:avgVi<=perc.p50?40:avgVi<=perc.p75?65:85):50;
-  const weather=mes>=6&&mes<=8;
-  const puts=analyzed.filter(o=>o.type==='put').sort((a,b)=>a.costPerDelta-b.costPerDelta);
+  const weather=!!asstWeatherNow(mes);
+  // "Strike más eficiente": solo puts con delta ≥ 0,20 (protección real). Si no, el costo/delta
+  // siempre elige el put más lejano y barato, que casi no protege.
+  const puts=asstProtectivePuts(analyzed).sort((a,b)=>a.costPerDelta-b.costPerDelta);
   let h=`<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px;box-shadow:var(--shadow);margin-bottom:16px;"><div style="font-size:14px;font-weight:700;margin-bottom:12px;">🧠 Análisis del Motor</div>`;
-  h+=`<div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);font-size:12px;"><div style="width:28px;height:28px;border-radius:7px;background:#dbeafe;display:flex;align-items:center;justify-content:center;flex-shrink:0;">📈</div><div><div style="font-weight:700;font-size:12px;">VI ATM: ${avgVi.toFixed(1)}% — Percentil ${rank}</div><div style="color:var(--text-2);line-height:1.5;">Mediana histórica: <strong>${perc?perc.p50:'—'}%</strong>. ${rank<30?'Primas <strong>baratas</strong> — buen momento para comprar protección.':rank>70?'Primas <strong>caras</strong> — considerar spreads.':'Primas en rango normal.'}</div></div></div>`;
+  h+=`<div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);font-size:12px;"><div style="width:28px;height:28px;border-radius:7px;background:#dbeafe;display:flex;align-items:center;justify-content:center;flex-shrink:0;">📈</div><div><div style="font-weight:700;font-size:12px;">VI promedio de la cadena: ${avgVi.toFixed(1)}% — Percentil ${rank}</div><div style="color:var(--text-2);line-height:1.5;">Mediana histórica: <strong>${perc?perc.p50:'—'}%</strong>. ${rank<30?'Primas <strong>baratas</strong> — buen momento para comprar protección.':rank>70?'Primas <strong>caras</strong> — considerar spreads.':'Primas en rango normal.'}</div></div></div>`;
   const lh=ASST_VIVHV.filter(r=>r.cultivo===crop);const lastHV=lh.length?lh[lh.length-1]:null;
   if(lastHV&&lastHV.hv_20d>0){const ratio=(lastHV.vi_atm/lastHV.hv_20d).toFixed(2);h+=`<div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);font-size:12px;"><div style="width:28px;height:28px;border-radius:7px;background:var(--es-green-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">⚖️</div><div><div style="font-weight:700;">Ratio VI/HV: ${ratio}</div><div style="color:var(--text-2);">El mercado pricea ${ratio}x la volatilidad real. ${ratio<.8?'Opciones <strong>baratas</strong> vs movimiento — comprar.':ratio>1.5?'Opciones <strong>caras</strong> vs movimiento — spreads.':'Rango normal.'}</div></div></div>`;}
   if(puts[0]){h+=`<div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);font-size:12px;"><div style="width:28px;height:28px;border-radius:7px;background:#ede9fe;display:flex;align-items:center;justify-content:center;flex-shrink:0;">📊</div><div><div style="font-weight:700;">Strike más eficiente: Put ${puts[0].strike}</div><div style="color:var(--text-2);">Costo/delta: <strong>${puts[0].costPerDelta.toFixed(2)} u$s/Δ</strong>${puts[0].value==='cheap'?' — <strong>barato</strong> vs historia':''}</div></div></div>`;}
-  if(weather){h+=`<div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;font-size:12px;"><div style="width:28px;height:28px;border-radius:7px;background:var(--es-gold-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">🌦️</div><div><div style="font-weight:700;">Weather market activo (Jun-Ago)</div><div style="color:var(--text-2);">Vender calls conlleva riesgo elevado. Estructuras sin techo son preferibles.</div></div></div>`;}
+  if(weather){h+=`<div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;font-size:12px;"><div style="width:28px;height:28px;border-radius:7px;background:var(--es-gold-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">🌦️</div><div><div style="font-weight:700;">Weather market activo (${asstWeatherLbl(mes)})</div><div style="color:var(--text-2);">Vender calls conlleva riesgo elevado. Estructuras sin techo son preferibles.</div></div></div>`;}
   return h+'</div>';
 }
 
@@ -453,7 +473,7 @@ function asstRenderCard(s,idx){
   h+=`<div style="display:flex;align-items:center;gap:8px;margin:10px 16px;padding:8px 12px;background:var(--bg-input);border-radius:8px;"><span style="font-size:10px;font-weight:700;color:var(--text-3);">SCORE</span><div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;"><div style="height:100%;width:${s.score}%;background:${clr};border-radius:3px;"></div></div><span style="font-size:14px;font-weight:700;font-family:var(--mono);color:${clr};">${s.score}</span></div>`;
   
   // Legs
-  h+=`<div style="padding:0 16px;margin-bottom:10px;">`;s.legs.forEach(l=>{h+=`<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;border-bottom:1px solid var(--border);"><span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;background:${l.dir==='buy'?'var(--es-green-light)':'#fde8e8'};color:${l.dir==='buy'?'var(--es-green)':'var(--red)'};">${l.dir==='buy'?'COMPRA':'VENTA'}</span><span style="font-weight:600;">${l.type} ${l.strike}</span><span style="font-family:var(--mono);font-size:11px;color:var(--text-2);margin-left:auto;">${l.prima.toFixed(1)} u$s · VI ${l.vi.toFixed(1)}%</span></div>`;});h+=`</div>`;
+  h+=`<div style="padding:0 16px;margin-bottom:10px;">`;s.legs.forEach(l=>{h+=`<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;border-bottom:1px solid var(--border);"><span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;background:${l.dir==='buy'?'var(--es-green-light)':'#fde8e8'};color:${l.dir==='buy'?'var(--es-green)':'var(--red)'};">${l.dir==='buy'?'COMPRA':'VENTA'}</span><span style="font-weight:600;">${l.type} ${l.strike}</span><span style="font-family:var(--mono);font-size:11px;color:var(--text-2);margin-left:auto;">${l.prima.toFixed(1)} u$s · VI ${l.vi.toFixed(1)}%</span></div>`;});h+=`</div>`;
   
   // Greeks
   h+=`<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1px;margin:0 16px 12px;background:var(--border);border-radius:8px;overflow:hidden;">`;
@@ -462,10 +482,10 @@ function asstRenderCard(s,idx){
   
   // Metrics
   h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);border-top:1px solid var(--border);">`;
-  h+=`<div style="background:var(--bg-card);padding:10px 14px;"><div style="font-size:9px;color:var(--text-3);font-weight:700;text-transform:uppercase;">Costo neto</div><div style="font-size:15px;font-weight:700;font-family:var(--mono);color:${s.cost>0?'var(--red)':'var(--green)'};">${s.cost>0?'-':'+'} ${Math.abs(s.cost).toFixed(1)} u$s/tn</div><div style="font-size:10px;color:var(--text-3);">$${(Math.abs(s.cost)*vol).toLocaleString()} en ${vol.toLocaleString()} tn</div></div>`;
-  h+=`<div style="background:var(--bg-card);padding:10px 14px;"><div style="font-size:9px;color:var(--text-3);font-weight:700;text-transform:uppercase;">Piso</div><div style="font-size:15px;font-weight:700;font-family:var(--mono);color:var(--green);">${s.floor?s.floor.toFixed(1):'—'} u$s</div><div style="font-size:10px;color:var(--text-3);">${s.floor?((1-s.floor/F)*100).toFixed(1)+'% debajo del futuro':''}</div></div>`;
-  h+=`<div style="background:var(--bg-card);padding:10px 14px;"><div style="font-size:9px;color:var(--text-3);font-weight:700;text-transform:uppercase;">${s.ceiling?'Techo':'Prot. máx.'}</div><div style="font-size:15px;font-weight:700;font-family:var(--mono);">${s.ceiling?s.ceiling+' u$s':s.maxProt==='∞'?'∞':s.maxProt+' u$s/tn'}</div></div>`;
-  h+=`<div style="background:var(--bg-card);padding:10px 14px;"><div style="font-size:9px;color:var(--text-3);font-weight:700;text-transform:uppercase;">Prob. ejercicio</div><div style="font-size:15px;font-weight:700;font-family:var(--mono);">${s.prob}%</div></div></div>`;
+  h+=`<div style="background:var(--bg-card);padding:10px 14px;"><div style="font-size:10px;color:var(--text-3);font-weight:700;text-transform:uppercase;">Costo neto</div><div style="font-size:15px;font-weight:700;font-family:var(--mono);color:${s.cost>0?'var(--red)':'var(--green)'};">${s.cost>0?'-':'+'} ${Math.abs(s.cost).toFixed(1)} u$s/tn</div><div style="font-size:10px;color:var(--text-3);">u$s ${Math.round(Math.abs(s.cost)*vol).toLocaleString('es-AR')} en ${vol.toLocaleString('es-AR')} tn</div></div>`;
+  h+=`<div style="background:var(--bg-card);padding:10px 14px;"><div style="font-size:10px;color:var(--text-3);font-weight:700;text-transform:uppercase;">Piso</div><div style="font-size:15px;font-weight:700;font-family:var(--mono);color:var(--green);">${s.floor?s.floor.toFixed(1):'—'} u$s</div><div style="font-size:10px;color:var(--text-3);">${s.floor?((1-s.floor/F)*100).toFixed(1)+'% debajo del futuro':''}</div></div>`;
+  h+=`<div style="background:var(--bg-card);padding:10px 14px;"><div style="font-size:10px;color:var(--text-3);font-weight:700;text-transform:uppercase;">${s.ceiling?'Techo':'Prot. máx.'}</div><div style="font-size:15px;font-weight:700;font-family:var(--mono);">${s.ceiling?s.ceiling+' u$s':s.maxProt==='∞'?'∞':s.maxProt+' u$s/tn'}</div></div>`;
+  h+=`<div style="background:var(--bg-card);padding:10px 14px;"><div style="font-size:10px;color:var(--text-3);font-weight:700;text-transform:uppercase;">Prob. ejercicio</div><div style="font-size:15px;font-weight:700;font-family:var(--mono);">${s.prob}%</div></div></div>`;
   
   if(s.ww)h+=`<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:6px 10px;margin:8px 16px;font-size:11px;">⚠️ <strong>Penalizado:</strong> Venta de Call en weather market.</div>`;
   
@@ -487,7 +507,7 @@ function asstRenderCard(s,idx){
     const spread=buyLeg.strike-sellLeg.strike;
     h+=`<p style="margin:0 0 8px;">El <strong>Put Spread</strong> combina la compra de un Put en ${buyLeg.strike} con la venta de un Put más bajo en ${sellLeg.strike}. La prima que cobrás por la venta (${sellLeg.prima.toFixed(1)} u$s) reduce el costo del Put comprado (${buyLeg.prima.toFixed(1)} u$s), dejando un costo neto de solo ${s.cost.toFixed(1)} u$s/tn.</p>`;
     h+=`<p style="margin:0 0 8px;"><strong>Protección:</strong> Te cubre entre ${buyLeg.strike} y ${sellLeg.strike} (un rango de ${spread} u$s). Si ${crop} cae a ${sellLeg.strike} o menos, tu ganancia máxima por la cobertura es ${(spread-s.cost).toFixed(1)} u$s/tn. Por debajo de ${sellLeg.strike} dejás de ganar — es tu "franquicia".</p>`;
-    h+=`<p style="margin:0 0 8px;"><strong>Ventaja:</strong> Costo ${(s.cost/buyLeg.prima*100).toFixed(0)}% menor que el Put Seco. Sin techo en la suba. Theta reducido (${s.greeks.theta}) porque la venta del Put te compensa parte del time decay.</p>`;
+    h+=`<p style="margin:0 0 8px;"><strong>Ventaja:</strong> Costo ${((1-s.cost/buyLeg.prima)*100).toFixed(0)}% menor que el Put Seco. Sin techo en la suba. Theta reducido (${s.greeks.theta}) porque la venta del Put te compensa parte del time decay.</p>`;
     h+=`<p style="margin:0;"><strong>Desventaja:</strong> La protección tiene límite (${spread} u$s). Si ${crop} se desploma ${Math.round(spread+10)} u$s, solo te cubre ${spread}. Ideal si esperás una baja moderada, no un crash.</p>`;
   } else if(s.tipo==='gaviota'){
     const putB=s.legs.find(l=>l.dir==='buy'&&l.type==='Put'), putS=s.legs.find(l=>l.dir==='sell'&&l.type==='Put'), callS=s.legs.find(l=>l.dir==='sell'&&l.type==='Call');
@@ -513,31 +533,23 @@ function asstRenderCard(s,idx){
     h+=`<p style="margin:0 0 8px;">El <strong>Collar</strong> combina un Put comprado en ${putLeg.strike} (protección de baja) con un Call vendido en ${callLeg.strike} (financia el Put pero limita la suba). El costo neto es ${Math.abs(s.cost).toFixed(1)} u$s/tn — ${s.cost<=0?'te genera un crédito neto':'casi costo cero'}.</p>`;
     h+=`<p style="margin:0 0 8px;"><strong>Protección:</strong> Si ${crop} cae debajo de ${putLeg.strike}, el Put te compensa. Si sube por encima de ${callLeg.strike}, estás obligado a vender a ese precio — es tu techo.</p>`;
     h+=`<p style="margin:0 0 8px;"><strong>Ventaja:</strong> Costo mínimo o nulo. Te permite asegurar un piso sin poner plata.</p>`;
-    h+=`<p style="margin:0 0 8px;"><strong>Desventaja:</strong> Resignás toda la suba por encima de ${callLeg.strike} u$s.${s.ww?' <strong>IMPORTANTE:</strong> Estamos en ventana de weather market (Jun-Ago). Históricamente la volatilidad sube fuerte por el clima en EE.UU., y vender un Call en este contexto implica riesgo de quedarte afuera de subas explosivas. El score fue penalizado por esto.':''}</p>`;
+    h+=`<p style="margin:0 0 8px;"><strong>Desventaja:</strong> Resignás toda la suba por encima de ${callLeg.strike} u$s.${s.ww?' <strong>IMPORTANTE:</strong> Estamos en ventana de weather market ('+asstWeatherLbl()+'). Históricamente la volatilidad sube fuerte por el clima, y vender un Call en este contexto implica riesgo de quedarte afuera de subas explosivas. El score fue penalizado por esto.':''}</p>`;
     h+=`<p style="margin:0;"><strong>Ideal si:</strong> Estás seguro de que ${crop} no va a subir mucho más y querés protección gratis. NO ideal si pensás que puede haber weather market.</p>`;
   }
   
   // Score breakdown
   h+=`<details style="margin-top:10px;"><summary style="cursor:pointer;font-size:11px;font-weight:700;color:var(--es-green);">📊 Desglose del Score (${s.score}/100)</summary>`;
   h+=`<div style="margin-top:8px;font-size:11px;font-family:var(--mono);">`;
+  // Desglose REAL: las mismas reglas que calcularon el score en asstGenStrategies.
   h+=`<div>Base: 50</div>`;
-  const ad=Math.abs(s.greeks.delta);
-  if(ad>0.01) h+=`<div>Eficiencia delta/costo: ${s.cost>0?'+'+Math.min(20,Math.round(ad/s.cost*5)):'+15'}</div>`;
-  if(s.cost<=2) h+=`<div>Costo bajo (≤2 u$s): +10</div>`;
-  else if(s.cost<=6) h+=`<div>Costo moderado: +5</div>`;
-  else h+=`<div>Costo alto: -5</div>`;
-  
-  const perc=ASST_VI_PERC.find(v=>v.cultivo===crop&&v.mes===new Date().getMonth()+1);
-  if(perc){const av=s.legs.reduce((a,l)=>a+l.vi,0)/s.legs.length;const rk=av<=perc.p10?5:av<=perc.p25?20:av<=perc.p50?40:av<=perc.p75?65:85;h+=`<div>VI percentil ${rk} ${rk<30?'(barata, +15)':rk>70?'(cara, -10)':'(normal, +0)'}</div>`;}
-  
-  const hv=ASST_VIVHV.filter(r=>r.cultivo===crop);const lh=hv.length?hv[hv.length-1]:null;
-  if(lh&&lh.hv_20d>0){const rt=lh.vi_atm/lh.hv_20d;if(rt>1.5&&s.legs.length===1)h+=`<div>Ratio VI/HV ${rt.toFixed(2)} + put seco: -10</div>`;if(rt>1.5&&s.legs.length>1)h+=`<div>Ratio VI/HV ${rt.toFixed(2)} + spread: +5</div>`;if(rt<0.8)h+=`<div>VI barata vs HV: +10</div>`;}
-  
-  if(asstVisionSel==='floor'&&!s.ceiling) h+=`<div>Visión "Quiero piso" sin techo: +10</div>`;
-  if(asstVisionSel==='bullish'&&!s.ceiling) h+=`<div>Visión "Alcista" sin techo: +15</div>`;
-  if(s.ww) h+=`<div style="color:var(--red);">Venta call en weather market: -20</div>`;
-  if(s.floor&&s.floor>F*.9) h+=`<div>Piso cercano al futuro: +5</div>`;
-  h+=`<div style="font-weight:700;margin-top:4px;border-top:1px solid var(--border);padding-top:4px;">Total: ${s.score}</div>`;
+  const bdOrder=['r1','r2','r3','r4','r5','r6','r7','tol','piso','r9'];
+  const bd=s.scoreBreakdown||{};
+  bdOrder.filter(k=>bd[k]).forEach(k=>{
+    const txt=bd[k];const neg=/^-/.test(txt);
+    h+=`<div style="margin-top:2px;${neg?'color:var(--red);':''}">${escHtml(txt)}</div>`;
+  });
+  const raw=50+bdOrder.reduce((a,k)=>{const m=bd[k]&&bd[k].match(/^([+-]?\d+)/);return a+(m?parseInt(m[1],10):0);},0);
+  h+=`<div style="font-weight:700;margin-top:4px;border-top:1px solid var(--border);padding-top:4px;">Total: ${s.score}${raw!==s.score?` <span style="font-weight:400;color:var(--text-3);">(suma ${raw}, acotada a 0–100)</span>`:''}</div>`;
   h+=`</div></details>`;
   
   h+=`</div>`;
@@ -550,17 +562,24 @@ function asstRenderChainTable(analyzed,F){
   ['Strike','Prima','Tipo','VI %','','Delta','Gamma','Theta','Vega','u$s/Δ','Piso','Valor'].forEach(t=>{h+=`<th style="padding:7px 8px;background:var(--es-green-light);border-bottom:2px solid var(--es-green);font-weight:600;color:var(--es-green-dark);font-size:10px;text-transform:uppercase;text-align:center;">${t}</th>`;});
   h+=`</tr></thead><tbody>`;
   analyzed.sort((a,b)=>b.strike-a.strike);
-  analyzed.forEach(o=>{const hl=o.value==='cheap';h+=`<tr style="${hl?'background:var(--es-green-light);font-weight:600;':''}"><td style="padding:6px 8px;border-bottom:1px solid var(--border);font-family:var(--mono);font-weight:700;background:var(--bg-input);text-align:center;">${o.strike}${hl?' ★':''}</td><td style="padding:6px;border-bottom:1px solid var(--border);font-family:var(--mono);text-align:center;">${o.prima.toFixed(1)}</td><td style="padding:6px;border-bottom:1px solid var(--border);text-align:center;">${o.type.toUpperCase()}</td><td style="padding:6px;border-bottom:1px solid var(--border);font-family:var(--mono);text-align:center;${o.value==='expensive'?'color:var(--red);font-weight:700;':o.value==='cheap'?'color:var(--es-green);font-weight:700;':''}">${o.vi.toFixed(1)}%</td><td style="padding:6px;border-bottom:1px solid var(--border);"><div style="display:inline-block;height:12px;width:${Math.round(o.vi/mx*60)}px;background:${o.value==='expensive'?'var(--red)':o.value==='cheap'?'var(--es-green)':'#3b82f6'};border-radius:3px;"></div></td><td style="padding:6px;border-bottom:1px solid var(--border);font-family:var(--mono);text-align:center;">${o.greeks.delta}</td><td style="padding:6px;border-bottom:1px solid var(--border);font-family:var(--mono);text-align:center;">${o.greeks.gamma}</td><td style="padding:6px;border-bottom:1px solid var(--border);font-family:var(--mono);text-align:center;color:var(--red);">${o.greeks.theta}</td><td style="padding:6px;border-bottom:1px solid var(--border);font-family:var(--mono);text-align:center;">${o.greeks.vega}</td><td style="padding:6px;border-bottom:1px solid var(--border);font-family:var(--mono);text-align:center;${hl?'color:var(--es-green);font-weight:700;':''}">${o.costPerDelta<100?o.costPerDelta.toFixed(2):'—'}</td><td style="padding:6px;border-bottom:1px solid var(--border);font-family:var(--mono);text-align:center;font-weight:700;color:var(--green);">${o.floor?o.floor.toFixed(1):'—'}</td><td style="padding:6px;border-bottom:1px solid var(--border);text-align:center;">${o.value==='cheap'?'<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;background:var(--es-green-light);color:var(--es-green-dark);">BARATO</span>':o.value==='expensive'?'<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;background:#fde8e8;color:var(--red);">CARO</span>':''}</td></tr>`;});
+  analyzed.forEach(o=>{const hl=o.value==='cheap';h+=`<tr style="${hl?'background:var(--es-green-light);font-weight:600;':''}"><td style="padding:6px 8px;border-bottom:1px solid var(--border);font-family:var(--mono);font-weight:700;background:var(--bg-input);text-align:center;">${o.strike}${hl?' ★':''}</td><td style="padding:6px;border-bottom:1px solid var(--border);font-family:var(--mono);text-align:center;">${o.prima.toFixed(1)}</td><td style="padding:6px;border-bottom:1px solid var(--border);text-align:center;">${o.type.toUpperCase()}</td><td style="padding:6px;border-bottom:1px solid var(--border);font-family:var(--mono);text-align:center;${o.value==='expensive'?'color:var(--red);font-weight:700;':o.value==='cheap'?'color:var(--es-green);font-weight:700;':''}">${o.vi.toFixed(1)}%</td><td style="padding:6px;border-bottom:1px solid var(--border);"><div style="display:inline-block;height:12px;width:${Math.round(o.vi/mx*60)}px;background:${o.value==='expensive'?'var(--red)':o.value==='cheap'?'var(--es-green)':'#3b82f6'};border-radius:3px;"></div></td><td style="padding:6px;border-bottom:1px solid var(--border);font-family:var(--mono);text-align:center;">${o.greeks.delta}</td><td style="padding:6px;border-bottom:1px solid var(--border);font-family:var(--mono);text-align:center;">${o.greeks.gamma}</td><td style="padding:6px;border-bottom:1px solid var(--border);font-family:var(--mono);text-align:center;color:var(--red);">${o.greeks.theta}</td><td style="padding:6px;border-bottom:1px solid var(--border);font-family:var(--mono);text-align:center;">${o.greeks.vega}</td><td style="padding:6px;border-bottom:1px solid var(--border);font-family:var(--mono);text-align:center;${hl?'color:var(--es-green);font-weight:700;':''}">${o.costPerDelta<100?o.costPerDelta.toFixed(2):'—'}</td><td style="padding:6px;border-bottom:1px solid var(--border);font-family:var(--mono);text-align:center;font-weight:700;color:var(--green);">${o.floor?o.floor.toFixed(1):'—'}</td><td style="padding:6px;border-bottom:1px solid var(--border);text-align:center;">${o.value==='cheap'?'<span style="font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;background:var(--es-green-light);color:var(--es-green-dark);">BARATO</span>':o.value==='expensive'?'<span style="font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;background:#fde8e8;color:var(--red);">CARO</span>':''}</td></tr>`;});
   return h+'</tbody></table></div>';
+}
+
+const ASST_MIN_DELTA_PROT=0.20;
+function asstProtectivePuts(analyzed){
+  const puts=analyzed.filter(o=>o.type==='put');
+  const prot=puts.filter(o=>Math.abs(o.greeks.delta)>=ASST_MIN_DELTA_PROT);
+  return prot.length?prot:puts;
 }
 
 function asstRenderBestCombo(analyzed,F,T,crop){
   const puts=analyzed.filter(o=>o.type==='put').sort((a,b)=>b.strike-a.strike);
   const calls=analyzed.filter(o=>o.type==='call').sort((a,b)=>a.strike-b.strike);
   if(puts.length<2) return '';
-  
-  // Find best put by cost/delta efficiency
-  const bestPut=puts.reduce((best,p)=>p.costPerDelta<(best?best.costPerDelta:Infinity)?p:best,null);
+
+  // Mejor put por costo/delta, entre los que protegen de verdad (|delta| ≥ 0,20)
+  const bestPut=asstProtectivePuts(analyzed).reduce((best,p)=>p.costPerDelta<(best?best.costPerDelta:Infinity)?p:best,null);
   
   // Find best spread: maximize (floor quality × cost efficiency)
   let bestSpread=null, bestSpreadScore=-Infinity;
@@ -584,7 +603,7 @@ function asstRenderBestCombo(analyzed,F,T,crop){
   h+=`<div style="background:#fff;border-radius:8px;padding:14px;margin-bottom:12px;">`;
   h+=`<div style="font-weight:700;font-size:13px;margin-bottom:6px;">Mejor Put individual: <span style="color:var(--es-green);">Put ${bestPut.strike}</span></div>`;
   h+=`<div style="font-size:12px;color:var(--text-2);line-height:1.7;">`;
-  h+=`Costo por punto de delta: <strong>${bestPut.costPerDelta.toFixed(2)} u$s/Δ</strong> (el más eficiente de la cadena). `;
+  h+=`Costo por punto de delta: <strong>${bestPut.costPerDelta.toFixed(2)} u$s/Δ</strong> (el más eficiente entre los puts con delta ≥ ${ASST_MIN_DELTA_PROT.toFixed(2)}). `;
   h+=`VI: ${bestPut.vi.toFixed(1)}% — ${bestPut.value==='cheap'?'<strong style="color:var(--es-green);">BARATA</strong> vs historia (debajo del percentil 25 del skew)':bestPut.value==='expensive'?'<strong style="color:var(--red);">CARA</strong> vs historia':'en rango normal'}. `;
   h+=`Piso: ${(bestPut.strike-bestPut.prima).toFixed(1)} u$s. `;
   if(nearPuts.length>0){
@@ -640,7 +659,7 @@ function asstGenerate(){
   const strats=asstGenStrategies(analyzed,F,T,asstVisionSel,tol,crop,vol);
   if(strats.length){
     html+=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--text-3);margin-bottom:14px;display:flex;align-items:center;gap:8px;"><span style="width:16px;height:2px;background:var(--es-green);border-radius:1px;"></span>${strats.length} Estrategias Recomendadas — ${crop.charAt(0).toUpperCase()+crop.slice(1)} ${pos} @ ${F} u$s</div>`;
-    html+=`<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:20px;">${strats.map((s,i)=>asstRenderCard(s,i)).join('')}</div>`;
+    html+=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;margin-bottom:20px;">${strats.map((s,i)=>asstRenderCard(s,i)).join('')}</div>`;
   }
   document.getElementById('asst-results').innerHTML=html;
   document.getElementById('asst-results').scrollIntoView({behavior:'smooth',block:'start'});

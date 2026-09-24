@@ -32,6 +32,22 @@ function retSyncCoefInputs(cCA, cCH) {
   if (ih) { ih.value = cCH.toFixed(4);  ih.readOnly = true; }
 }
 
+// Alícuota del cronograma (RET_SCHEDULE) para la posición elegida en un <select>.
+// null si la posición no se puede interpretar (p.ej. "sin datos").
+function retSchedFor(cultivo, selId) {
+  const sel = document.getElementById(selId);
+  const v = sel ? String(sel.value || '') : '';
+  if (!v || !parsePosLabel(v)) return null;
+  return getRetencionForPos(cultivo, v);
+}
+
+// Al cambiar de posición 1 se toma la alícuota vigente para esa fecha.
+function retApplySchedule() {
+  const cultivo = document.getElementById('ret-cultivo').value;
+  const r = retSchedFor(cultivo, 'ret-posicion');
+  if (r != null) document.getElementById('ret-pct').value = r;
+}
+
 function retChangeCultivo() {
   const cultivo = document.getElementById('ret-cultivo').value;
   const d = RET_DEFAULTS[cultivo];
@@ -60,6 +76,7 @@ function retChangeCultivo() {
     document.getElementById('ret-fas-obj-2').value = d.fasObj2;
   }
 
+  retApplySchedule();
   // Apply FOB from sheet AFTER positions are populated
   applyFOBToRetenciones();
 }
@@ -83,7 +100,8 @@ function retCalc() {
 
   const selPos1 = document.getElementById('ret-posicion');
   const pos1Text = selPos1.options[selPos1.selectedIndex]?.text || '';
-  document.getElementById('ret-panel-title-1').innerHTML = `Exportación grano ${pos1Text ? ' - ' + pos1Text : ''}`;
+  document.getElementById('ret-panel-title-1').innerHTML = `Exportación grano ${pos1Text ? ' - ' + pos1Text : ''}`
+    + (cultivo === 'girasol' ? ' <span style="font-size:10.5px;font-weight:600;color:#8a6d1f;">· FOB manual (el Sheet FOB no trae girasol grano)</span>' : '');
 
   const grid = document.getElementById('ret-panels-grid');
   const crushPanel = document.getElementById('ret-panel-crush');
@@ -120,20 +138,24 @@ function retCalc() {
   if (hasPos2) {
     const fob2 = parseFloat(document.getElementById('ret-fob-2').value) || 0;
     const fasObj2 = parseFloat(document.getElementById('ret-fas-obj-2').value) || 0;
+    // La posición 2 tiene su propia alícuota según el cronograma (baja 2027–28).
+    const sched2 = retSchedFor(cultivo, 'ret-posicion-2');
+    const retPct2 = sched2 != null ? sched2 : retPct;
+    const ret2 = retPct2 / 100;
 
-    document.getElementById('ret-pct-show-2').value = retPct.toFixed(1);
+    document.getElementById('ret-pct-show-2').value = retPct2.toFixed(2);
     document.getElementById('ret-fobbing-show-2').value = fobbing.toFixed(1);
 
     const selPos2 = document.getElementById('ret-posicion-2');
     const pos2Text = selPos2.options[selPos2.selectedIndex]?.text || '';
     document.getElementById('ret-panel-title-2').innerHTML = `Exportación grano - ${pos2Text}`;
 
-    const fasCTP2 = fob2 * (1 - ret) - fobbing;
-    const retAmount2 = fob2 * ret;
+    const fasCTP2 = fob2 * (1 - ret2) - fobbing;
+    const retAmount2 = fob2 * ret2;
 
     let granoHTML2 = '';
     granoHTML2 += retCascBar('FOB ' + cultivo, fob2, 100, 'var(--es-gold-light)', 'var(--es-gold)');
-    granoHTML2 += retCascBar('Retención ' + retPct.toFixed(1) + '%', -retAmount2, retPct, '#fde8e8', 'var(--red)');
+    granoHTML2 += retCascBar('Retención ' + retPct2.toFixed(2) + '%', -retAmount2, retPct2, '#fde8e8', 'var(--red)');
     granoHTML2 += retCascBar('Fobbing', -fobbing, fob2 > 0 ? (fobbing / fob2) * 100 : 0, 'var(--bg-input)', 'var(--text-3)');
     document.getElementById('ret-grano-bars-2').innerHTML = granoHTML2;
     document.getElementById('ret-fas-ctp-2').textContent = fasCTP2.toFixed(2);
@@ -143,12 +165,12 @@ function retCalc() {
     const mgColor2 = margenGrano2 >= 0 ? 'var(--green)' : 'var(--red)';
     document.getElementById('ret-grano-margin-2').innerHTML = `<span class="ret-mg-lbl">Margen export. (vs obj ${fasObj2.toFixed(1)})</span><span class="ret-mg-val" style="color:${mgColor2}">${mgSign2}${margenGrano2.toFixed(2)}</span>`;
 
-    const fobNeeded2 = ret < 1 ? (fasObj2 + fobbing) / (1 - ret) : 0;
+    const fobNeeded2 = ret2 < 1 ? (fasObj2 + fobbing) / (1 - ret2) : 0;
     const retImpl2 = fob2 > 0 ? (1 - (fasObj2 + fobbing) / fob2) * 100 : 0;
     document.getElementById('ret-fob-needed-2').textContent = fobNeeded2.toFixed(2);
     document.getElementById('ret-fob-needed-sub-2').textContent = 'Para pagar FAS obj ' + fasObj2.toFixed(1);
     document.getElementById('ret-impl-2').textContent = retImpl2.toFixed(2) + '%';
-    const gapPP2 = retImpl2 - retPct;
+    const gapPP2 = retImpl2 - retPct2;
     document.getElementById('ret-impl-sub-2').textContent = 'Gap: ' + (gapPP2 >= 0 ? '+' : '') + gapPP2.toFixed(2) + ' pp';
   }
 
@@ -168,19 +190,25 @@ function retCalc() {
 
     const acBruto = cFA * cCA;
     const haBruto = cFH * cCH;
-    const bruto = acBruto + haBruto;
     const aceite = acBruto * (1 - cRS);
     const harina = haBruto * (1 - cRS);
     crushFAS = aceite + harina - cFob - cInd;
 
-    const notaCasc = `<span style="font-size:0.68rem; font-weight:400; color:var(--text-3); margin-left:6px;">${(SOJA_REND_HARINA * 100).toFixed(1)}% + cáscara ${(SOJA_REND_CASCARA * 100).toFixed(1)}% @ ${SOJA_FOB_CASCARA} = +${(coefs.deltaCascara * 100).toFixed(2)} pp</span>`;
+    // Cascada a la vista: la cáscara va aparte porque NO paga retención
+    // (el FAS es el mismo que con el coeficiente de harina ponderado).
+    const haPura = cFH * SOJA_REND_HARINA;
+    const cascara = SOJA_REND_CASCARA * SOJA_FOB_CASCARA;
+    const retSub = (acBruto + haPura) * cRS;
+    const brutoVis = acBruto + haPura + cascara;
+    const pctB = v => brutoVis > 0 ? (v / brutoVis) * 100 : 0;
 
     let crushHTML = '';
-    crushHTML += retCascBar('Aceite (' + cFA.toFixed(1) + ' × ' + cCA.toFixed(3) + ')', acBruto, bruto > 0 ? (acBruto / bruto) * 100 : 0, 'var(--es-green-light)', 'var(--es-green-dark)');
-    crushHTML += retCascBar('Harina (' + cFH.toFixed(1) + ' × ' + cCH.toFixed(4) + ')' + notaCasc, haBruto, bruto > 0 ? (haBruto / bruto) * 100 : 0, 'var(--es-green-light)', 'var(--es-green-dark)');
-    crushHTML += retCascBar('Ret subprod ' + (cRS * 100).toFixed(1) + '%', -(bruto * cRS), cRS * 100, '#fde8e8', 'var(--red)');
-    crushHTML += retCascBar('Fobbing subprod', -cFob, bruto > 0 ? (cFob / bruto) * 100 : 0, 'var(--bg-input)', 'var(--text-3)');
-    crushHTML += retCascBar('Gasto industrialización', -cInd, bruto > 0 ? (cInd / bruto) * 100 : 0, 'var(--bg-input)', 'var(--text-3)');
+    crushHTML += retCascBar('Aceite (' + cFA.toFixed(1) + ' × ' + cCA.toFixed(3) + ')', acBruto, pctB(acBruto), 'var(--es-green-light)', 'var(--es-green-dark)');
+    crushHTML += retCascBar('Harina (' + cFH.toFixed(1) + ' × ' + SOJA_REND_HARINA.toFixed(3) + ')', haPura, pctB(haPura), 'var(--es-green-light)', 'var(--es-green-dark)');
+    crushHTML += retCascBar('Cáscara (' + SOJA_FOB_CASCARA + ' × ' + SOJA_REND_CASCARA.toFixed(3) + ', sin retención)', cascara, pctB(cascara), 'var(--es-green-light)', 'var(--es-green-dark)');
+    crushHTML += retCascBar('Ret subprod ' + (cRS * 100).toFixed(1) + '% (aceite + harina)', -retSub, cRS * 100, '#fde8e8', 'var(--red)');
+    crushHTML += retCascBar('Fobbing subprod', -cFob, pctB(cFob), 'var(--bg-input)', 'var(--text-3)');
+    crushHTML += retCascBar('Gasto industrialización', -cInd, pctB(cInd), 'var(--bg-input)', 'var(--text-3)');
     document.getElementById('ret-crush-bars').innerHTML = crushHTML;
     document.getElementById('ret-crush-fas').textContent = crushFAS.toFixed(2);
 
@@ -191,9 +219,10 @@ function retCalc() {
   }
 
   const reduction = sliderVal / 100;
-  document.getElementById('ret-slider-val').textContent = '−' + sliderVal + '%';
-
   const newRet = ret * (1 - reduction);
+  // La reducción es RELATIVA a la alícuota actual (−25% de 24% = 18%), no en puntos.
+  document.getElementById('ret-slider-val').textContent =
+    '−' + sliderVal + '% relativo · ' + retPct.toFixed(1) + '% → ' + (newRet * 100).toFixed(1) + '%';
   const newFasCTP = fob * (1 - newRet) - fobbing;
 
   document.getElementById('ret-sc-act-ret').textContent = retPct.toFixed(1) + '%';
@@ -233,9 +262,10 @@ function retCalc() {
 function updateFASInfoBar() {
   const bar = document.getElementById('fas-info-bar');
   if (!bar) return;
-  if (retData.fasCTP === null) { bar.style.display = 'none'; return; }
-  bar.style.display = 'flex';
   const t = getActiveTab();
+  // Solo se compara si el FAS teórico calculado es del mismo cultivo que la solapa.
+  if (retData.fasCTP === null || retData.cultivo !== t.assetVal) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
   const spot = t.spot;
   document.getElementById('fic-fas-mercado').textContent = spot.toFixed(1) + ' u$s';
   document.getElementById('fic-fas-teorico').textContent = retData.fasCTP.toFixed(1) + ' u$s';

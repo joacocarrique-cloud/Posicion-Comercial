@@ -36,4 +36,10 @@ function showSaveIndicator() {
   tabs = saved ? saved.tabs : JSON.parse(JSON.stringify(DEFAULT_TABS));
   activeTabIdx = saved ? saved.activeTabIdx : 0;
   tabCounter = saved ? saved.tabCounter : 2;
+  // Estrategias guardadas con colores que ahora son de las líneas Objetivo/Dolor
+  tabs.forEach(t => (t.strategies || []).forEach(s => {
+    const c = String(s.color || '').toLowerCase();
+    if (COLOR_MIGRATION[c]) s.color = COLOR_MIGRATION[c];
+  }));
+  if (!tabs[activeTabIdx]) activeTabIdx = 0;
 })();

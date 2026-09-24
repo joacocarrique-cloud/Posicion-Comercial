@@ -2,11 +2,14 @@
 // ─── GLOBALS: Constants & Shared State ───
 // ═══════════════════════════════════════════════════
 
-const COLORS = ['#1A6B3C', '#2563eb', '#d97706', '#7c3aed', '#c43030', '#0d9488'];
+// Paleta de estrategias: sin violeta ni rojo, que quedan reservados para las líneas de referencia.
+const COLORS = ['#1A6B3C', '#2563eb', '#d97706', '#0891b2', '#be185d', '#65a30d'];
 
 // Líneas de referencia manuales del gráfico de coberturas
 const REF_OBJ_COLOR = '#7c3aed';  // Precio Objetivo
 const REF_DOL_COLOR = '#c43030';  // Precio Dolor
+// Colores de la paleta vieja que chocaban con las referencias → reemplazo al cargar lo guardado.
+const COLOR_MIGRATION = { '#7c3aed': '#0891b2', '#c43030': '#be185d' };
 const STORAGE_KEY = 'espartina_coberturas_v1';
 
 // ─── Strategy Presets (strikes relative to spot) ───
@@ -172,6 +175,18 @@ function getRetencionForPos(cultivo, label) {
            : getRetencion(cultivo, now.getFullYear(), now.getMonth() + 1);
 }
 
+// Escapa texto libre (nombres de solapa/estrategia) antes de meterlo en HTML o en atributos.
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Clave de orden cronológico para códigos de posición tipo 'NOV26' / 'DIS26'.
+function posSortKey(code) {
+  const p = parsePosLabel(code);
+  return p ? p.year * 100 + p.month : 999999;
+}
+
 // ─── Asistente constants ───
 const ASST_DRIVE = {
   vi_percentiles:  'https://docs.google.com/spreadsheets/d/1XBwsmTKJl_Vp9_4kLF_K6NS-eOFBLT9z3hme1w7n2ug/gviz/tq?tqx=out:csv&sheet=vi_percentiles',
@@ -181,9 +196,20 @@ const ASST_DRIVE = {
   futuros_posicion:'https://docs.google.com/spreadsheets/d/1XBwsmTKJl_Vp9_4kLF_K6NS-eOFBLT9z3hme1w7n2ug/gviz/tq?tqx=out:csv&sheet=futuros_posicion',
 };
 
-const ASST_POS = {soja:['JUL26','NOV26','ENE27','MAR27','MAY27','JUL27'],maiz:['JUL26','SEP26','DIC26','ABR27','JUL27'],trigo:['JUL26','SEP26','DIC26','ENE27','MAR27']};
-const ASST_FWD = {soja:340,maiz:195,trigo:215};
-const ASST_FER = new Set(['2025-01-01','2025-03-03','2025-03-04','2025-03-24','2025-04-02','2025-04-18','2025-05-01','2025-05-25','2025-06-16','2025-06-20','2025-07-09','2025-08-18','2025-10-13','2025-11-24','2025-12-08','2025-12-25','2026-01-01','2026-02-16','2026-02-17','2026-03-23','2026-03-24','2026-04-02','2026-04-03','2026-05-01','2026-05-25','2026-06-15','2026-06-20','2026-07-09','2026-07-10','2026-08-17','2026-10-12','2026-11-23','2026-12-07','2026-12-08','2026-12-25']);
+// Ventanas de "weather market": EE.UU. (jun–ago, mueve CBOT y arrastra a MATBA) y
+// Sudamérica (dic–feb, clima de la gruesa argentina). Editable si se quiere acotar.
+const ASST_WEATHER = { 6: 'EE.UU.', 7: 'EE.UU.', 8: 'EE.UU.', 12: 'Sudamérica', 1: 'Sudamérica', 2: 'Sudamérica' };
+function asstWeatherNow(mes) { return ASST_WEATHER[mes || (new Date().getMonth() + 1)] || null; }
+function asstWeatherLbl(mes) { const w = asstWeatherNow(mes); return w === 'EE.UU.' ? 'jun–ago, clima EE.UU.' : 'dic–feb, clima Sudamérica'; }
+
+// Respaldo si todavía no hay datos de A3 (el asistente usa las posiciones de A3 cuando están).
+const ASST_POS = {soja:['NOV26','ENE27','MAY27','JUL27','NOV27'],maiz:['DIC26','ABR27','JUL27','SEP27'],trigo:['DIC26','ENE27','MAR27','JUL27']};
+const ASST_FWD = {soja:380,maiz:200,trigo:220};
+// Feriados nacionales (días sin rueda). 2027: fijos + trasladables (Ley 27.399) con Pascua
+// el 28-mar-2027. ⚠️ Faltan los feriados puente: confirmar con el decreto 2027 cuando salga.
+const ASST_FER = new Set([
+  '2027-01-01','2027-02-08','2027-02-09','2027-03-24','2027-03-26','2027-04-02','2027-05-01',
+  '2027-05-25','2027-06-21','2027-07-09','2027-08-16','2027-10-11','2027-12-08','2027-12-25','2025-01-01','2025-03-03','2025-03-04','2025-03-24','2025-04-02','2025-04-18','2025-05-01','2025-05-25','2025-06-16','2025-06-20','2025-07-09','2025-08-18','2025-10-13','2025-11-24','2025-12-08','2025-12-25','2026-01-01','2026-02-16','2026-02-17','2026-03-23','2026-03-24','2026-04-02','2026-04-03','2026-05-01','2026-05-25','2026-06-15','2026-06-20','2026-07-09','2026-07-10','2026-08-17','2026-10-12','2026-11-23','2026-12-07','2026-12-08','2026-12-25']);
 const ASST_MES = {ENE:1,FEB:2,MAR:3,ABR:4,MAY:5,JUN:6,JUL:7,AGO:8,SEP:9,OCT:10,NOV:11,DIC:12};
 const ASST_MNAMES = ['','ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
 
@@ -203,6 +229,7 @@ let retMode = false;
 let paseMode = false;
 let asstMode = false;
 let spreadMode = false;
+let desvioMode = false;
 let retData = { fasCTP: null, crushFAS: null, fob: null, retPct: null, cultivo: null };
 
 // Tabs state (initialized after storage.js loads)

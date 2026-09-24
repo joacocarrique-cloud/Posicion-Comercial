@@ -19,7 +19,10 @@ function normalizarMesFOB(raw) {
   return m[1] + ' 20' + m[3];
 }
 
+// Devuelve una Promise que se resuelve siempre (con true si cargó, false si falló),
+// para poder encadenarla en el arranque sin cortar el resto de la inicialización.
 function syncFOBFromSheet() {
+  return new Promise(resolve => {
   const statusEl = document.getElementById('fob-status');
   if (statusEl) statusEl.innerHTML = '⏳ Cargando FOB...';
 
@@ -28,6 +31,7 @@ function syncFOBFromSheet() {
     delete window[cbName];
     if (script.parentNode) script.remove();
     if (statusEl) statusEl.innerHTML = '⚠️ Timeout — usando valores manuales';
+    resolve(false);
   }, 12000);
 
   window[cbName] = function(response) {
@@ -81,34 +85,42 @@ function syncFOBFromSheet() {
       if (statusEl) statusEl.innerHTML =
         '✅ FOB al ' + (fobActualizado || 'hoy') + ' — ' + n + ' pos · Soja ' + primera + ': <strong>' + soja0 + '</strong>';
       applyFOBToRetenciones();
+      resolve(true);
 
     } catch(e) {
       if (statusEl) statusEl.innerHTML = '⚠️ Error FOB: ' + e.message;
       console.warn('FOB JSONP error:', e);
+      resolve(false);
     }
   };
 
   const script = document.createElement('script');
-  script.src = 'https://docs.google.com/spreadsheets/d/1Fmvsn0o2OpTD8BXnqw8sDTG_4Kr9zu_tWvcy7R7Zjjo/gviz/tq?tqx=responseHandler:' + cbName + '&gid=515809769';
+  script.src = 'https://docs.google.com/spreadsheets/d/' + FOB_SHEET_ID + '/gviz/tq?tqx=responseHandler:' + cbName + '&gid=515809769';
   script.onerror = () => {
     clearTimeout(timer);
     delete window[cbName];
     if (statusEl) statusEl.innerHTML = '⚠️ No se pudo conectar con Sheet FOB';
+    resolve(false);
   };
   document.head.appendChild(script);
+  });
 }
+
+// Columna del Sheet FOB para cada cultivo. El Sheet NO trae girasol grano
+// (solo AceiteGirasol, que vale ~2,5x el grano): para girasol el FOB se carga a mano.
+const FOB_KEY_MAP = { soja: 'soja', maiz: 'maiz', trigo: 'trigo', girasol: null };
 
 function getFOBForCultivo(cultivo, posicion) {
   // Buscamos el FOB del mes más cercano disponible
-  const keyMap = { soja: 'soja', maiz: 'maiz', trigo: 'trigo', girasol: 'aceiteGirasol' };
-  const key = keyMap[cultivo] || 'soja';
-  
+  const key = FOB_KEY_MAP[cultivo];
+  if (!key) return 0;
+
   // Si hay posición específica, intentar matchear
   if (posicion && fobData) {
     // Convertir código A3 (MAY26) a formato Sheet (MAY 2026)
     const m = String(posicion).match(/([A-Z]{3})(\d{2})/);
     if (m) {
-      const mesLabel = m[1] + ' 20' + m[2];
+      const mesLabel = (m[1] === 'DIS' ? 'DIC' : m[1]) + ' 20' + m[2];
       if (fobData[mesLabel] && fobData[mesLabel][key] > 0) {
         return fobData[mesLabel][key];
       }
@@ -129,14 +141,14 @@ function applyFOBToRetenciones() {
   const cultivoEl = document.getElementById('ret-cultivo');
   if (!cultivoEl) return;
   const cultivo = cultivoEl.value;
-  const keyMap = { soja: 'soja', maiz: 'maiz', trigo: 'trigo', girasol: 'aceiteGirasol' };
-  const key = keyMap[cultivo] || 'soja';
+  const key = FOB_KEY_MAP[cultivo];
+  if (!key) { retCalc(); return; }   // girasol: FOB manual
 
   // Convert A3 code (JUL26, MAY26) → Sheet label (JUL 2026, MAY 2026)
   function toLabel(pos) {
     if (!pos) return '';
     const m = String(pos).toUpperCase().match(/([A-Z]{3})(\d{2})/);
-    if (m) return m[1] + ' 20' + m[2];
+    if (m) return (m[1] === 'DIS' ? 'DIC' : m[1]) + ' 20' + m[2];   // A3 usa DIS; el Sheet FOB, DIC
     // Already in label format like "JUL 2026"
     return String(pos).toUpperCase();
   }
@@ -210,6 +222,43 @@ function parseContrato(contrato) {
     result.optType = m[4] === 'C' ? 'call' : 'put';
   }
   return result;
+}
+
+// A3 trae el mismo contrato más de una vez (p.ej. dos filas NOV26). Se deja una fila por
+// posición (la de precio > 0 con más interés abierto), se ordena cronológicamente y se
+// eliminan strikes repetidos en las opciones.
+function normalizeSheetData(data) {
+  Object.keys(data.futuros).forEach(crop => {
+    const byPos = {};
+    data.futuros[crop].forEach(f => {
+      const cur = byPos[f.pos];
+      const better = !cur
+        || (f.precio > 0 && !(cur.precio > 0))
+        || (f.precio > 0 && (f.ia || 0) > (cur.ia || 0));
+      if (better) byPos[f.pos] = f;
+    });
+    data.futuros[crop] = Object.values(byPos).sort((a, b) => posSortKey(a.pos) - posSortKey(b.pos));
+  });
+  Object.values(data.opciones).forEach(cropOpts => {
+    Object.values(cropOpts).forEach(posOpts => {
+      ['calls', 'puts'].forEach(k => {
+        const byK = {};
+        posOpts[k].forEach(o => { if (!byK[o.strike] || (o.prima > 0 && !(byK[o.strike].prima > 0))) byK[o.strike] = o; });
+        posOpts[k] = Object.values(byK).sort((a, b) => a.strike - b.strike);
+      });
+    });
+  });
+  return data;
+}
+
+// Posición por defecto de un cultivo: la más cercana con precio y cadena de opciones
+// (con primas > 0); si ninguna tiene opciones, la más cercana con precio.
+function defaultPositionFor(crop) {
+  if (!sheetData) return '';
+  const futs = (sheetData.futuros[crop] || []).filter(f => f.precio > 0);
+  const opts = sheetData.opciones[crop] || {};
+  const conOpc = futs.find(f => opts[f.pos] && (opts[f.pos].puts.some(o => o.prima > 0) || opts[f.pos].calls.some(o => o.prima > 0)));
+  return (conOpc || futs[0] || {}).pos || '';
 }
 
 function parseSheetCSV(csvText) {
@@ -302,7 +351,7 @@ function parseSheetCSV(csvText) {
     });
   });
 
-  return { futuros, opciones, fechaDatos };
+  return normalizeSheetData({ futuros, opciones, fechaDatos });
 }
 
 async function syncFromSheet() {
@@ -447,7 +496,7 @@ function parseGvizResponse(table) {
     });
   });
 
-  return { futuros, opciones, fechaDatos };
+  return normalizeSheetData({ futuros, opciones, fechaDatos });
 }
 
 function applySheetData() {
@@ -475,13 +524,18 @@ function updateMarketPositions() {
   if (!crop) return;
 
   const posSel = document.getElementById('mkt-pos-select');
+  const optsCrop = sheetData.opciones[crop] || {};
   const positions = (sheetData.futuros[crop] || []).map(f => f.pos);
-  posSel.innerHTML = positions.map(p => `<option value="${p}">${positionLabel(p)}</option>`).join('');
+  posSel.innerHTML = positions.map(p =>
+    `<option value="${p}">${positionLabel(p)}${optsCrop[p] ? '' : ' (sin opciones)'}</option>`).join('');
 
-  const firstWithPrice = (sheetData.futuros[crop] || []).find(f => f.precio > 0);
-  if (firstWithPrice) posSel.value = firstWithPrice.pos;
+  // Respeta la posición guardada en la solapa; si no hay, la más cercana con opciones.
+  const t = getActiveTab();
+  const pos = (t.assetVal === crop && t.pos && positions.includes(t.pos)) ? t.pos : defaultPositionFor(crop);
+  if (pos) posSel.value = pos;
 
   marketPosition = posSel.value;
+  if (t.assetVal === crop) t.pos = marketPosition;
   applyMarketData();
 }
 
@@ -491,20 +545,17 @@ function changeMarketCrop() {
   asstSyncFromBuilder();
 }
 
+// Después de sincronizar: el spot ya quedó en el precio de la posición de la solapa
+// (applyMarketData). Solo se reencuadra el eje si el nuevo spot quedó fuera del rango.
 function updateAssetSelectSpots() {
   if (!sheetData) return;
   const t = getActiveTab();
-  const crop = t.assetVal;
-  const futList = sheetData.futuros[crop];
-  if (futList && futList.length > 0) {
-    const first = futList.find(f => f.precio > 0) || futList[0];
-    if (first && first.precio > 0) {
-      t.spot = first.precio;
-      t.min = Math.floor(t.spot * 0.80 / 5) * 5;
-      t.max = Math.ceil(t.spot * 1.20 / 5) * 5;
-      syncTopBar();
-    }
+  if (!(t.spot > 0)) return;
+  if (!(t.min < t.spot && t.spot < t.max)) {
+    t.min = Math.floor(t.spot * 0.80 / 5) * 5;
+    t.max = Math.ceil(t.spot * 1.20 / 5) * 5;
   }
+  syncTopBar();
 }
 
 function rebuildMarketDataCompat() {
@@ -607,12 +658,14 @@ function handleMarketFile(evt) {
 
 function changeMarketPosition() {
   marketPosition = document.getElementById('mkt-pos-select').value;
+  getActiveTab().pos = marketPosition;   // cada solapa recuerda su posición
   applyMarketData();
   asstSyncFromBuilder();
 }
 
 function onRetPosicionChange() {
-  // When position changes in retenciones, update FOB from sheet then recalc
+  // When position changes in retenciones: alícuota del cronograma + FOB del sheet, y recalcular
+  if (typeof retApplySchedule === 'function') retApplySchedule();
   applyFOBToRetenciones();
 }
 
@@ -624,6 +677,14 @@ function applyMarketData() {
     t.spot = futuro.ajuste;
     const spotEl = document.getElementById('spot');
     if (spotEl) spotEl.value = futuro.ajuste;
+    // El rango del eje que eligió el usuario se respeta salvo que el spot quede afuera.
+    if (!(t.min < t.spot && t.spot < t.max)) {
+      t.min = Math.floor(t.spot * 0.80 / 5) * 5;
+      t.max = Math.ceil(t.spot * 1.20 / 5) * 5;
+      const mn = document.getElementById('chart-min'), mx = document.getElementById('chart-max');
+      if (mn) mn.value = t.min;
+      if (mx) mx.value = t.max;
+    }
   }
   if (typeof renderAll === 'function') renderAll();
 }

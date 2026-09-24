@@ -11,9 +11,13 @@
 let fondeoForwardManual = false;   // false = forward derivado de MATBA × TC futuro
 
 // ─── Helpers ───
+// Los <input type="number"> devuelven el valor con punto decimal ("9.0"): se leen tal cual.
+// Solo los campos de texto con separador de miles (monto, forward en $) usan formato es-AR:
+// punto = miles, coma = decimal.
 const fondeoNum = id => {
   const el = document.getElementById(id);
   if (!el) return 0;
+  if (el.type === 'number') return parseFloat(el.value) || 0;
   const raw = String(el.value).replace(/\./g, '').replace(',', '.').replace(/[^0-9.\-]/g, '');
   return parseFloat(raw) || 0;
 };

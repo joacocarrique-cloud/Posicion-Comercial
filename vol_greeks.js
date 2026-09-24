@@ -42,7 +42,7 @@ function vgAnalyzePosition() {
     s.legs.forEach(l => {
       if (l.type === 'futuro') {
         legs.push({
-          stratName: s.name, stratColor: s.color,
+          stratId: s.id, stratName: s.name, stratColor: s.color,
           dir: l.dir, type: 'futuro', strike: l.strike, prima: l.prima,
           ratio: l.ratio || 1,
           vi: null, greeks: { delta: l.dir === 'buy' ? 1 : -1, gamma: 0, theta: 0, vega: 0 },
@@ -84,7 +84,7 @@ function vgAnalyzePosition() {
       }
       
       legs.push({
-        stratName: s.name, stratColor: s.color,
+        stratId: s.id, stratName: s.name, stratColor: s.color,
         dir: l.dir, type: l.type, strike: l.strike, prima: l.prima,
         ratio, vi: viP, viRaw: vi,
         greeks: {
@@ -119,7 +119,7 @@ function vgRender() {
   if (!panel) return;
   
   // Only show in coberturas mode
-  if (theoryMode || retMode || paseMode || spreadMode) {
+  if (typeof isWorkspaceMode === 'function' ? !isWorkspaceMode() : (theoryMode || retMode || paseMode || spreadMode)) {
     panel.style.display = 'none';
     return;
   }
@@ -173,14 +173,14 @@ function vgRender() {
   html += vgRenderThermometer(pos);
   
   // Charts container
-  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+  html += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-bottom:16px;">
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);">
       <div style="font-size:12px;font-weight:700;margin-bottom:10px;color:var(--text-2);">Sensibilidad al precio (Delta profile)</div>
-      <div style="position:relative;height:220px;"><canvas id="vg-chart-delta"></canvas></div>
+      <div style="position:relative;height:280px;"><canvas id="vg-chart-delta"></canvas></div>
     </div>
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);">
       <div style="font-size:12px;font-weight:700;margin-bottom:10px;color:var(--text-2);">Decaimiento temporal (Theta)</div>
-      <div style="position:relative;height:220px;"><canvas id="vg-chart-theta"></canvas></div>
+      <div style="position:relative;height:280px;"><canvas id="vg-chart-theta"></canvas></div>
     </div>
   </div>`;
   
@@ -218,10 +218,11 @@ function vgRenderGreeksTable(pos) {
   // Group legs by strategy
   const stratMap = new Map();
   pos.legs.forEach(l => {
-    if (!stratMap.has(l.stratName)) {
-      stratMap.set(l.stratName, { color: l.stratColor, legs: [], net: { delta: 0, gamma: 0, theta: 0, vega: 0 } });
+    // Clave = id de estrategia: dos estrategias con el mismo nombre no se mezclan.
+    if (!stratMap.has(l.stratId)) {
+      stratMap.set(l.stratId, { name: l.stratName, color: l.stratColor, legs: [], net: { delta: 0, gamma: 0, theta: 0, vega: 0 } });
     }
-    const s = stratMap.get(l.stratName);
+    const s = stratMap.get(l.stratId);
     s.legs.push(l);
     s.net.delta += l.greeks.delta;
     s.net.gamma += l.greeks.gamma;
@@ -237,7 +238,8 @@ function vgRenderGreeksTable(pos) {
   h += `<div style="font-size:12px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px;">
     <span style="font-size:15px;">📐</span> Griegas de la posición</div>`;
 
-  for (const [stratName, strat] of stratMap) {
+  for (const strat of stratMap.values()) {
+    const stratName = escHtml(strat.name);
     h += `<div style="margin-bottom:14px;">`;
     h += `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;padding:4px 0;">
       <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${strat.color};"></span>
@@ -253,7 +255,7 @@ function vgRenderGreeksTable(pos) {
       <th style="${thStyle}text-align:center;">Γ Gamma</th>
       <th style="${thStyle}text-align:center;">Θ Theta</th>
       <th style="${thStyle}text-align:center;">ν Vega</th>
-      <th style="${thStyle}text-align:center;" title="${valorTooltip}">Valor <span style="font-size:8px;cursor:help;">ⓘ</span></th>
+      <th style="${thStyle}text-align:center;" title="${valorTooltip}">Valor <span style="font-size:10px;cursor:help;">ⓘ</span></th>
     </tr></thead><tbody>`;
 
     strat.legs.forEach(l => {
@@ -261,10 +263,10 @@ function vgRenderGreeksTable(pos) {
       const typeLabel = l.type === 'futuro' ? 'FUT' : l.type.toUpperCase();
       const qtyLabel = l.ratio > 1 ? `${l.ratio}×` : '';
       const valBadge = l.value === 'cheap' 
-        ? '<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;background:var(--es-green-light);color:var(--es-green-dark);">BARATO</span>'
+        ? '<span style="font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;background:var(--es-green-light);color:var(--es-green-dark);">BARATO</span>'
         : l.value === 'expensive' 
-        ? '<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;background:#fde8e8;color:var(--red);">CARO</span>'
-        : '<span style="font-size:8px;color:var(--text-3);">—</span>';
+        ? '<span style="font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;background:#fde8e8;color:var(--red);">CARO</span>'
+        : '<span style="font-size:10px;color:var(--text-3);">—</span>';
       
       h += `<tr>
         <td style="padding:7px 8px;border-bottom:1px solid var(--border);font-family:var(--mono);font-weight:600;">
@@ -395,7 +397,7 @@ function vgRenderThermometer(pos) {
       <div style="position:relative;height:14px;margin-bottom:6px;">
         <div style="position:absolute;left:${viLabelLeft}%;transform:translateX(-50%);font-size:10px;font-weight:700;font-family:var(--mono);color:var(--text);white-space:nowrap;">${vi.toFixed(1)}%</div>
       </div>
-      <div style="display:flex;justify-content:space-between;font-size:9px;font-family:var(--mono);color:var(--text-3);">
+      <div style="display:flex;justify-content:space-between;font-size:10px;font-family:var(--mono);color:var(--text-3);">
         <span>P10: ${p.p10.toFixed(1)}</span>
         <span>P25: ${p.p25.toFixed(1)}</span>
         <span>P50: ${p.p50.toFixed(1)}</span>
@@ -442,7 +444,7 @@ function vgRenderDeltaChart(pos) {
   const t = getActiveTab();
   if (t.strategies.length > 1) {
     t.strategies.forEach(s => {
-      const sLegs = legs.filter(l => l.stratName === s.name);
+      const sLegs = legs.filter(l => l.stratId === s.id);
       if (sLegs.length === 0) return;
       const deltas = range.map(price => {
         let d = 0;
@@ -558,7 +560,7 @@ function vgRenderThetaChart(pos) {
       labels: dayPoints.map(d => d + 'd'),
       datasets: [
         {
-          label: 'Valor temporal (u$s/tn)',
+          label: 'Valor de la posición en opciones (u$s/tn)',
           data: posValues,
           borderColor: '#1A6B3C',
           backgroundColor: 'rgba(26,107,60,0.06)',
@@ -616,7 +618,7 @@ function vgRenderMarketInsight(pos) {
   const perc = ASST_VI_PERC.find(v => v.cultivo === crop && v.mes === mes);
   const hvD = ASST_VIVHV.filter(x => x.cultivo === crop);
   const lh = hvD.length ? hvD[hvD.length - 1] : null;
-  const weather = mes >= 6 && mes <= 8;
+  const weather = !!asstWeatherNow(mes);
   
   let insights = [];
   
@@ -647,9 +649,9 @@ function vgRenderMarketInsight(pos) {
   if (weather) {
     const hasSoldCalls = legs.some(l => l.dir === 'sell' && l.type === 'call');
     if (hasSoldCalls) {
-      insights.push({ icon: '⚠️', text: `Weather market activo (Jun-Ago). Tenés calls vendidos — riesgo de suba explosiva por clima en EE.UU. Monitoreá de cerca.`, type: 'warn' });
+      insights.push({ icon: '⚠️', text: `Weather market activo (${asstWeatherLbl(mes)}). Tenés calls vendidos — riesgo de suba explosiva por clima. Monitoreá de cerca.`, type: 'warn' });
     } else {
-      insights.push({ icon: '🌤️', text: `Estamos en ventana de weather market (Jun-Ago). La VI tiende a subir — tu posición con vega positivo se beneficiaría.`, type: 'good' });
+      insights.push({ icon: '🌤️', text: `Estamos en ventana de weather market (${asstWeatherLbl(mes)}). La VI tiende a subir — tu posición con vega positivo se beneficiaría.`, type: 'good' });
     }
   }
   

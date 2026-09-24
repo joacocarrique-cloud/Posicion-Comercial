@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════
 
 function togglePases() {
-  paseMode = true; theoryMode = false; retMode = false; asstMode = false; spreadMode = false;
+  paseMode = true; theoryMode = false; retMode = false; asstMode = false; spreadMode = false; desvioMode = false;
   document.getElementById('workspace').style.display = 'none';
   document.getElementById('theory-space').style.display = 'none';
   document.getElementById('ret-space').style.display = 'none';
@@ -329,65 +329,57 @@ function paseCalcStrategies(pair, inp, calc) {
     });
   }
 
-  // ALT 3: Retener + crédito USD (necesito plata hoy)
+  // ─── Base común de comparación ───
+  // Todas las alternativas se expresan en u$s/tn A LA FECHA DE LA POSICIÓN DESTINO.
+  // La caja que entra hoy se lleva a esa fecha con el costo de capital (fvOppUSD), y los
+  // pesos a cobrar en esa fecha se pasan a dólares con el TC futuro (tcTo), nunca con el spot.
+
+  // ALT 3: Retener + crédito USD (necesito la caja hoy)
+  // Tomo prestado el equivalente a vender hoy, retengo y vendo diferido; al vencimiento
+  // devuelvo capital + interés. La caja de hoy vale lo mismo que en ① (se aplica al costo de capital).
   if (inp.creditoUSD > 0) {
-    const creditoCosto = pair.from.price * (inp.creditoUSD / 100) * (days / 365);
-    const resultCredUSD = pair.to.price - almTotal - creditoCosto;
+    const repagoUSD = pair.from.price * (1 + (inp.creditoUSD / 100) * (days / 365));
+    const resultCredUSD = pair.to.price - almTotal - repagoUSD + ventaHoyFV;
     const spreadVsCarry = carryTNA - inp.creditoUSD;
     strats.push({
       name: '④ Crédito USD + vender diferida',
-      desc: `Tomar crédito USD al ${inp.creditoUSD}% TNA, retener, vender ${pair.to.name}.`,
+      desc: `Tomar crédito USD al ${inp.creditoUSD}% TNA por la caja de hoy, retener y vender ${pair.to.name}.`,
       resultUSD: resultCredUSD,
       resultARS: resultCredUSD * (pair.tcTo || inp.tcSpot),
       riskTC: false,
       riskPrecio: false,
       category: 'usd',
-      detail: `Venta futura: ${pair.to.price.toFixed(1)} u$s. Costo crédito: -${creditoCosto.toFixed(1)} u$s. Almacenaje: -${almTotal.toFixed(1)} u$s. Neto: ${resultCredUSD.toFixed(1)} u$s. Spread carry vs crédito: ${spreadVsCarry >= 0 ? '+' : ''}${spreadVsCarry.toFixed(1)}pp. ${spreadVsCarry > 0 ? '→ El carry del mercado paga más que el crédito: conviene retener.' : '→ El crédito es más caro que el carry: conviene vender hoy.'}`
+      detail: `Venta futura: ${pair.to.price.toFixed(1)} u$s. Almacenaje: -${almTotal.toFixed(1)} u$s. Repago del crédito: -${repagoUSD.toFixed(1)} u$s. Caja de hoy aplicada al costo de capital: +${ventaHoyFV.toFixed(1)} u$s. Neto: ${resultCredUSD.toFixed(1)} u$s. Spread carry vs crédito: ${spreadVsCarry >= 0 ? '+' : ''}${spreadVsCarry.toFixed(1)}pp. ${spreadVsCarry > 0 ? '→ El carry del mercado paga más que el crédito: conviene retener.' : '→ El crédito es más caro que el carry: conviene vender hoy.'}${Math.abs(rOppUSD - inp.creditoUSD) < 1e-9 ? ' (Con costo de capital = crédito USD, da igual que ②.)' : ''}`
     });
   }
 
   // ═══ MODO ARS: comparaciones pesificadas ═══
 
   // ALT 5: Retener + crédito ARS + vender diferida (con cobertura TC)
+  // Tomo en pesos la caja de hoy, retengo, vendo diferido en pesos a TC futuro y devuelvo
+  // capital + interés en pesos. Resultado en u$s a la fecha destino: pesos / TC futuro.
   if (inp.creditoARS > 0 && pair.tcTo > 0 && inp.tcSpot > 0) {
     const pesosHoy = pair.from.price * inp.tcSpot; // pesos equivalentes que necesito
     const interesARS = pesosHoy * (inp.creditoARS / 100) * (days / 365);
     const cobroFuturoARS = pair.to.price * pair.tcTo; // cobro en ARS con TC futuro cubierto
-    const netoARS = cobroFuturoARS - interesARS - (almTotal * pair.tcTo);
-    const resultUSD_equiv = netoARS / inp.tcSpot; // equivalente USD al TC de hoy para comparar
-    const tasaImplTC = inp.tcSpot > 0 ? ((pair.tcTo / inp.tcSpot) - 1) * (365 / days) * 100 : 0;
+    const netoARS = cobroFuturoARS - (almTotal * pair.tcTo) - (pesosHoy + interesARS);
+    const resultUSD_equiv = netoARS / pair.tcTo + ventaHoyFV;
+    const tasaImplTC = ((pair.tcTo / inp.tcSpot) - 1) * (365 / days) * 100;
     strats.push({
       name: '⑤ Crédito ARS + diferida (TC cubierto)',
-      desc: `Crédito ARS ${inp.creditoARS}% TNA. Vender ${pair.to.name} a TC futuro ${pair.tcTo}.`,
+      desc: `Crédito ARS ${inp.creditoARS}% TNA por la caja de hoy. Vender ${pair.to.name} a TC futuro ${pair.tcTo}.`,
       resultUSD: resultUSD_equiv,
-      resultARS: netoARS,
+      resultARS: resultUSD_equiv * pair.tcTo,
       riskTC: false, // TC cubierto con futuro ROFEX
       riskPrecio: false,
       category: 'ars',
-      detail: `Crédito: $${pesosHoy.toLocaleString('es')} (equiv. a vender hoy). Interés: -$${interesARS.toLocaleString('es',{maximumFractionDigits:0})} (${inp.creditoARS}% TNA). Cobro futuro: ${pair.to.price.toFixed(1)} × ${pair.tcTo} = $${cobroFuturoARS.toLocaleString('es',{maximumFractionDigits:0})}. Alm: -$${(almTotal * pair.tcTo).toLocaleString('es',{maximumFractionDigits:0})}. Neto: $${netoARS.toLocaleString('es',{maximumFractionDigits:0})} (≈ ${resultUSD_equiv.toFixed(1)} u$s al TC spot). Tasa implícita TC: ${tasaImplTC.toFixed(1)}% TNA.`
+      detail: `Crédito: $${pesosHoy.toLocaleString('es',{maximumFractionDigits:0})} (equiv. a vender hoy). Interés: -$${interesARS.toLocaleString('es',{maximumFractionDigits:0})} (${inp.creditoARS}% TNA). Cobro futuro: ${pair.to.price.toFixed(1)} × ${pair.tcTo} = $${cobroFuturoARS.toLocaleString('es',{maximumFractionDigits:0})}. Alm: -$${(almTotal * pair.tcTo).toLocaleString('es',{maximumFractionDigits:0})}. Saldo tras repagar: $${netoARS.toLocaleString('es',{maximumFractionDigits:0})} (${(netoARS / pair.tcTo).toFixed(1)} u$s al TC futuro) + caja de hoy aplicada al costo de capital ${ventaHoyFV.toFixed(1)} u$s = ${resultUSD_equiv.toFixed(1)} u$s. Tasa ARS ${inp.creditoARS}% vs deva implícita ${tasaImplTC.toFixed(1)}% TNA: ${inp.creditoARS < tasaImplTC ? 'el crédito en pesos sale más barato que la deva.' : 'la deva no compensa la tasa en pesos.'}`
     });
   }
+  // (La ex-alternativa ⑥ "Caución ARS + diferida" se eliminó: restaba el interés de caución
+  //  como costo, contándolo dos veces contra ①. Colocar pesos a tasa está cubierto por ⑦ y ⑧.)
 
-  // ALT 6: Caución ARS + retener (con cobertura TC)
-  if (inp.caucionARS > 0 && pair.tcTo > 0 && inp.tcSpot > 0) {
-    const pesosHoy = pair.from.price * inp.tcSpot;
-    const interesARS = pesosHoy * (inp.caucionARS / 100) * (days / 365);
-    const cobroFuturoARS = pair.to.price * pair.tcTo;
-    const netoARS = cobroFuturoARS - interesARS - (almTotal * pair.tcTo);
-    const resultUSD_equiv = netoARS / inp.tcSpot;
-    strats.push({
-      name: '⑥ Caución ARS + diferida (TC cubierto)',
-      desc: `Caución ARS ${inp.caucionARS}% TNA. Vender ${pair.to.name} a TC futuro ${pair.tcTo}.`,
-      resultUSD: resultUSD_equiv,
-      resultARS: netoARS,
-      riskTC: false,
-      riskPrecio: false,
-      category: 'ars',
-      detail: `Caución: $${pesosHoy.toLocaleString('es')} al ${inp.caucionARS}% TNA. Interés: -$${interesARS.toLocaleString('es',{maximumFractionDigits:0})}. Cobro: $${cobroFuturoARS.toLocaleString('es',{maximumFractionDigits:0})}. Neto: $${netoARS.toLocaleString('es',{maximumFractionDigits:0})} (≈ ${resultUSD_equiv.toFixed(1)} u$s).`
-    });
-  }
-
-  // ALT 7: Vender forward + descontar cheques
+  // ALT 6: Vender forward + descontar cheques
   if (inp.cheques > 0 && pair.tcTo > 0 && inp.tcSpot > 0) {
     const cobroFuturoARS = pair.to.price * pair.tcTo;
     const descuento = 1 + (inp.cheques / 100) * (days / 365);
@@ -395,7 +387,7 @@ function paseCalcStrategies(pair, inp, calc) {
     const usdHoy = pesosHoy / inp.tcSpot;
     const costoDesc = cobroFuturoARS - pesosHoy;
     strats.push({
-      name: '⑦ Forward + descuento cheques',
+      name: '⑥ Forward + descuento cheques',
       desc: `Vender forward ${pair.to.name}, descontar cheques al ${inp.cheques}% TNA.`,
       resultUSD: usdHoy * fvOppUSD,
       resultARS: pesosHoy * fvOppUSD,
@@ -406,7 +398,7 @@ function paseCalcStrategies(pair, inp, calc) {
     });
   }
 
-  // ALT 8: Vender hoy ARS + LECAP (carry en pesos, con breakeven de deva)
+  // ALT 7: Vender hoy ARS + LECAP (carry en pesos, con breakeven de deva)
   if (inp.lecap > 0 && pair.tcTo > 0 && inp.tcSpot > 0) {
     const pesosHoy = pair.from.price * inp.tcSpot;
     const pesosFinal = pesosHoy * (1 + (inp.lecap / 100) * (days / 365));
@@ -414,7 +406,7 @@ function paseCalcStrategies(pair, inp, calc) {
     const beTC = pesosFinal / pair.from.price; // TC al que empata con vender hoy USD
     const beDeva = ((beTC / inp.tcSpot) - 1) * 100;
     strats.push({
-      name: '⑧ Vender hoy ARS + LECAP',
+      name: '⑦ Vender hoy ARS + LECAP',
       desc: `Vender ${pair.from.name} en ARS, colocar en LECAP/PF ${inp.lecap}% TNA.`,
       resultUSD: usdAlFinal,
       resultARS: pesosFinal,
@@ -425,7 +417,7 @@ function paseCalcStrategies(pair, inp, calc) {
     });
   }
 
-  // ALT 9: Vender hoy + colocar en pesos + comprar dólar futuro (tasa en USD sintética, TC cubierto)
+  // ALT 8: Vender hoy + colocar en pesos + comprar dólar futuro (tasa en USD sintética, TC cubierto)
   // La decisión se reduce a: tasa de colocación ARS vs. devaluación implícita en el futuro.
   const rPeso = Math.max(inp.lecap, inp.caucionARS);
   const rPesoName = inp.caucionARS > inp.lecap ? 'caución ARS' : 'LECAP/PF';
@@ -437,7 +429,7 @@ function paseCalcStrategies(pair, inp, calc) {
     const spread = rPeso - devaImpl; // tasa colocación − deva implícita
     const tnaUSDsint = ((usdFinal / pair.from.price) - 1) * (365 / days) * 100; // rendimiento en USD anualizado
     strats.push({
-      name: '⑨ Vender + tasa ARS + dólar futuro (cubierto)',
+      name: '⑧ Vender + tasa ARS + dólar futuro (cubierto)',
       desc: `Vender ${pair.from.name}, colocar pesos al ${rPeso}% (${rPesoName}) y comprar dólar futuro a ${pair.tcTo}.`,
       resultUSD: usdFinal,
       resultARS: pesosFinal,
@@ -483,9 +475,9 @@ function paseCalc() {
 
     matrixHTML += `<tr>
       <td>
-        <span class="pase-pos-tag ${pair.tagFrom}" style="font-size:9px; padding:2px 7px; margin:0;">${pair.tagFrom.toUpperCase()}</span>
+        <span class="pase-pos-tag ${pair.tagFrom}" style="font-size:10px; padding:2px 7px; margin:0;">${pair.tagFrom.toUpperCase()}</span>
         →
-        <span class="pase-pos-tag ${pair.tagTo}" style="font-size:9px; padding:2px 7px; margin:0;">${pair.tagTo.toUpperCase()}</span>
+        <span class="pase-pos-tag ${pair.tagTo}" style="font-size:10px; padding:2px 7px; margin:0;">${pair.tagTo.toUpperCase()}</span>
         <br><span style="font-size:11px; color:var(--text-3);">${pair.label}</span>
       </td>
       <td style="font-family:var(--mono); font-weight:600;">${pair.days}</td>
@@ -587,7 +579,7 @@ function paseRenderCarry(pairs, calcs, inp) {
     <div class="pase-reading-card gold">
       <div class="pase-reading-lbl">Devaluación Implícita</div>
       <div class="pase-reading-val" style="color:var(--es-gold);">${calc.tasaTCimpl.toFixed(1)}%</div>
-      <div class="pase-reading-sub">TNA esperada en ROFEX</div>
+      <div class="pase-reading-sub">${(calc.tasaTCimpl > 80 || calc.tasaTCimpl < 0) ? '⚠ Valor atípico: revisá el TC spot y futuro cargados' : 'TNA esperada en ROFEX'}</div>
     </div>
   `;
 
@@ -677,7 +669,7 @@ function paseRenderStrategies(pairs, calcs, inp) {
     <div style="border-bottom: 1px solid var(--border); background: transparent;">
       <div style="display:grid; grid-template-columns: 2fr 0.5fr 1fr 1.5fr; gap: 12px; align-items: center; padding: 14px 16px;">
         <div>
-          <div style="font-weight:700; font-size:13px; color: var(--text-2);">${s.name} ${isBase ? '<span style="font-size:9px; background:var(--bg-input); padding:2px 6px; border-radius:4px; margin-left:6px; color:var(--text-3);">BENCHMARK</span>' : ''} ${s.riskTC ? '<span style="font-size:9px; background:#fff3cd; padding:2px 6px; border-radius:4px; margin-left:4px; color:var(--amber);">⚠ TC</span>' : ''}</div>
+          <div style="font-weight:700; font-size:13px; color: var(--text-2);">${s.name} ${isBase ? '<span style="font-size:10px; background:var(--bg-input); padding:2px 6px; border-radius:4px; margin-left:6px; color:var(--text-3);">BENCHMARK</span>' : ''} ${s.riskTC ? '<span style="font-size:10px; background:#fff3cd; padding:2px 6px; border-radius:4px; margin-left:4px; color:var(--amber);">⚠ TC</span>' : ''}</div>
           <div style="font-size:11px; color:var(--text-3); margin-top:2px;">${s.desc}</div>
         </div>
         <div style="text-align:center;"><span style="font-size:10px; color:${catColor}; font-weight:700;">${catLabel}</span></div>
