@@ -120,7 +120,7 @@ function getFOBForCultivo(cultivo, posicion) {
     // Convertir código A3 (MAY26) a formato Sheet (MAY 2026)
     const m = String(posicion).match(/([A-Z]{3})(\d{2})/);
     if (m) {
-      const mesLabel = (m[1] === 'DIS' ? 'DIC' : m[1]) + ' 20' + m[2];
+      const mesLabel = m[1] + ' 20' + m[2];
       if (fobData[mesLabel] && fobData[mesLabel][key] > 0) {
         return fobData[mesLabel][key];
       }
@@ -148,7 +148,7 @@ function applyFOBToRetenciones() {
   function toLabel(pos) {
     if (!pos) return '';
     const m = String(pos).toUpperCase().match(/([A-Z]{3})(\d{2})/);
-    if (m) return (m[1] === 'DIS' ? 'DIC' : m[1]) + ' 20' + m[2];   // A3 usa DIS; el Sheet FOB, DIC
+    if (m) return m[1] + ' 20' + m[2];
     // Already in label format like "JUL 2026"
     return String(pos).toUpperCase();
   }
@@ -232,9 +232,10 @@ function normalizeSheetData(data) {
     const byPos = {};
     data.futuros[crop].forEach(f => {
       const cur = byPos[f.pos];
-      const better = !cur
-        || (f.precio > 0 && !(cur.precio > 0))
-        || (f.precio > 0 && (f.ia || 0) > (cur.ia || 0));
+      // Preferencia: con precio > contrato estándar (no MINI) > más interés abierto
+      const score = x => (x.precio > 0 ? 4 : 0) + (/\.MIN\//.test(x.contrato || '') ? 0 : 2);
+      const better = !cur || score(f) > score(cur)
+        || (score(f) === score(cur) && (f.ia || 0) > (cur.ia || 0));
       if (better) byPos[f.pos] = f;
     });
     data.futuros[crop] = Object.values(byPos).sort((a, b) => posSortKey(a.pos) - posSortKey(b.pos));
@@ -248,6 +249,10 @@ function normalizeSheetData(data) {
       });
     });
   });
+  // TC implícito del grano: disponible en pesos / disponible en dólares (soja primero).
+  data.disponible = data.disponible || {};
+  const tcs = ['soja', 'maiz', 'trigo'].map(c => data.disponible[c]).filter(d => d && d.usd > 0 && d.ars > 0).map(d => d.ars / d.usd);
+  data.tcGrano = tcs.length ? tcs[0] : null;
   return data;
 }
 
@@ -289,6 +294,7 @@ function parseSheetCSV(csvText) {
 
   const futuros = {};
   const opciones = {};
+  const disponible = {};
   let fechaDatos = '';
 
   function parseNum(val) {
@@ -318,10 +324,19 @@ function parseSheetCSV(csvText) {
       fechaDatos = (row[col.fechaDatos] || '').trim();
     }
 
-    if (moneda !== 'USD') continue;
-
     const info = parseContrato(contrato);
     if (!info) continue;
+
+    // "DIS" en A3 es el DISPONIBLE (p.ej. SOJ.ROS/DIS26 = soja disponible Rosario),
+    // no diciembre (diciembre es DIC). Se guarda aparte, en u$s y en pesos.
+    if (/^DIS/.test(info.pos) && !info.optType) {
+      const d = disponible[info.crop] = disponible[info.crop] || {};
+      if (moneda === 'USD' && ajuste > 0) d.usd = ajuste;
+      else if (moneda === 'ARS' && ajuste > 0) d.ars = ajuste;
+      continue;
+    }
+
+    if (moneda !== 'USD') continue;
 
     if (tipo.toLowerCase().includes('futuro')) {
       if (!futuros[info.crop]) futuros[info.crop] = [];
@@ -351,7 +366,7 @@ function parseSheetCSV(csvText) {
     });
   });
 
-  return normalizeSheetData({ futuros, opciones, fechaDatos });
+  return normalizeSheetData({ futuros, opciones, fechaDatos, disponible });
 }
 
 async function syncFromSheet() {
@@ -434,6 +449,7 @@ function parseGvizResponse(table) {
 
   const futuros = {};
   const opciones = {};
+  const disponible = {};
   let fechaDatos = '';
 
   function cellVal(row, idx) {
@@ -469,10 +485,19 @@ function parseGvizResponse(table) {
       if (fd) fechaDatos = fd;
     }
 
-    if (moneda !== 'USD') continue;
-
     const info = parseContrato(contrato);
     if (!info) continue;
+
+    // "DIS" en A3 es el DISPONIBLE (p.ej. SOJ.ROS/DIS26 = soja disponible Rosario),
+    // no diciembre (diciembre es DIC). Se guarda aparte, en u$s y en pesos.
+    if (/^DIS/.test(info.pos) && !info.optType) {
+      const d = disponible[info.crop] = disponible[info.crop] || {};
+      if (moneda === 'USD' && ajuste > 0) d.usd = ajuste;
+      else if (moneda === 'ARS' && ajuste > 0) d.ars = ajuste;
+      continue;
+    }
+
+    if (moneda !== 'USD') continue;
 
     if (tipo.toLowerCase().includes('futuro')) {
       if (!futuros[info.crop]) futuros[info.crop] = [];
@@ -496,7 +521,7 @@ function parseGvizResponse(table) {
     });
   });
 
-  return normalizeSheetData({ futuros, opciones, fechaDatos });
+  return normalizeSheetData({ futuros, opciones, fechaDatos, disponible });
 }
 
 function applySheetData() {
@@ -514,8 +539,24 @@ function applySheetData() {
   updateMarketPositions();
   updateAssetSelectSpots();
 
+  applyA3AutoFields();
   if (retMode) retChangeCultivo();
   if (paseMode) { paseUpdatePositions(); paseCalc(); }
+}
+
+// Completa desde A3 los campos que antes eran fijos: TC spot (implícito del grano:
+// disponible en $ / disponible en u$s) en Pases y Fondeo, y precio del futuro y
+// disponible en Fondeo. Los que el usuario editó a mano (data-manual) no se tocan.
+function applyA3AutoFields() {
+  if (!sheetData) return;
+  const tc = sheetData.tcGrano;
+  if (tc > 0) {
+    ['pase-tc-spot', 'fondeo-tc-spot'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.dataset.manual !== '1') el.value = Math.round(tc);
+    });
+  }
+  if (typeof fondeoAutoFromA3 === 'function') fondeoAutoFromA3();
 }
 
 function updateMarketPositions() {

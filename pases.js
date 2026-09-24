@@ -22,8 +22,11 @@ function paseSetGrain(grain, event) {
   paseGrain = grain;
   document.querySelectorAll('.pase-chip').forEach(c => c.classList.remove('active'));
   event.target.classList.add('active');
+  // Al cambiar de grano se recalculan los defaults (disponible y posiciones de ese grano)
+  ['pase-p1-price', 'pase-p2-price', 'pase-p3-price'].forEach(id => { document.getElementById(id).value = ''; });
   paseUpdatePositions();
   paseCalc();
+  if (typeof fondeoCalc === 'function') fondeoCalc();
 }
 
 function paseEstimateDate(posCode) {
@@ -57,7 +60,8 @@ function paseUpdatePositions() {
     const prevVal = sel.value;
     
     // Opción Disponible (spot de hoy) — siempre presente, precio manual
-    const dispOpt = '<option value="DISP" data-precio="">Disponible (spot hoy)</option>';
+    const dp = paseDisponible();
+    const dispOpt = `<option value="DISP" data-precio="${dp || ''}">Disponible (spot hoy)${dp ? ' — ' + dp.toFixed(1) + ' u$s' : ''}</option>`;
     
     if (!positions || positions.length === 0) {
       sel.innerHTML = dispOpt + '<option value="">⚠ Sincronizar A3</option>';
@@ -80,22 +84,42 @@ function paseUpdatePositions() {
     const sel1 = document.getElementById('pase-p1-sel');
     const sel2 = document.getElementById('pase-p2-sel');
     const sel3 = document.getElementById('pase-p3-sel');
-    
-    // +1 en los índices porque la opción "Disponible" ocupa el índice 0.
-    // Así los defaults siguen apuntando a los futuros reales (igual que antes).
+
+    // Defaults: Posición 1 = Disponible (si A3 trae precio disponible); si no, el primer futuro.
+    // Posiciones 2 y 3 = futuros que vencen en 15 días o más (la que está venciendo
+    // tiene poco interés abierto y distorsiona la tasa del pase).
+    const disp = paseDisponible();
+    const minIso = (() => { const d = new Date(); d.setDate(d.getDate() + 15); return d.toISOString().slice(0, 10); })();
+    const vigentes = positions.filter(p => paseFechaPos(p.posCode) >= minIso).map(p => p.posCode);
+    const idxDe = code => Array.from(sel2.options).findIndex(o => o.value === code);
+
     if (!document.getElementById('pase-p1-price').value) {
-      sel1.selectedIndex = 1;
+      if (disp) sel1.value = 'DISP'; else sel1.selectedIndex = 1;
       paseOnPosChange(1);
     }
     if (!document.getElementById('pase-p2-price').value) {
-      sel2.selectedIndex = Math.min(2, positions.length);
+      const code = disp ? vigentes[0] : vigentes[1];
+      if (code) sel2.selectedIndex = idxDe(code); else sel2.selectedIndex = Math.min(2, positions.length);
       paseOnPosChange(2);
     }
     if (!document.getElementById('pase-p3-price').value && positions.length >= 3) {
-      sel3.selectedIndex = Math.min(3, positions.length);
+      const code = disp ? vigentes[1] : vigentes[2];
+      if (code) sel3.selectedIndex = idxDe(code); else sel3.selectedIndex = Math.min(3, positions.length);
       paseOnPosChange(3);
     }
   }
+}
+
+// Precio disponible (u$s/tn) del grano seleccionado, desde A3. null si A3 no lo trae.
+function paseDisponible() {
+  const d = (typeof sheetData !== 'undefined' && sheetData && sheetData.disponible) ? sheetData.disponible[paseGrain] : null;
+  return d && d.usd > 0 ? d.usd : null;
+}
+
+// Fecha de vencimiento (YYYY-MM-DD) de una posición: la de A3 o, si falta, fin de mes.
+function paseFechaPos(posCode) {
+  const f = (sheetData && sheetData.futuros[paseGrain] || []).find(x => x.pos === posCode);
+  return (f && f.vto && paseParseVto(f.vto)) || paseEstimateDate(posCode);
 }
 
 function paseOnPosChange(posNum) {
@@ -105,15 +129,16 @@ function paseOnPosChange(posNum) {
   
   if (!sel.value) return;
   
-  // ─── Disponible (spot): fecha = hoy, precio cargado a mano ───
+  // ─── Disponible (spot): fecha = hoy, precio de A3 (o a mano si A3 no lo trae) ───
   if (sel.value === 'DISP') {
     const hoy = new Date();
     const yyyy = hoy.getFullYear();
     const mm = String(hoy.getMonth() + 1).padStart(2, '0');
     const dd = String(hoy.getDate()).padStart(2, '0');
     dateInput.value = `${yyyy}-${mm}-${dd}`;
-    priceInput.value = '';   // limpio para que cargues el disponible real
-    priceInput.focus();
+    const disp = paseDisponible();
+    if (disp) priceInput.value = disp;
+    else { priceInput.value = ''; priceInput.focus(); }   // sin dato en A3: cargalo a mano
     paseCalc();
     return;
   }

@@ -23,6 +23,14 @@ function renderAll() {
 
 // Cada paso del arranque es independiente: si uno falla, los demás siguen.
 window.onload = () => {
+  // Valores manuales guardados (tasas, dólar futuro, etc.) antes de cualquier cálculo
+  if (typeof paramsRestore === 'function') paramsRestore();
+  // Campos que se completan desde A3: si el usuario los edita, se respeta su valor.
+  // Se escucha en fase de captura para marcarlo ANTES de que corra el oninput del campo.
+  const autoA3 = ['pase-tc-spot', 'fondeo-tc-spot', 'fondeo-precio-usd', 'fondeo-disp'];
+  document.addEventListener('input', e => {
+    if (e.target && autoA3.includes(e.target.id)) e.target.dataset.manual = '1';
+  }, true);
   syncTopBar();
   renderAll();
   Promise.resolve()

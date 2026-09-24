@@ -220,8 +220,39 @@ function fondeoCalcOpciones(inp, im) {
   return ops;
 }
 
+// ─── Datos de A3 ───
+// Precio del futuro: el del grano elegido (chips de Pases) cuyo vencimiento es igual o
+// posterior a la fecha de repago. Disponible: precio disponible de A3. Si el usuario
+// edita alguno de esos campos (data-manual), se respeta su valor.
+function fondeoAutoFromA3() {
+  if (typeof sheetData === 'undefined' || !sheetData) return;
+  const crop = (typeof paseGrain !== 'undefined' && paseGrain) || 'soja';
+  const nombre = { soja: 'Soja', maiz: 'Maíz', trigo: 'Trigo', girasol: 'Girasol' }[crop] || crop;
+  const pEl = document.getElementById('fondeo-precio-usd');
+  const src = document.getElementById('fondeo-precio-src');
+  if (pEl && pEl.dataset.manual !== '1') {
+    const fecha = (document.getElementById('fondeo-fecha') || {}).value || '';
+    const futs = (sheetData.futuros[crop] || []).filter(f => f.precio > 0)
+      .map(f => ({ f, vto: (f.vto && paseParseVto(f.vto)) || paseEstimateDate(f.pos) }));
+    const elegido = (fecha && futs.find(x => x.vto >= fecha)) || futs[futs.length - 1];
+    if (elegido) {
+      pEl.value = elegido.f.precio;
+      if (src) src.textContent = `${nombre} ${elegido.f.pos} · A3`;
+    } else if (src) src.textContent = `${nombre}: sin futuros en A3`;
+  } else if (src) src.textContent = 'valor cargado a mano';
+
+  const dEl = document.getElementById('fondeo-disp');
+  const cur = document.getElementById('fondeo-disp-cur');
+  const disp = sheetData.disponible && sheetData.disponible[crop];
+  if (dEl && dEl.dataset.manual !== '1' && disp) {
+    if (cur && cur.value === 'ars' && disp.ars) dEl.value = disp.ars;
+    else if (disp.usd) { dEl.value = disp.usd; if (cur) cur.value = 'usd'; }
+  }
+}
+
 // ─── Render ───
 function fondeoCalc() {
+  fondeoAutoFromA3();
   const inp = fondeoGetInputs();
   const derEl = document.getElementById('fondeo-derived');
   const kpiEl = document.getElementById('fondeo-kpis');

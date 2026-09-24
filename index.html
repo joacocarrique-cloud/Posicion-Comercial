@@ -477,14 +477,15 @@
       <button class="pase-subtab" id="pase-subtab-fondeo" onclick="fondeoShow()">Fondeo</button>
     </div>
 
-    <div id="pase-main-block">
-
+    <!-- El grano elegido aplica a Pases y a Fondeo (precios y disponible de A3) -->
     <div class="pase-grain-chips" id="pase-grain-chips">
       <button class="pase-chip active" onclick="paseSetGrain('soja', event)">Soja</button>
       <button class="pase-chip" onclick="paseSetGrain('maiz', event)">Maíz</button>
       <button class="pase-chip" onclick="paseSetGrain('trigo', event)">Trigo</button>
       <button class="pase-chip" onclick="paseSetGrain('girasol', event)">Girasol</button>
     </div>
+
+    <div id="pase-main-block">
 
     <div class="pase-pos-grid" id="pase-pos-grid">
       <div class="pase-pos-card" id="pase-pos-1">
@@ -513,15 +514,15 @@
 
     <div class="pase-params-grid">
       <div class="pase-params-card">
-        <div class="pase-params-title">Tipo de cambio</div>
+        <div class="pase-params-title">Tipo de cambio <span class="params-saved">· spot desde A3, futuro se guarda</span></div>
         <div class="pase-params-row">
-          <div class="field"><label>TC Spot (ARS/USD)</label><input type="number" id="pase-tc-spot" value="1480" step="1" oninput="paseCalc()"></div>
+          <div class="field"><label>TC Spot (ARS/USD) · A3</label><input type="number" id="pase-tc-spot" value="1480" step="1" oninput="paseCalc()" title="Se completa con el TC implícito del grano en A3 (disponible en $ / disponible en u$s). Si lo editás, queda tu valor hasta recargar."></div>
           <div class="field"><label>TC Futuro Pos 2 (ROFEX)</label><input type="number" id="pase-tc-fut2" value="1555" step="1" oninput="paseCalc()" title="Cargá el dólar futuro ROFEX al vencimiento de la posición 2"></div>
           <div class="field" id="pase-tc-fut3-field" style="display:none;"><label>TC Futuro Pos 3 (ROFEX)</label><input type="number" id="pase-tc-fut3" value="1630" step="1" oninput="paseCalc()" title="Cargá el dólar futuro ROFEX al vencimiento de la posición 3"></div>
         </div>
       </div>
       <div class="pase-params-card">
-        <div class="pase-params-title">Tasas de referencia y crédito</div>
+        <div class="pase-params-title">Tasas de referencia y crédito <span class="params-saved">· se guardan en este navegador</span></div>
         <div class="pase-params-row">
           <div class="field"><label>Crédito u$s (TNA %)</label><input type="number" id="pase-tasa-credito-usd" value="8.0" step="0.1" oninput="paseCalc()" style="font-weight:700; border: 2px solid var(--es-green); background: var(--es-green-light); color: var(--es-green-dark);"></div>
           <div class="field"><label>Crédito ARS (TNA %)</label><input type="number" id="pase-tasa-credito-ars" value="40.0" step="0.1" oninput="paseCalc()" style="font-weight:700; border: 2px solid var(--es-gold); background: var(--es-gold-light); color: #96700e;"></div>
@@ -597,12 +598,13 @@
           <div class="pase-params-title">Precios y tipo de cambio</div>
           <div class="fondeo-fields">
             <div class="field">
-              <label>Futuro MATBA (u$s/tn)</label>
-              <input type="number" id="fondeo-precio-usd" value="215" step="0.1" oninput="fondeoCalc()">
+              <label>Futuro MATBA (u$s/tn) · A3</label>
+              <input type="number" id="fondeo-precio-usd" value="215" step="0.1" oninput="fondeoCalc()" title="Se completa con el futuro de A3 que vence en la fecha de repago o después. Si lo editás, queda tu valor hasta recargar.">
+              <span id="fondeo-precio-src" style="font-size:10.5px;color:var(--text-3);font-family:var(--mono);"></span>
             </div>
             <div class="field">
-              <label>TC Spot (ARS/USD)</label>
-              <input type="number" id="fondeo-tc-spot" value="1480" step="1" oninput="fondeoCalc()">
+              <label>TC Spot (ARS/USD) · A3</label>
+              <input type="number" id="fondeo-tc-spot" value="1480" step="1" oninput="fondeoCalc()" title="Se completa con el TC implícito del grano en A3. Si lo editás, queda tu valor hasta recargar.">
             </div>
             <div class="field">
               <label>TC Futuro ROFEX</label>
@@ -631,7 +633,7 @@
         </div>
 
         <div class="pase-params-card">
-          <div class="pase-params-title">Tasas todo-costo (TNA, con gastos, sellos e IVA)</div>
+          <div class="pase-params-title">Tasas todo-costo (TNA, con gastos, sellos e IVA) <span class="params-saved">· se guardan en este navegador</span></div>
           <div class="fondeo-fields">
             <div class="field"><label>Crédito u$s (TNA %)</label><input type="number" id="fondeo-r-usd" value="9.0" step="0.1" oninput="fondeoCalc()" style="font-weight:700; border:2px solid var(--es-green); background:var(--es-green-light); color:var(--es-green-dark);"></div>
             <div class="field"><label>Crédito ARS (TNA %)</label><input type="number" id="fondeo-r-ars" value="38.0" step="0.1" oninput="fondeoCalc()" style="font-weight:700; border:2px solid var(--es-gold); background:var(--es-gold-light); color:#96700e;"></div>

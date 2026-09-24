@@ -87,7 +87,7 @@ const MONTH_LABELS = {
   'ENE': 'Enero', 'FEB': 'Febrero', 'MAR': 'Marzo', 'ABR': 'Abril',
   'MAY': 'Mayo', 'JUN': 'Junio', 'JUL': 'Julio', 'AGO': 'Agosto',
   'SEP': 'Septiembre', 'OCT': 'Octubre', 'NOV': 'Noviembre',
-  'DIC': 'Diciembre', 'DIS': 'Diciembre'
+  'DIC': 'Diciembre', 'DIS': 'Disponible'   // en A3, DIS = disponible (no diciembre)
 };
 
 // ─── Default tab template ───
@@ -158,11 +158,12 @@ function getRetencion(cultivo, year, month) {
   return val;
 }
 
-// Parsea etiqueta de posición tipo 'MAY27' / 'NOV26' / 'DIS26' → {year, month}
+// Parsea etiqueta de posición tipo 'MAY27' / 'NOV26' → {year, month}.
+// 'DIS26' devuelve null: en A3 es el disponible, no una posición mensual.
 function parsePosLabel(label) {
   const m = String(label || '').trim().toUpperCase().match(/^([A-Z]{3})\s*'?(\d{2})$/);
   if (!m) return null;
-  const mes = (m[1] === 'DIS') ? 12 : ASST_MES[m[1]];
+  const mes = ASST_MES[m[1]];
   if (!mes) return null;
   return { year: 2000 + parseInt(m[2], 10), month: mes };
 }
@@ -181,7 +182,7 @@ function escHtml(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-// Clave de orden cronológico para códigos de posición tipo 'NOV26' / 'DIS26'.
+// Clave de orden cronológico para códigos de posición tipo 'NOV26' / 'MAY27'.
 function posSortKey(code) {
   const p = parsePosLabel(code);
   return p ? p.year * 100 + p.month : 999999;
