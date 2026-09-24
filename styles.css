@@ -478,6 +478,35 @@ body {
 .rs-pcard-s { font-size: 11px; color: var(--text-3); margin-bottom: 6px; }
 .rs-pcard-row { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--text-2); border-top: 1px dashed var(--border); padding-top: 4px; margin-top: 4px; }
 .rs-pcard-row b { font-family: var(--mono); font-weight: 600; color: var(--text); }
+/* Desvío: panel fijo de Precios Objetivo / Dolor */
+.dv-refs-panel { margin: 4px 0 18px; }
+.dv-refs-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-2); margin-bottom: 8px; }
+.dv-refs-title span { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--text-3); font-size: 11px; }
+.dv-refs-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 1000px) { .dv-refs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.dv-ref-card { text-align: left; font: inherit; cursor: pointer; background: var(--bg-card); border: 1px solid var(--border); border-top: 4px solid var(--border-2); border-radius: 10px; padding: 10px 12px; box-shadow: var(--shadow); transition: border-color .15s; }
+.dv-ref-card:hover { border-color: var(--es-green); }
+.dv-ref-card.ok { border-top-color: var(--green); background: #f2faf5; }
+.dv-ref-card.bad { border-top-color: var(--red); background: #fdf3f3; }
+.dv-ref-card-h { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+.dv-ref-card-h b { font: 700 15px var(--mono); }
+.dv-ref-card-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-2); padding: 3px 0; border-top: 1px dashed var(--border); }
+.dv-ref-card-row i { display: inline-block; width: 12px; height: 2px; margin-right: 6px; vertical-align: middle; }
+.dv-ref-card-row b { font-family: var(--mono); color: var(--text); }
+.dv-ref-card-e { font-size: 11px; font-weight: 600; color: var(--text-3); margin-top: 5px; }
+.dv-ref-card.ok .dv-ref-card-e { color: var(--green); }
+.dv-ref-card.bad .dv-ref-card-e { color: var(--red); }
+
+/* Filas desplegables (Relaciones / Desvío): click → mini gráfico */
+.rs-table tr.rs-click { cursor: pointer; }
+.rs-table tr.rs-click:hover td { background: var(--bg-input); }
+.rs-caret { display: inline-block; width: 14px; color: var(--es-green); transition: transform .15s; }
+.rs-table tr.rs-click.open .rs-caret { transform: rotate(90deg); }
+.rs-table tr.rs-click.open td { background: var(--es-green-light); }
+.rs-table tr.rs-det td { background: #fbfcf9; padding: 10px 12px 12px; text-align: left; white-space: normal; }
+.rs-det-wrap { position: relative; height: 220px; }
+.rs-det-note { font-size: 11px; color: var(--text-3); margin-top: 6px; font-family: var(--font); }
+
 /* Mercado: tarjetas con mini gráfico de 30 días */
 .rs-mcards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 @media (max-width: 900px) { .rs-mcards { grid-template-columns: minmax(0, 1fr); } }

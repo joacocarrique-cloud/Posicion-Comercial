@@ -27,16 +27,20 @@ const RS_REGLAS = {
     variacionDestacadaPct: 5,     // |variación 30 días| ≥ 5% → comentario
   },
 
-  // ─── Coberturas ───
+  // ─── Coberturas propuestas ───
+  // Para cada posición con Precio Objetivo / Dolor (PRECIOS_REFERENCIA en globals.js) se arman
+  // 3 estructuras con las primas de A3:
+  //   1) Put al precio dolor           → seguro puro, sin techo
+  //   2) Collar dolor / objetivo       → compra put al dolor, vende call al objetivo
+  //   3) Put spread desde el futuro    → compra put cerca del futuro, vende put debajo del dolor
+  // Si falta el objetivo o el dolor, se usan estos % sobre el futuro como referencia:
   coberturas: {
-    maxEstrategiasPorSolapa: 4,   // se toman las de mayor volumen
-    escenarioPct: 15,             // escenarios de baja / suba para comparar estrategias (±%)
+    dolorPctDefault: 8,           // dolor = futuro × (1 − 8%)
+    objetivoPctDefault: 10,       // objetivo = futuro × (1 + 10%)
     costoCaroPct: 3.0,            // prima neta > 3% del futuro → cara
-    costoBaratoPct: 1.0,          // prima neta < 1% del futuro → barata
-    pisoLejanoPct: 10,            // piso más de 10% debajo del futuro → protección lejana
-    techoPegadoPct: 5,            // techo a menos de 5% del futuro → resigna casi toda la suba
-    diasVencAlerta: 30,           // menos de 30 días al vencimiento → decidir rolleo / cierre
-    diasVencAviso: 60,
+    viBarataPercentil: 30,        // VI ≤ P30 → conviene comprar opciones (put)
+    viCaraPercentil: 70,          // VI ≥ P70 → conviene financiar vendiendo prima (collar / spread)
+    diasVencAlerta: 30,           // menos de 30 días al vencimiento → aviso
   },
 
   // ─── Volatilidad ───
@@ -72,13 +76,13 @@ const RS_REGLAS = {
     // tipo 'ratio' = precio1 / precio2 · tipo 'spread' = precio1 − precio2 · carry: true = spread de almacenaje
     // desfase = año de la posición 2 − año de la posición 1
     pares: [
-      { id: 'soja_maiz',  nombre: 'Soja / Maíz',  tipo: 'ratio',  c1: 'soja',  m1: 'MAY', c2: 'maiz',  m2: 'ABR', desfase: 0,
+      { id: 'soja_maiz',  nombre: 'Soja MAY / Maíz ABR',  tipo: 'ratio',  c1: 'soja',  m1: 'MAY', c2: 'maiz',  m2: 'ABR', desfase: 0,
         alta: 'La soja está cara en relación al maíz: priorizar ventas / coberturas de soja.',
         baja: 'El maíz está caro en relación a la soja: priorizar ventas / coberturas de maíz.' },
-      { id: 'trigo_maiz', nombre: 'Trigo / Maíz', tipo: 'ratio',  c1: 'trigo', m1: 'DIC', c2: 'maiz',  m2: 'ABR', desfase: 1,
+      { id: 'trigo_maiz', nombre: 'Trigo DIC / Maíz ABR', tipo: 'ratio',  c1: 'trigo', m1: 'DIC', c2: 'maiz',  m2: 'ABR', desfase: 1,
         alta: 'El trigo está caro en relación al maíz: priorizar ventas de trigo.',
         baja: 'El maíz está caro en relación al trigo: priorizar ventas de maíz.' },
-      { id: 'trigo_soja', nombre: 'Trigo / Soja', tipo: 'ratio',  c1: 'trigo', m1: 'DIC', c2: 'soja',  m2: 'MAY', desfase: 1,
+      { id: 'trigo_soja', nombre: 'Trigo DIC / Soja MAY', tipo: 'ratio',  c1: 'trigo', m1: 'DIC', c2: 'soja',  m2: 'MAY', desfase: 1,
         alta: 'El trigo está caro en relación a la soja: priorizar ventas de trigo.',
         baja: 'La soja está cara en relación al trigo: priorizar ventas de soja.' },
       { id: 'soja_vieja_nueva', nombre: 'Soja NOV − MAY (vieja vs nueva)', tipo: 'spread', c1: 'soja', m1: 'NOV', c2: 'soja', m2: 'MAY', desfase: 1,

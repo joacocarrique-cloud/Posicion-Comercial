@@ -149,7 +149,7 @@ function rsMercado() {
 }
 
 // ═══════════════════════════════════════════════════
-// 2) COBERTURAS — todas las solapas
+// 2) COBERTURAS PROPUESTAS (posiciones con Precio Objetivo / Dolor)
 // ═══════════════════════════════════════════════════
 
 // Métricas de una estrategia a un precio de futuro F (independiente de la solapa activa)
@@ -179,88 +179,102 @@ function rsStratMetrics(s, F) {
   return { cost, piso, pisoHasta, techo, be: bes.length === 1 ? bes[0] : null, bes, ratioDescubierto: shortPutQ > longPutQ };
 }
 
-// Valor de mercado hoy de la estructura (primas actuales) vs lo pagado/cobrado al armarla
-function rsMarkToMarket(s, crop, pos, F) {
-  let actual = 0, entrada = 0;
-  for (const l of s.legs) {
-    const q = (l.ratio || 1) * (l.dir === 'buy' ? 1 : -1);
-    if (l.type === 'futuro') { actual += q * (F - l.strike); continue; }
-    const pm = rsPrimaMkt(crop, pos, l.type, l.strike);
-    if (pm == null) return null;
-    actual += q * pm; entrada += q * l.prima;
-  }
-  return actual - entrada; // u$s/tn
+// Strike con prima > 0 más cercano a k. dir: 'ge' (≥ k), 'le' (≤ k) o cualquiera.
+function rsStrikeCerca(lista, k, dir) {
+  const conPrima = (lista || []).filter(o => o.prima > 0);
+  const ok = conPrima.filter(o => dir === 'ge' ? o.strike >= k : dir === 'le' ? o.strike <= k : true);
+  return (ok.length ? ok : conPrima).reduce((b, o) => (!b || Math.abs(o.strike - k) < Math.abs(b.strike - k)) ? o : b, null);
 }
 
+// Para cada posición con Precio Objetivo / Dolor arma 3 coberturas con las primas de A3
+// y recomienda una según el costo, la volatilidad implícita y dónde está el precio.
 function rsCoberturas() {
   const R = RS_REGLAS.coberturas;
-  const sec = { id: 'coberturas', titulo: 'Coberturas', hallazgos: [], html: '' };
-  const pct = R.escenarioPct / 100;
+  const sec = { id: 'coberturas', titulo: 'Coberturas propuestas', hallazgos: [], html: '' };
+  if (!sheetData) return sec;
+  const mes = new Date().getMonth() + 1;
   let html = '';
-  let hayAlguna = false;
 
-  tabs.forEach(t => {
-    const strats = (t.strategies || []).filter(s => s.legs && s.legs.length);
-    if (!strats.length) return;
-    hayAlguna = true;
-    const crop = t.assetVal, pos = t.pos || '';
-    const F = rsFut(crop, pos) || t.spot;
-    const dte = rsDte(pos);
-    const sel = strats.slice().sort((a, b) => getStratVol(b) - getStratVol(a)).slice(0, R.maxEstrategiasPorSolapa);
-    const etiqueta = `${escHtml(t.name)} · ${rsCrop(crop)} ${pos || ''}`.trim();
-    const pDn = F * (1 - pct), pUp = F * (1 + pct);
-
-    // Vencimiento (uno por solapa)
-    if (dte != null) {
-      if (dte < 0) sec.hallazgos.push(rsHall('alerta', 70, `${etiqueta}: posición vencida`, `La posición ${pos} ya venció. Las estrategias de esta solapa no tienen vigencia.`, 'Días al vencimiento < 0', 'Cerrar la solapa o pasar las estrategias a otra posición.'));
-      else if (dte < R.diasVencAlerta) sec.hallazgos.push(rsHall('alerta', 65, `${etiqueta}: vence en ${dte} días`, `Quedan ${dte} días al vencimiento de las opciones de ${pos}; el theta se acelera y el tiempo juega en contra de lo comprado.`, `Días al vencimiento < ${R.diasVencAlerta}`, 'Decidir si se ejerce, se cierra o se rollea a la próxima posición.'));
-      else if (dte < R.diasVencAviso) sec.hallazgos.push(rsHall('info', 30, `${etiqueta}: vence en ${dte} días`, `Las opciones de ${pos} entran en la zona de aceleración del theta.`, `Días al vencimiento < ${R.diasVencAviso}`, 'Planificar rolleo / cierre.'));
+  Object.keys(PRECIOS_REFERENCIA).forEach(key => {
+    const [crop, mesPos] = key.split('|');
+    const px = rsProxPos(crop, mesPos);
+    const F = px.fut;
+    const chain = (sheetData.opciones[crop] || {})[px.pos];
+    const titulo = `${rsCrop(crop)} ${px.pos}`;
+    if (!F || !chain) {
+      html += `<div class="rs-sub">${titulo} <span>sin ${!F ? 'futuro' : 'opciones'} en A3</span></div>`;
+      return;
     }
+    const refs = PRECIOS_REFERENCIA[key];
+    const tieneRefs = refs.obj > 0 && refs.dol > 0;
+    const dolor = refs.dol > 0 ? refs.dol : F * (1 - R.dolorPctDefault / 100);
+    const objetivo = refs.obj > 0 ? refs.obj : F * (1 + R.objetivoPctDefault / 100);
+    const exp = asstExpiry(px.pos);
+    const dte = exp ? asstDays(new Date(), exp) : null;
+    const T = dte > 0 ? dte / 365 : null;
+    const vi = (o, tp) => (T && o) ? asstIV(o.prima, F, o.strike, T, 0.05, tp) * 100 : NaN;
 
-    const filas = [];
-    sel.forEach(s => {
-      const m = rsStratMetrics(s, F);
-      const vol = getStratVol(s);
-      const costPct = F > 0 ? m.cost / F * 100 : 0;
-      const nom = escHtml(s.name);
-      const mtm = rsMarkToMarket(s, crop, pos, F);
-      filas.push({ s, m, vol, mtm, dn: calcPayoff(s, pDn), sp: calcPayoff(s, F), up: calcPayoff(s, pUp) });
+    // Contexto de volatilidad: VI del put más cercano al futuro vs historia y vs realizada
+    const atm = rsStrikeCerca(chain.puts, F);
+    const viAtm = vi(atm, 'put');
+    const perc = ASST_VI_PERC.find(v => v.cultivo === crop && v.mes === mes);
+    const pr = isFinite(viAtm) ? rsPercVi(viAtm, perc) : null;
+    const hv = ASST_VIVHV.filter(r => r.cultivo === crop);
+    const lh = hv[hv.length - 1];
+    const viHv = (lh && lh.hv_20d > 0 && isFinite(viAtm)) ? viAtm / lh.hv_20d : null;
 
-      if (s.legs.some(l => l.estimada)) sec.hallazgos.push(rsHall('alerta', 60, `${nom}: primas de referencia`, `Una o más patas no tienen prima en A3; el costo y el piso de "${nom}" son estimados.`, 'Pata sin prima de mercado', 'Revisar el strike o cargar la prima real.'));
-      if (m.cost > 0 && costPct > R.costoCaroPct) sec.hallazgos.push(rsHall('alerta', 50, `${nom}: cobertura cara`, `Cuesta u$s ${rsF(m.cost, 2)}/tn (${rsF(costPct)}% del futuro ${rsF(F)}).`, `Prima neta > ${R.costoCaroPct}% del futuro`, 'Evaluar abaratar con put spread o financiar con venta de call.'));
-      else if (m.cost > 0 && costPct < R.costoBaratoPct && s.legs.some(l => l.type === 'put' && l.dir === 'buy')) sec.hallazgos.push(rsHall('oportunidad', 35, `${nom}: protección barata`, `Cuesta solo u$s ${rsF(m.cost, 2)}/tn (${rsF(costPct)}% del futuro).`, `Prima neta < ${R.costoBaratoPct}% del futuro`, ''));
-      if (m.ratioDescubierto) sec.hallazgos.push(rsHall('alerta', 62, `${nom}: más puts vendidos que comprados`, `Por debajo de ${Math.min(...s.legs.filter(l => l.type === 'put' && l.dir === 'sell').map(l => l.strike))} la pérdida se amplifica.`, 'Puts vendidos > puts comprados', 'Confirmar que el volumen y las garantías lo soportan.'));
-      else if (m.pisoHasta != null && m.pisoHasta > F * 0.8) sec.hallazgos.push(rsHall('alerta', 45, `${nom}: protección hasta ${m.pisoHasta}`, `Asegura u$s ${rsF(m.piso)} mientras el futuro no baje de ${m.pisoHasta} (${rsF((1 - m.pisoHasta / F) * 100)}% abajo del actual); más abajo queda descubierta.`, 'Put vendido a menos de 20% del futuro', 'Aceptable si se considera improbable esa baja; si no, subir la franquicia.'));
-      else if (m.piso != null && m.pisoHasta == null && (F - m.piso) / F * 100 > R.pisoLejanoPct) sec.hallazgos.push(rsHall('alerta', 40, `${nom}: piso lejano`, `El piso (u$s ${rsF(m.piso)}) está ${rsF((F - m.piso) / F * 100)}% debajo del futuro.`, `Piso > ${R.pisoLejanoPct}% debajo del futuro`, 'Considerar un strike más alto si se busca proteger el margen.'));
-      if (m.techo != null && (m.techo - F) / F * 100 < R.techoPegadoPct) sec.hallazgos.push(rsHall('alerta', 50, `${nom}: techo pegado al precio`, `El techo (u$s ${rsF(m.techo)}) está a solo ${rsF((m.techo - F) / F * 100)}% del futuro: resigna casi toda la suba.`, `Techo < ${R.techoPegadoPct}% sobre el futuro`, 'Subir el strike del call vendido o evaluar una estructura sin techo.'));
-      if (m.techo != null && typeof asstWeatherNow === 'function' && asstWeatherNow()) sec.hallazgos.push(rsHall('alerta', 40, `${nom}: techo en weather market`, `Estamos en ventana de weather market (${asstWeatherLbl()}); un call vendido puede limitar una suba brusca.`, 'Call vendido en ventana climática', 'Monitorear de cerca el call vendido.'));
-      if (mtm != null && Math.abs(mtm) >= 0.5) sec.hallazgos.push(rsHall('info', 20, `${nom}: valor de mercado ${rsSigno(mtm, 2)} u$s/tn`, `Con las primas de hoy, la estructura vale ${rsSigno(mtm, 2)} u$s/tn contra lo pagado al armarla (${rsSigno(mtm * vol, 0)} u$s sobre ${rsF(vol, 0)} tn).`, 'Mark-to-market con primas A3', ''));
+    // Las 3 estructuras
+    const pD = rsStrikeCerca(chain.puts, dolor, 'ge');          // put al precio dolor
+    const cO = rsStrikeCerca(chain.calls, objetivo, 'ge');      // call al precio objetivo
+    const pF = rsStrikeCerca(chain.puts, F, 'le');              // put cerca del futuro
+    const pS = pF ? rsStrikeCerca(chain.puts.filter(o => o.strike < pF.strike), dolor - (F - dolor)) : null; // put vendido debajo del dolor
+    const leg = (dir, type, o) => ({ dir, type, ratio: 1, strike: o.strike, prima: o.prima });
+    const est = [];
+    if (pD) est.push({ id: 'put', nombre: `Put ${pD.strike}`, desc: 'Seguro al precio dolor, sin techo', legs: [leg('buy', 'put', pD)] });
+    if (pD && cO) est.push({ id: 'collar', nombre: `Collar ${pD.strike} / ${cO.strike}`, desc: 'Piso en el dolor, techo en el objetivo', legs: [leg('buy', 'put', pD), leg('sell', 'call', cO)] });
+    if (pF && pS) est.push({ id: 'spread', nombre: `Put spread ${pF.strike} / ${pS.strike}`, desc: 'Protege desde el futuro; franquicia debajo del dolor', legs: [leg('buy', 'put', pF), leg('sell', 'put', pS)] });
+    if (!est.length) return;
+    est.forEach(e => {
+      e.m = rsStratMetrics({ legs: e.legs }, F);
+      e.costPct = e.m.cost / F * 100;
+      e.alDolor = calcPayoff({ legs: e.legs }, dolor);
+      e.alObj = calcPayoff({ legs: e.legs }, objetivo);
+      e.vis = e.legs.map(l => `${l.dir === 'buy' ? 'C' : 'V'} ${l.type} ${l.strike}: ${rsF(vi({ strike: l.strike, prima: l.prima }, l.type))}%`);
     });
 
-    // Qué estrategia conviene en cada escenario
-    const mejor = key => {
-      let best = { nombre: 'sin cobertura', v: key === 'dn' ? pDn : key === 'sp' ? F : pUp };
-      filas.forEach(f => { if (f[key] > best.v + 0.05) best = { nombre: escHtml(f.s.name), v: f[key] }; });
-      return best;
-    };
-    const bDn = mejor('dn'), bSp = mejor('sp'), bUp = mejor('up');
-    sec.hallazgos.push(rsHall('info', 45, `${etiqueta}: qué conviene según el escenario`,
-      `Futuro ${rsF(F)}. Si baja ${R.escenarioPct}% (${rsF(pDn)}): <b>${bDn.nombre}</b> (${rsF(bDn.v)}). Si queda igual: <b>${bSp.nombre}</b> (${rsF(bSp.v)}). Si sube ${R.escenarioPct}% (${rsF(pUp)}): <b>${bUp.nombre}</b> (${rsF(bUp.v)}).`,
-      'Precio neto de venta por escenario', ''));
+    // Recomendación
+    const por = id => est.find(e => e.id === id);
+    const caras = (pr != null && pr >= R.viCaraPercentil) || (viHv != null && viHv > RS_REGLAS.vol.viHvCara);
+    const baratas = (pr != null && pr <= R.viBarataPercentil) || (viHv != null && viHv < RS_REGLAS.vol.viHvBarata);
+    const clima = typeof asstWeatherNow === 'function' && asstWeatherNow();
+    let rec, motivo;
+    if (F >= objetivo && por('collar')) { rec = por('collar'); motivo = `el futuro (${rsF(F)}) ya está en el objetivo (${rsF(objetivo)}): asegurar el piso cediendo lo que supere el objetivo`; }
+    else if (F <= dolor && por('put')) { rec = por('put'); motivo = `el futuro (${rsF(F)}) ya está en el precio dolor: priorizar protección sin techo`; }
+    else if (caras && !clima && por('collar')) { rec = por('collar'); motivo = `las primas están caras (VI P${pr}${viHv ? `, VI/HV ${rsF(viHv, 2)}x` : ''}): conviene financiar el put vendiendo el call del objetivo`; }
+    else if (caras && por('spread')) { rec = por('spread'); motivo = `las primas están caras${clima ? ' y hay weather market (no conviene techo)' : ''}: el put spread abarata sin poner techo`; }
+    else if (baratas && por('put')) { rec = por('put'); motivo = `las primas están baratas (VI P${pr}${viHv ? `, VI/HV ${rsF(viHv, 2)}x` : ''}): buen momento para comprar el put sin vender nada`; }
+    else if (por('put') && por('put').costPct <= R.costoCaroPct) { rec = por('put'); motivo = `el put al dolor cuesta ${rsF(por('put').costPct)}% del futuro, un costo razonable, y no pone techo`; }
+    else { rec = por('spread') || por('collar') || est[0]; motivo = `el put solo es caro (> ${R.costoCaroPct}% del futuro): conviene abaratarlo`; }
 
-    html += `<div class="rs-sub">${etiqueta} <span>futuro ${rsF(F)}${dte != null ? ' · vence en ' + dte + ' días' : ''}</span></div>
-      <table class="rs-table"><thead><tr><th class="rs-l">Estrategia</th><th>Costo</th><th>Piso</th><th>Techo</th><th>Break-even</th><th>−${R.escenarioPct}%</th><th>Hoy</th><th>+${R.escenarioPct}%</th><th>Vol. (tn)</th><th>Valor hoy</th></tr></thead><tbody>
-      ${filas.map(f => `<tr><td class="rs-l" style="color:${f.s.color};font-weight:600">${escHtml(f.s.name)}</td>
-        <td>${f.m.cost > 0 ? rsF(f.m.cost, 2) : 'crédito ' + rsF(-f.m.cost, 2)}</td>
-        <td>${f.m.piso != null ? rsF(f.m.piso) + (f.m.pisoHasta != null ? `<small> hasta ${f.m.pisoHasta}</small>` : '') : '<span class="rs-neg">sin piso</span>'}</td>
-        <td>${f.m.techo != null ? rsF(f.m.techo) : 'sin techo'}</td>
-        <td>${f.m.be != null ? rsF(f.m.be) : (f.m.bes.length > 1 ? 'múltiples' : '—')}</td>
-        <td>${rsF(f.dn)}</td><td>${rsF(f.sp)}</td><td>${rsF(f.up)}</td>
-        <td>${rsF(f.vol, 0)}</td><td>${f.mtm != null ? rsSigno(f.mtm, 2) : '—'}</td></tr>`).join('')}
-      </tbody></table>`;
+    const cards = est.map(e => rsCard(e === rec ? 'verde' : 'gris', e.nombre, e === rec ? 'RECOMENDADA' : '',
+      e.m.cost > 0 ? `u$s ${rsF(e.m.cost, 2)}` : `crédito ${rsF(-e.m.cost, 2)}`, `${e.desc} · ${rsF(Math.abs(e.costPct))}% del futuro`, [
+        ['Piso', e.m.piso != null ? rsF(e.m.piso) + (e.m.pisoHasta != null ? ` (hasta ${e.m.pisoHasta})` : '') : 'sin piso'],
+        ['Techo', e.m.techo != null ? rsF(e.m.techo) : 'sin techo'],
+        [`Neto si cae al dolor (${rsF(dolor)})`, rsF(e.alDolor)],
+        [`Neto si llega al objetivo (${rsF(objetivo)})`, rsF(e.alObj)],
+        ['VI de las patas', e.vis.join(' · ')],
+      ])).join('');
+    html += `<div class="rs-sub">${titulo} <span>futuro ${rsF(F)} · objetivo ${rsF(objetivo)} / dolor ${rsF(dolor)}${tieneRefs ? '' : ' (de referencia: faltan cargar)'}${dte != null ? ` · vence en ${dte} días` : ''} · VI ATM ${isFinite(viAtm) ? rsF(viAtm) + '%' : '—'}${pr != null ? ` (P${pr})` : ''}${viHv ? ` · VI/HV ${rsF(viHv, 2)}x` : ''}</span></div><div class="rs-pcards">${cards}</div>`;
+
+    sec.hallazgos.push(rsHall('oportunidad', 55, `${titulo}: ${rec.nombre}`,
+      `Recomendada porque ${motivo}. Cuesta ${rec.m.cost > 0 ? 'u$s ' + rsF(rec.m.cost, 2) : 'crédito ' + rsF(-rec.m.cost, 2)}/tn; si el precio cae al dolor (${rsF(dolor)}) se obtiene ${rsF(rec.alDolor)}.`,
+      'Costo, VI vs historia y precio vs objetivo/dolor', rec.desc + '.'));
+    if (!tieneRefs) sec.hallazgos.push(rsHall('alerta', 40, `${titulo}: sin Precio Objetivo / Dolor definido`,
+      `Se usaron referencias de ${R.dolorPctDefault}% abajo y ${R.objetivoPctDefault}% arriba del futuro.`, 'PRECIOS_REFERENCIA sin valores', 'Cargar los valores en PRECIOS_REFERENCIA (globals.js).'));
+    if (dte != null && dte < R.diasVencAlerta) sec.hallazgos.push(rsHall('alerta', 45, `${titulo}: opciones con ${dte} días al vencimiento`,
+      'Las primas tienen poco valor tiempo y el theta se acelera.', `Días al vencimiento < ${R.diasVencAlerta}`, 'Evaluar la posición siguiente.'));
   });
 
-  if (!hayAlguna) sec.hallazgos.push(rsHall('info', 10, 'Sin estrategias cargadas', 'No hay estrategias con patas en ninguna solapa.', '', 'Armar las coberturas en la pestaña Coberturas.'));
   sec.html = html;
   return sec;
 }
@@ -372,35 +386,6 @@ function rsPases() {
   });
 
   sec.html = html ? `<div class="rs-pcards">${html}</div>` : '';
-  return sec;
-}
-
-// ═══════════════════════════════════════════════════
-// 5) FONDEO
-// ═══════════════════════════════════════════════════
-function rsFondeo() {
-  const sec = { id: 'fondeo', titulo: 'Fondeo', hallazgos: [], html: '' };
-  if (typeof fondeoGetInputs !== 'function') return sec;
-  fondeoInit();
-  if (typeof fondeoAutoFromA3 === 'function') fondeoAutoFromA3();
-  const inp = fondeoGetInputs();
-  if (inp.dias <= 0 || inp.precioUSD <= 0) { sec.hallazgos.push(rsHall('info', 5, 'Fondeo sin datos', 'Falta la fecha de repago o el precio en el módulo Fondeo.', '', '')); return sec; }
-  const im = fondeoImplicitas(inp);
-  const ops = fondeoCalcOpciones(inp, im);
-  const bench = fondeoBenchmark(inp);
-  if (!ops.length) return sec;
-  const best = ops[0];
-  const base = `Para u$s ${rsF(inp.monto, 0)} a ${inp.dias} días (futuro ${rsF(inp.precioUSD)}, TC ${rsF(inp.tcSpot, 0)} / ${rsF(inp.tcFut, 0)})`;
-  const avF = rsAvisoDatos(['fondeo-tc-fut', 'fondeo-r-usd', 'fondeo-r-ars', 'fondeo-r-cheq']);
-  if (bench && bench.usdHoy >= best.usdHoy) sec.hallazgos.push(rsHall('oportunidad', 45, 'Fondeo: conviene vender disponible',
-    `${base}, vender el disponible (${rsF(bench.usdHoy)} u$s/tn) rinde más que la mejor vía de crédito (${best.short}, ${rsF(best.usdHoy)} u$s/tn hoy).${avF}`,
-    'Disponible ≥ mejor financiamiento', 'Vender disponible en lugar de endeudarse.'));
-  else sec.hallazgos.push(rsHall('info', 40, `Fondeo: la vía más barata es ${best.short}`,
-    `${base}, ${best.name.toLowerCase()} cuesta ${rsF(best.costo)}% TNA en u$s y compromete ${rsF(best.toneladas, 0)} tn.${ops[1] ? ` Le sigue ${ops[1].short} (${rsF(ops[1].costo)}%).` : ''}${avF}`,
-    'Ranking por u$s netos hoy por tonelada', ''));
-  if (typeof fondeoForwardManual !== 'undefined' && fondeoForwardManual && im.gapTC < -1) sec.hallazgos.push(rsHall('alerta', 50, 'Fondeo: forward con dólar castigado',
-    `El forward en pesos implica un dólar de ${rsF(im.tcImpl, 0)}, ${rsF(Math.abs(im.gapTC), 0)} pesos por debajo del ROFEX (${rsF(inp.tcFut, 0)}).`,
-    'TC implícito del forward < TC futuro', 'Negociar el tipo de cambio del forward antes que la tasa del cheque.'));
   return sec;
 }
 
@@ -569,7 +554,7 @@ function rsRelacion(par, cache) {
   const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
   const std = Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length);
   const pct = Math.round(vals.filter(v => v <= last.v).length / vals.length * 100);
-  return { par, p1, p2, actual: last.v, fecha: last.f, dte: last.dte, mean, std, z: std > 0 ? (last.v - mean) / std : 0, pct, nCamp: campanas.size, enVentana };
+  return { par, p1, p2, actual: last.v, fecha: last.f, dte: last.dte, mean, std, z: std > 0 ? (last.v - mean) / std : 0, pct, nCamp: campanas.size, enVentana, cur, hist };
 }
 
 function rsRelaciones() {
@@ -582,7 +567,15 @@ function rsRelaciones() {
       const r = rsRelacion(par, cache);
       if (!r) return;
       const fmt = v => par.tipo === 'ratio' ? rsF(v, 3) : rsSigno(v);
-      rows += `<tr><td class="rs-l">${par.nombre}</td><td>${r.p1} / ${r.p2}</td><td><b>${fmt(r.actual)}</b></td><td>${fmt(r.mean)}</td><td class="${r.pct <= R.percentilBajo || r.pct >= R.percentilAlto ? 'rs-hot' : ''}">P${r.pct}</td><td>${rsSigno(r.z, 1)}σ</td><td>${r.nCamp}</td></tr>`;
+      // Gráfico desplegable: serie actual vs promedio histórico al mismo día al vencimiento
+      const promDte = r.cur.map(pt => { const h = r.hist.filter(x => Math.abs(x.dte - pt.dte) <= 5); return h.length ? h.reduce((a, x) => a + x.v, 0) / h.length : null; });
+      rsDet['rel-' + par.id] = { dec: par.tipo === 'ratio' ? 3 : 1, labels: r.cur.map(x => x.f.slice(5)),
+        nota: `${par.nombre} (${r.p1} / ${r.p2}) · línea punteada: promedio de ${r.nCamp} campañas anteriores al mismo día al vencimiento`,
+        datasets: [
+          { label: `${r.p1} / ${r.p2}`, data: r.cur.map(x => x.v), borderColor: '#1A6B3C', borderWidth: 2, pointRadius: 0, tension: .2 },
+          { label: 'Promedio histórico', data: promDte, borderColor: '#C8A44A', borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, spanGaps: true, tension: .2 },
+        ] };
+      rows += `<tr class="rs-click" onclick="rsToggleDet(this,'rel-${par.id}',7)"><td class="rs-l"><span class="rs-caret">▸</span>${par.nombre}</td><td>${r.p1} / ${r.p2}</td><td><b>${fmt(r.actual)}</b></td><td>${fmt(r.mean)}</td><td class="${r.pct <= R.percentilBajo || r.pct >= R.percentilAlto ? 'rs-hot' : ''}">P${r.pct}</td><td>${rsSigno(r.z, 1)}σ</td><td>${r.nCamp}</td></tr>`;
       const ctx = `${par.nombre} (${r.p1}/${r.p2}) en ${fmt(r.actual)} contra un promedio histórico de ${fmt(r.mean)} ${r.enVentana ? `a ~${r.dte} días del vencimiento` : ''}: percentil ${r.pct} de ${r.nCamp} campañas.`;
       const regla = `Percentil ≤ P${R.percentilBajo} o ≥ P${R.percentilAlto} vs campañas anteriores`;
       // Carry alto en términos relativos pero todavía negativo: guardar no se paga en sí.
@@ -611,13 +604,23 @@ function rsDesvio() {
   Object.keys(POSICIONES_CLAVE).forEach(c => POSICIONES_CLAVE[c].forEach(mes => {
     const anc = rsAnclaje(c, mes, maxF);
     if (!anc) return;
-    const serie = Object.values(idx[c + '|' + anc.pos] || {}).map(r => r.precio).filter(v => v > 0);
+    const filas = Object.values(idx[c + '|' + anc.pos] || {}).filter(r => r.precio > 0).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+    const serie = filas.map(r => r.precio);
     if (serie.length < 10) return;
     const avg = serie.reduce((s, v) => s + v, 0) / serie.length;
     const last = anc.precio, desv = (last / avg - 1) * 100;
     const refs = dvGetRefs(c, mes);
     const sobreObj = refs.obj != null ? serie.filter(v => v >= refs.obj).length / serie.length * 100 : null;
-    rows += `<tr><td class="rs-l">${rsCrop(c)} ${anc.pos}</td><td><b>${rsF(last)}</b></td><td>${rsF(avg)}</td><td class="${desv >= 0 ? 'rs-pos' : 'rs-neg'}">${rsSigno(desv)}%</td><td>${rsF(Math.min(...serie))} – ${rsF(Math.max(...serie))}</td><td>${refs.obj != null ? rsF(refs.obj) : '—'}</td><td>${refs.dol != null ? rsF(refs.dol) : '—'}</td><td>${sobreObj != null ? rsF(sobreObj, 0) + '%' : '—'}</td></tr>`;
+    const dk = 'dv-' + c + '-' + mes;
+    const lineaFija = (v, label, color) => v != null ? [{ label, data: serie.map(() => v), borderColor: color, borderWidth: 1.5, borderDash: [8, 4], pointRadius: 0 }] : [];
+    rsDet[dk] = { dec: 1, labels: filas.map(r => String(r.fecha).slice(0, 10)),
+      nota: `${rsCrop(c)} ${anc.pos} · campaña completa · promedio ${rsF(avg)}${refs.obj != null ? ' · objetivo ' + rsF(refs.obj) : ''}${refs.dol != null ? ' · dolor ' + rsF(refs.dol) : ''}`,
+      datasets: [
+        { label: `${rsCrop(c)} ${anc.pos}`, data: serie, borderColor: '#1A6B3C', borderWidth: 2, pointRadius: 0, tension: .2 },
+        { label: 'Promedio campaña', data: serie.map(() => avg), borderColor: '#C8A44A', borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0 },
+        ...lineaFija(refs.obj, 'Precio Objetivo', REF_OBJ_COLOR), ...lineaFija(refs.dol, 'Precio Dolor', REF_DOL_COLOR),
+      ] };
+    rows += `<tr class="rs-click" onclick="rsToggleDet(this,'${dk}',8)"><td class="rs-l"><span class="rs-caret">▸</span>${rsCrop(c)} ${anc.pos}</td><td><b>${rsF(last)}</b></td><td>${rsF(avg)}</td><td class="${desv >= 0 ? 'rs-pos' : 'rs-neg'}">${rsSigno(desv)}%</td><td>${rsF(Math.min(...serie))} – ${rsF(Math.max(...serie))}</td><td>${refs.obj != null ? rsF(refs.obj) : '—'}</td><td>${refs.dol != null ? rsF(refs.dol) : '—'}</td><td>${sobreObj != null ? rsF(sobreObj, 0) + '%' : '—'}</td></tr>`;
     const nom = `${rsCrop(c)} ${anc.pos}`;
     if (refs.obj != null && last >= refs.obj) sec.hallazgos.push(rsHall('oportunidad', 68, `${nom}: alcanzó el Precio Objetivo`, `Cotiza ${rsF(last)}, sobre el objetivo de ${rsF(refs.obj)}. En esta campaña estuvo arriba del objetivo el ${rsF(sobreObj, 0)}% de las ruedas.`, 'Precio ≥ Precio Objetivo', 'Evaluar vender o fijar precio / cubrir con puts.'));
     else if (refs.dol != null && last <= refs.dol) sec.hallazgos.push(rsHall('alerta', 70, `${nom}: debajo del Precio Dolor`, `Cotiza ${rsF(last)}, bajo el precio dolor de ${rsF(refs.dol)}.`, 'Precio ≤ Precio Dolor', 'Revisar la cobertura de esta posición.'));
@@ -654,9 +657,37 @@ function rsLineUp() {
 // ═══════════════════════════════════════════════════
 // GENERACIÓN DEL INFORME
 // ═══════════════════════════════════════════════════
-const RS_ANALIZADORES = [rsMercado, rsCoberturas, rsVol, rsFas, rsPases, rsFondeo, rsRelaciones, rsDesvio, rsLineUp];
+const RS_ANALIZADORES = [rsMercado, rsCoberturas, rsVol, rsFas, rsPases, rsRelaciones, rsDesvio, rsLineUp];
+
+// Datos de los gráficos desplegables (se llenan al generar) y gráficos abiertos
+let rsDet = {}, rsCharts = {};
+
+function rsToggleDet(tr, key, cols) {
+  const next = tr.nextElementSibling;
+  if (next && next.classList.contains('rs-det')) {
+    if (rsCharts[key]) { rsCharts[key].destroy(); delete rsCharts[key]; }
+    next.remove(); tr.classList.remove('open');
+    return;
+  }
+  const d = rsDet[key];
+  if (!d || typeof Chart === 'undefined') return;
+  const row = document.createElement('tr');
+  row.className = 'rs-det';
+  row.innerHTML = `<td colspan="${cols}"><div class="rs-det-wrap"><canvas></canvas></div><div class="rs-det-note">${d.nota || ''}</div></td>`;
+  tr.after(row); tr.classList.add('open');
+  const fmt = v => v == null ? '—' : Number(v).toLocaleString('es-AR', { minimumFractionDigits: d.dec, maximumFractionDigits: d.dec });
+  rsCharts[key] = new Chart(row.querySelector('canvas'), {
+    type: 'line', data: { labels: d.labels, datasets: d.datasets },
+    options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { labels: { font: { size: 10 }, boxWidth: 14 } }, tooltip: { callbacks: { label: c => c.dataset.label + ': ' + fmt(c.parsed.y) } } },
+      scales: { x: { ticks: { maxTicksLimit: 8, font: { size: 10 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 10, family: 'JetBrains Mono' }, callback: v => fmt(v) } } } }
+  });
+}
 
 function rsGenerar() {
+  Object.values(rsCharts).forEach(c => { try { c.destroy(); } catch (e) {} });
+  rsDet = {}; rsCharts = {};
   const secciones = RS_ANALIZADORES.map(fn => {
     try { return fn(); }
     catch (e) {

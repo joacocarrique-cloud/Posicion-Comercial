@@ -198,16 +198,22 @@ function spCalcSpread(){
     });
   });
   const currentKey=`${pos1}-${pos2}`;
-  // Prom. Histórico: equal-weight average of historical equivalent campaigns (excl current)
+  // Prom. Histórico y Percentil: campañas anteriores equivalentes, comparadas en el MISMO
+  // momento del ciclo (± ventana de días al vencimiento). Es el mismo criterio que usa el
+  // Resumen (reglas_resumen.js → relaciones.ventanaDias), así los dos muestran lo mismo.
   const histKeys=Object.keys(seasonData).filter(k=>k!==currentKey);
-  const histCampMeans=histKeys.map(k=>{const pts=seasonData[k];return pts.reduce((a,p)=>a+p.val,0)/pts.length;});
-  const campAvg=histCampMeans.length>0?histCampMeans.reduce((a,b)=>a+b,0)/histCampMeans.length:avg;
+  const ventana=(typeof RS_REGLAS!=='undefined'&&RS_REGLAS.relaciones)?RS_REGLAS.relaciones.ventanaDias:20;
+  const minPts=(typeof RS_REGLAS!=='undefined'&&RS_REGLAS.relaciones)?RS_REGLAS.relaciones.minPuntosHist:15;
+  const curDte=series[series.length-1].dte1;
+  const histAll=histKeys.flatMap(k=>seasonData[k]);
+  let histWin=histAll.filter(p=>Math.abs(p.dte-curDte)<=ventana);
+  const enVentana=histWin.length>=minPts;
+  if(!enVentana)histWin=histAll;
+  const campAvg=histWin.length?histWin.reduce((a,p)=>a+p.val,0)/histWin.length:avg;
   const diffVsCamp=current-campAvg;
   const diffCampPct=campAvg!==0?((current/campAvg-1)*100).toFixed(1):'—';
-  // Percentil contra las campañas anteriores equivalentes (misma relación de posiciones);
-  // si no hay suficiente historia, contra la propia serie del par.
-  const histVals=histKeys.flatMap(k=>seasonData[k].map(p=>p.val));
-  const pctBase=histVals.length>=20?histVals:vals;
+  const histVals=histWin.map(p=>p.val);
+  const pctBase=histVals.length>=minPts?histVals:vals;
   const pctVsHist=pctBase===histVals;
   const percentile=Math.round(pctBase.filter(v=>v<=current).length/pctBase.length*100);
 
@@ -235,6 +241,7 @@ function spCalcSpread(){
       <div style="font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;">Prom. Histórico</div>
       <div style="font-size:20px;font-weight:700;font-family:var(--mono);">${fmt(campAvg)}</div>
       <div style="font-size:10px;color:${diffVsCamp>0?'var(--green)':'var(--red)'};">${diffVsCamp>0?'+':''}${fmt(diffVsCamp)} (${diffCampPct}%)</div>
+      <div style="font-size:10px;color:var(--text-3);">${enVentana?`a ${curDte}±${ventana} días del vto`:'toda la historia'}</div>
     </div>
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center;">
       <div style="font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;">Percentil</div>

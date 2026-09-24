@@ -739,6 +739,8 @@
 
   <!-- ═══ DESVÍO DE PRECIOS ═══ -->
   <div id="desvio-space" class="dv-section">
+    <!-- Precios Objetivo / Dolor fijos (Soja MAY, Maíz ABR, Maíz JUL, Trigo DIC) — lo arma desvio.js -->
+    <div id="dv-refs-panel" class="dv-refs-panel"></div>
     <!-- Overview -->
     <div id="dv-overview">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
@@ -765,21 +767,6 @@
           <select id="dv-pos-sel" onchange="dvOnPosChange(this.value)" style="font-family:var(--mono);font-size:13px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);min-width:120px;"></select>
         </div>
         <button class="dv-back-btn" onclick="dvBackToOverview()" style="margin-left:auto;">← Resumen</button>
-      </div>
-
-      <!-- Precio Objetivo / Precio Dolor (se guardan por cultivo + posición) -->
-      <div class="ref-bar dv-ref-bar">
-        <div class="ref-field ref-obj">
-          <span class="ref-dash"></span>
-          <label for="dv-ref-objetivo">Precio Objetivo</label>
-          <input id="dv-ref-objetivo" class="ref-input" type="text" inputmode="decimal" placeholder="—" oninput="dvUpdateRefLines()">
-        </div>
-        <div class="ref-field ref-dol">
-          <span class="ref-dash"></span>
-          <label for="dv-ref-dolor">Precio Dolor</label>
-          <input id="dv-ref-dolor" class="ref-input" type="text" inputmode="decimal" placeholder="—" oninput="dvUpdateRefLines()">
-        </div>
-        <span class="ref-hint" id="dv-ref-hint">Se guardan por cultivo + posición. Vacío = no se dibuja.</span>
       </div>
 
       <!-- Resumen: % de ruedas arriba del objetivo / abajo del dolor -->

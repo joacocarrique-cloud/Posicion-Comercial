@@ -246,7 +246,51 @@ function toggleDesvio(){
 
 let dvFilterCrop='todos';
 
+// ═══════════════════════════════════════════════════════
+// PANEL FIJO DE PRECIOS OBJETIVO / DOLOR
+// Siempre visible arriba del módulo, con las posiciones de PRECIOS_REFERENCIA
+// (Soja MAY, Maíz ABR, Maíz JUL, Trigo DIC). Click en una tarjeta → detalle.
+// ═══════════════════════════════════════════════════════
+const DV_CROP_LBL={soja:'Soja',maiz:'Maíz',trigo:'Trigo',girasol:'Girasol'};
+
+// Precio actual del próximo contrato vigente de ese mes (A3; si no, último dato del histórico)
+function dvPrecioActual(crop,mes){
+  const lim=new Date();lim.setDate(lim.getDate()+15);const limIso=lim.toISOString().slice(0,10);
+  if(typeof sheetData!=='undefined'&&sheetData&&sheetData.futuros[crop]){
+    const f=sheetData.futuros[crop].find(x=>x.precio>0&&x.pos.slice(0,3)===mes&&(!x.vto||((typeof paseParseVto==='function'&&paseParseVto(x.vto))||'9999')>=limIso));
+    if(f)return{pos:f.pos,precio:f.precio};
+  }
+  let maxF='',best=null;
+  ASST_FUTPOS.forEach(r=>{const f=String(r.fecha).slice(0,10);if(f>maxF)maxF=f;});
+  ASST_FUTPOS.forEach(r=>{if(r.cultivo===crop&&r.mes_label===mes&&String(r.fecha).slice(0,10)===maxF&&(!best||r.dias_vto<best.dias_vto))best=r;});
+  return best?{pos:best.pos,precio:best.precio}:null;
+}
+
+function dvRenderRefsPanel(){
+  const el=document.getElementById('dv-refs-panel');
+  if(!el||typeof PRECIOS_REFERENCIA==='undefined')return;
+  const f1=v=>v.toLocaleString('es-AR',{minimumFractionDigits:1,maximumFractionDigits:1});
+  const cards=Object.keys(PRECIOS_REFERENCIA).map(k=>{
+    const [crop,mes]=k.split('|');
+    const r=dvGetRefs(crop,mes);
+    const px=dvPrecioActual(crop,mes);
+    let estado='Sin definir',cls='';
+    if(px&&r.obj!=null&&px.precio>=r.obj){estado='✓ En objetivo';cls='ok';}
+    else if(px&&r.dol!=null&&px.precio<=r.dol){estado='⚠ Debajo del dolor';cls='bad';}
+    else if(px&&r.obj!=null)estado='Faltan u$s '+f1(r.obj-px.precio)+' al objetivo';
+    else if(px&&r.dol!=null)estado='u$s '+f1(px.precio-r.dol)+' sobre el dolor';
+    return `<button type="button" class="dv-ref-card ${cls}" title="Ver el detalle de ${DV_CROP_LBL[crop]||crop} ${mes}" onclick="dvCrop='${crop}';dvPos='${mes}';dvEnterDetail();">
+      <div class="dv-ref-card-h"><span>${DV_CROP_LBL[crop]||crop} ${px?px.pos:mes}</span><b>${px?'u$s '+f1(px.precio):'—'}</b></div>
+      <div class="dv-ref-card-row"><span><i style="background:${DV_REF_OBJ_COLOR}"></i>Objetivo</span><b>${r.obj!=null?f1(r.obj):'—'}</b></div>
+      <div class="dv-ref-card-row"><span><i style="background:${DV_REF_DOL_COLOR}"></i>Dolor</span><b>${r.dol!=null?f1(r.dol):'—'}</b></div>
+      <div class="dv-ref-card-e">${estado}</div>
+    </button>`;
+  }).join('');
+  el.innerHTML=`<div class="dv-refs-title">Precios Objetivo y Dolor <span>· fijos, aplican a todas las campañas de cada posición · click para ver el detalle</span></div><div class="dv-refs-grid">${cards}</div>`;
+}
+
 function dvRenderOverview(){
+  dvRenderRefsPanel();
   const container=document.getElementById('dv-overview-cards');
   if(!container)return;
   container.innerHTML='';
