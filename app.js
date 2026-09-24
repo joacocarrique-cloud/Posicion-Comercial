@@ -5,7 +5,8 @@
 // true cuando el módulo visible es Coberturas (workspace)
 function isWorkspaceMode() {
   return !theoryMode && !retMode && !paseMode && !spreadMode && !desvioMode
-    && !(typeof lineupMode !== 'undefined' && lineupMode);
+    && !(typeof lineupMode !== 'undefined' && lineupMode)
+    && !(typeof resumenMode !== 'undefined' && resumenMode);
 }
 
 function renderAll() {

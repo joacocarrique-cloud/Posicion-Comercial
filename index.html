@@ -15,7 +15,7 @@
     <div class="header-logo">🌾</div>
     <div>
       <div class="header-title">Suite Comercial · Espartina S.A.</div>
-      <div class="header-subtitle">Coberturas · FAS & Retenciones · Pases & Tasas · Spreads · Desvío de Precios · Line-Up</div>
+      <div class="header-subtitle">Coberturas · FAS & Retenciones · Pases & Tasas · Spreads · Desvío de Precios · Line-Up · Resumen</div>
     </div>
     <span class="header-badge" id="app-version" title="Versión desplegada de la Suite">v10 · 24-sep-26</span>
   </div>
@@ -29,6 +29,7 @@
       <button class="mod-pill" onclick="toggleDesvio()">📉 Desvío</button>
       <button class="mod-pill" onclick="toggleTheory()">📙 Manual</button>
       <button class="mod-pill" id="pill-lineup" onclick="toggleLineUp()">🚢 Line-Up</button>
+      <button class="mod-pill" id="pill-resumen" onclick="toggleResumen()">🧭 Resumen</button>
     </nav>
     <button class="btn-export-pdf" onclick="exportarPDF()" title="Exportar a PDF el módulo activo">🖨 PDF</button>
   </div>
@@ -844,6 +845,9 @@
     </div>
   </div>
 
+  <!-- ═══ RESUMEN COMERCIAL (lo arma resumen.js) ═══ -->
+  <div id="resumen-space" style="display:none;"></div>
+
 </div><!-- /container: Spreads y Desvío quedan adentro, con el mismo margen que el resto -->
 
   <!-- ═══ ALERTAS ═══ -->
@@ -861,8 +865,9 @@
 // Los -space se muestran/ocultan con style inline (sin !important), que pierde
 // contra las reglas !important de @media print. Por eso marcamos el módulo
 // activo en <body data-print-mod="..."> y el CSS resuelve a partir de ahí.
-var PRINT_SPACES = ['workspace', 'ret-space', 'pase-space', 'spreads-space', 'desvio-space', 'theory-space'];
+var PRINT_SPACES = ['workspace', 'ret-space', 'pase-space', 'spreads-space', 'desvio-space', 'theory-space', 'resumen-space'];
 var PRINT_TITLES = {
+  'resumen-space': 'Resumen Comercial',
   'ret-space':     'FAS & Retenciones',
   'pase-space':    'Pases & Tasas',
   'spreads-space': 'Spreads',
@@ -943,11 +948,11 @@ window.addEventListener('afterprint', function() {
 // que muestra la antigüedad de los datos y, si están viejos o faltan, sincroniza.
 (function () {
   const SOLO_EN_COBERTURAS = ['tabs-container', 'mkt-bar', 'fob-bar'];
-  const MODULOS_A3 = ['ret-space', 'pase-space', 'spreads-space', 'desvio-space'];
+  const MODULOS_A3 = ['ret-space', 'pase-space', 'spreads-space', 'desvio-space', 'resumen-space'];
   const DIAS_RANCIO = 2;
 
   const SPACES = ['workspace', 'ret-space', 'pase-space', 'spreads-space',
-                  'desvio-space', 'theory-space'];
+                  'desvio-space', 'theory-space', 'resumen-space'];
 
   const visible = el => el && el.offsetParent !== null;
   const moduloActivo = () => SPACES.find(id => visible(document.getElementById(id))) || null;
@@ -1045,6 +1050,8 @@ window.addEventListener('afterprint', function() {
 <script src="spreads.js"></script>
 <script src="desvio.js"></script>
 <script src="lineup.js"></script>
+<script src="reglas_resumen.js"></script>
+<script src="resumen.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
