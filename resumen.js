@@ -149,7 +149,7 @@ function rsMercado() {
 }
 
 // ═══════════════════════════════════════════════════
-// 2) COBERTURAS PROPUESTAS (posiciones con Precio Objetivo / Dolor)
+// 2) COBERTURAS — las estrategias cargadas en el módulo Coberturas
 // ═══════════════════════════════════════════════════
 
 // Métricas de una estrategia a un precio de futuro F (independiente de la solapa activa)
@@ -179,102 +179,89 @@ function rsStratMetrics(s, F) {
   return { cost, piso, pisoHasta, techo, be: bes.length === 1 ? bes[0] : null, bes, ratioDescubierto: shortPutQ > longPutQ };
 }
 
-// Strike con prima > 0 más cercano a k. dir: 'ge' (≥ k), 'le' (≤ k) o cualquiera.
-function rsStrikeCerca(lista, k, dir) {
-  const conPrima = (lista || []).filter(o => o.prima > 0);
-  const ok = conPrima.filter(o => dir === 'ge' ? o.strike >= k : dir === 'le' ? o.strike <= k : true);
-  return (ok.length ? ok : conPrima).reduce((b, o) => (!b || Math.abs(o.strike - k) < Math.abs(b.strike - k)) ? o : b, null);
+// Valor de mercado hoy de la estructura (primas actuales) vs lo pagado/cobrado al armarla
+function rsMarkToMarket(s, crop, pos, F) {
+  let actual = 0, entrada = 0;
+  for (const l of s.legs) {
+    const q = (l.ratio || 1) * (l.dir === 'buy' ? 1 : -1);
+    if (l.type === 'futuro') { actual += q * (F - l.strike); continue; }
+    const pm = rsPrimaMkt(crop, pos, l.type, l.strike);
+    if (pm == null) return null;
+    actual += q * pm; entrada += q * l.prima;
+  }
+  return actual - entrada; // u$s/tn
 }
 
-// Para cada posición con Precio Objetivo / Dolor arma 3 coberturas con las primas de A3
-// y recomienda una según el costo, la volatilidad implícita y dónde está el precio.
+// Analiza las estrategias cargadas en el módulo Coberturas (todas las solapas)
 function rsCoberturas() {
   const R = RS_REGLAS.coberturas;
-  const sec = { id: 'coberturas', titulo: 'Coberturas propuestas', hallazgos: [], html: '' };
-  if (!sheetData) return sec;
-  const mes = new Date().getMonth() + 1;
+  const sec = { id: 'coberturas', titulo: 'Coberturas (estrategias cargadas)', hallazgos: [], html: '' };
+  const pct = R.escenarioPct / 100;
   let html = '';
+  let hayAlguna = false;
 
-  Object.keys(PRECIOS_REFERENCIA).forEach(key => {
-    const [crop, mesPos] = key.split('|');
-    const px = rsProxPos(crop, mesPos);
-    const F = px.fut;
-    const chain = (sheetData.opciones[crop] || {})[px.pos];
-    const titulo = `${rsCrop(crop)} ${px.pos}`;
-    if (!F || !chain) {
-      html += `<div class="rs-sub">${titulo} <span>sin ${!F ? 'futuro' : 'opciones'} en A3</span></div>`;
-      return;
+  tabs.forEach(t => {
+    const strats = (t.strategies || []).filter(s => s.legs && s.legs.length);
+    if (!strats.length) return;
+    hayAlguna = true;
+    const crop = t.assetVal, pos = t.pos || '';
+    const F = rsFut(crop, pos) || t.spot;
+    const dte = rsDte(pos);
+    const sel = strats.slice().sort((a, b) => getStratVol(b) - getStratVol(a)).slice(0, R.maxEstrategiasPorSolapa);
+    const etiqueta = `${escHtml(t.name)} · ${rsCrop(crop)} ${pos || ''}`.trim();
+    const pDn = F * (1 - pct), pUp = F * (1 + pct);
+
+    // Vencimiento (uno por solapa)
+    if (dte != null) {
+      if (dte < 0) sec.hallazgos.push(rsHall('alerta', 70, `${etiqueta}: posición vencida`, `La posición ${pos} ya venció. Las estrategias de esta solapa no tienen vigencia.`, 'Días al vencimiento < 0', 'Cerrar la solapa o pasar las estrategias a otra posición.'));
+      else if (dte < R.diasVencAlerta) sec.hallazgos.push(rsHall('alerta', 65, `${etiqueta}: vence en ${dte} días`, `Quedan ${dte} días al vencimiento de las opciones de ${pos}; el theta se acelera y el tiempo juega en contra de lo comprado.`, `Días al vencimiento < ${R.diasVencAlerta}`, 'Decidir si se ejerce, se cierra o se rollea a la próxima posición.'));
+      else if (dte < R.diasVencAviso) sec.hallazgos.push(rsHall('info', 30, `${etiqueta}: vence en ${dte} días`, `Las opciones de ${pos} entran en la zona de aceleración del theta.`, `Días al vencimiento < ${R.diasVencAviso}`, 'Planificar rolleo / cierre.'));
     }
-    const refs = dvGetRefs(crop, mesPos);   // los que se cargan en el panel de Desvío
-    const tieneRefs = refs.obj > 0 && refs.dol > 0;
-    const dolor = refs.dol > 0 ? refs.dol : F * (1 - R.dolorPctDefault / 100);
-    const objetivo = refs.obj > 0 ? refs.obj : F * (1 + R.objetivoPctDefault / 100);
-    const exp = asstExpiry(px.pos);
-    const dte = exp ? asstDays(new Date(), exp) : null;
-    const T = dte > 0 ? dte / 365 : null;
-    const vi = (o, tp) => (T && o) ? asstIV(o.prima, F, o.strike, T, 0.05, tp) * 100 : NaN;
 
-    // Contexto de volatilidad: VI del put más cercano al futuro vs historia y vs realizada
-    const atm = rsStrikeCerca(chain.puts, F);
-    const viAtm = vi(atm, 'put');
-    const perc = ASST_VI_PERC.find(v => v.cultivo === crop && v.mes === mes);
-    const pr = isFinite(viAtm) ? rsPercVi(viAtm, perc) : null;
-    const hv = ASST_VIVHV.filter(r => r.cultivo === crop);
-    const lh = hv[hv.length - 1];
-    const viHv = (lh && lh.hv_20d > 0 && isFinite(viAtm)) ? viAtm / lh.hv_20d : null;
+    const filas = [];
+    sel.forEach(s => {
+      const m = rsStratMetrics(s, F);
+      const vol = getStratVol(s);
+      const costPct = F > 0 ? m.cost / F * 100 : 0;
+      const nom = escHtml(s.name);
+      const mtm = rsMarkToMarket(s, crop, pos, F);
+      filas.push({ s, m, vol, mtm, dn: calcPayoff(s, pDn), sp: calcPayoff(s, F), up: calcPayoff(s, pUp) });
 
-    // Las 3 estructuras
-    const pD = rsStrikeCerca(chain.puts, dolor, 'ge');          // put al precio dolor
-    const cO = rsStrikeCerca(chain.calls, objetivo, 'ge');      // call al precio objetivo
-    const pF = rsStrikeCerca(chain.puts, F, 'le');              // put cerca del futuro
-    const pS = pF ? rsStrikeCerca(chain.puts.filter(o => o.strike < pF.strike), dolor - (F - dolor)) : null; // put vendido debajo del dolor
-    const leg = (dir, type, o) => ({ dir, type, ratio: 1, strike: o.strike, prima: o.prima });
-    const est = [];
-    if (pD) est.push({ id: 'put', nombre: `Put ${pD.strike}`, desc: 'Seguro al precio dolor, sin techo', legs: [leg('buy', 'put', pD)] });
-    if (pD && cO) est.push({ id: 'collar', nombre: `Collar ${pD.strike} / ${cO.strike}`, desc: 'Piso en el dolor, techo en el objetivo', legs: [leg('buy', 'put', pD), leg('sell', 'call', cO)] });
-    if (pF && pS) est.push({ id: 'spread', nombre: `Put spread ${pF.strike} / ${pS.strike}`, desc: 'Protege desde el futuro; franquicia debajo del dolor', legs: [leg('buy', 'put', pF), leg('sell', 'put', pS)] });
-    if (!est.length) return;
-    est.forEach(e => {
-      e.m = rsStratMetrics({ legs: e.legs }, F);
-      e.costPct = e.m.cost / F * 100;
-      e.alDolor = calcPayoff({ legs: e.legs }, dolor);
-      e.alObj = calcPayoff({ legs: e.legs }, objetivo);
-      e.vis = e.legs.map(l => `${l.dir === 'buy' ? 'C' : 'V'} ${l.type} ${l.strike}: ${rsF(vi({ strike: l.strike, prima: l.prima }, l.type))}%`);
+      if (s.legs.some(l => l.estimada)) sec.hallazgos.push(rsHall('alerta', 60, `${nom}: primas de referencia`, `Una o más patas no tienen prima en A3; el costo y el piso de "${nom}" son estimados.`, 'Pata sin prima de mercado', 'Revisar el strike o cargar la prima real.'));
+      if (m.cost > 0 && costPct > R.costoCaroPct) sec.hallazgos.push(rsHall('alerta', 50, `${nom}: cobertura cara`, `Cuesta u$s ${rsF(m.cost, 2)}/tn (${rsF(costPct)}% del futuro ${rsF(F)}).`, `Prima neta > ${R.costoCaroPct}% del futuro`, 'Evaluar abaratar con put spread o financiar con venta de call.'));
+      else if (m.cost > 0 && costPct < R.costoBaratoPct && s.legs.some(l => l.type === 'put' && l.dir === 'buy')) sec.hallazgos.push(rsHall('oportunidad', 35, `${nom}: protección barata`, `Cuesta solo u$s ${rsF(m.cost, 2)}/tn (${rsF(costPct)}% del futuro).`, `Prima neta < ${R.costoBaratoPct}% del futuro`, ''));
+      if (m.ratioDescubierto) sec.hallazgos.push(rsHall('alerta', 62, `${nom}: más puts vendidos que comprados`, `Por debajo de ${Math.min(...s.legs.filter(l => l.type === 'put' && l.dir === 'sell').map(l => l.strike))} la pérdida se amplifica.`, 'Puts vendidos > puts comprados', 'Confirmar que el volumen y las garantías lo soportan.'));
+      else if (m.pisoHasta != null && m.pisoHasta > F * 0.8) sec.hallazgos.push(rsHall('alerta', 45, `${nom}: protección hasta ${m.pisoHasta}`, `Asegura u$s ${rsF(m.piso)} mientras el futuro no baje de ${m.pisoHasta} (${rsF((1 - m.pisoHasta / F) * 100)}% abajo del actual); más abajo queda descubierta.`, 'Put vendido a menos de 20% del futuro', 'Aceptable si se considera improbable esa baja; si no, subir la franquicia.'));
+      else if (m.piso != null && m.pisoHasta == null && (F - m.piso) / F * 100 > R.pisoLejanoPct) sec.hallazgos.push(rsHall('alerta', 40, `${nom}: piso lejano`, `El piso (u$s ${rsF(m.piso)}) está ${rsF((F - m.piso) / F * 100)}% debajo del futuro.`, `Piso > ${R.pisoLejanoPct}% debajo del futuro`, 'Considerar un strike más alto si se busca proteger el margen.'));
+      if (m.techo != null && (m.techo - F) / F * 100 < R.techoPegadoPct) sec.hallazgos.push(rsHall('alerta', 50, `${nom}: techo pegado al precio`, `El techo (u$s ${rsF(m.techo)}) está a solo ${rsF((m.techo - F) / F * 100)}% del futuro: resigna casi toda la suba.`, `Techo < ${R.techoPegadoPct}% sobre el futuro`, 'Subir el strike del call vendido o evaluar una estructura sin techo.'));
+      if (m.techo != null && typeof asstWeatherNow === 'function' && asstWeatherNow()) sec.hallazgos.push(rsHall('alerta', 40, `${nom}: techo en weather market`, `Estamos en ventana de weather market (${asstWeatherLbl()}); un call vendido puede limitar una suba brusca.`, 'Call vendido en ventana climática', 'Monitorear de cerca el call vendido.'));
+      if (mtm != null && Math.abs(mtm) >= 0.5) sec.hallazgos.push(rsHall('info', 20, `${nom}: valor de mercado ${rsSigno(mtm, 2)} u$s/tn`, `Con las primas de hoy, la estructura vale ${rsSigno(mtm, 2)} u$s/tn contra lo pagado al armarla (${rsSigno(mtm * vol, 0)} u$s sobre ${rsF(vol, 0)} tn).`, 'Mark-to-market con primas A3', ''));
     });
 
-    // Recomendación
-    const por = id => est.find(e => e.id === id);
-    const caras = (pr != null && pr >= R.viCaraPercentil) || (viHv != null && viHv > RS_REGLAS.vol.viHvCara);
-    const baratas = (pr != null && pr <= R.viBarataPercentil) || (viHv != null && viHv < RS_REGLAS.vol.viHvBarata);
-    const clima = typeof asstWeatherNow === 'function' && asstWeatherNow();
-    let rec, motivo;
-    if (F >= objetivo && por('collar')) { rec = por('collar'); motivo = `el futuro (${rsF(F)}) ya está en el objetivo (${rsF(objetivo)}): asegurar el piso cediendo lo que supere el objetivo`; }
-    else if (F <= dolor && por('put')) { rec = por('put'); motivo = `el futuro (${rsF(F)}) ya está en el precio dolor: priorizar protección sin techo`; }
-    else if (caras && !clima && por('collar')) { rec = por('collar'); motivo = `las primas están caras (VI P${pr}${viHv ? `, VI/HV ${rsF(viHv, 2)}x` : ''}): conviene financiar el put vendiendo el call del objetivo`; }
-    else if (caras && por('spread')) { rec = por('spread'); motivo = `las primas están caras${clima ? ' y hay weather market (no conviene techo)' : ''}: el put spread abarata sin poner techo`; }
-    else if (baratas && por('put')) { rec = por('put'); motivo = `las primas están baratas (VI P${pr}${viHv ? `, VI/HV ${rsF(viHv, 2)}x` : ''}): buen momento para comprar el put sin vender nada`; }
-    else if (por('put') && por('put').costPct <= R.costoCaroPct) { rec = por('put'); motivo = `el put al dolor cuesta ${rsF(por('put').costPct)}% del futuro, un costo razonable, y no pone techo`; }
-    else { rec = por('spread') || por('collar') || est[0]; motivo = `el put solo es caro (> ${R.costoCaroPct}% del futuro): conviene abaratarlo`; }
+    // Qué estrategia conviene en cada escenario
+    const mejor = key => {
+      let best = { nombre: 'sin cobertura', v: key === 'dn' ? pDn : key === 'sp' ? F : pUp };
+      filas.forEach(f => { if (f[key] > best.v + 0.05) best = { nombre: escHtml(f.s.name), v: f[key] }; });
+      return best;
+    };
+    const bDn = mejor('dn'), bSp = mejor('sp'), bUp = mejor('up');
+    sec.hallazgos.push(rsHall('info', 30, `${etiqueta}: qué conviene según el escenario`,
+      `Futuro ${rsF(F)}. Si baja ${R.escenarioPct}% (${rsF(pDn)}): <b>${bDn.nombre}</b> (${rsF(bDn.v)}). Si queda igual: <b>${bSp.nombre}</b> (${rsF(bSp.v)}). Si sube ${R.escenarioPct}% (${rsF(pUp)}): <b>${bUp.nombre}</b> (${rsF(bUp.v)}).`,
+      'Precio neto de venta por escenario', ''));
 
-    const cards = est.map(e => rsCard(e === rec ? 'verde' : 'gris', e.nombre, e === rec ? 'RECOMENDADA' : '',
-      e.m.cost > 0 ? `u$s ${rsF(e.m.cost, 2)}` : `crédito ${rsF(-e.m.cost, 2)}`, `${e.desc} · ${rsF(Math.abs(e.costPct))}% del futuro`, [
-        ['Piso', e.m.piso != null ? rsF(e.m.piso) + (e.m.pisoHasta != null ? ` (hasta ${e.m.pisoHasta})` : '') : 'sin piso'],
-        ['Techo', e.m.techo != null ? rsF(e.m.techo) : 'sin techo'],
-        [`Neto si cae al dolor (${rsF(dolor)})`, rsF(e.alDolor)],
-        [`Neto si llega al objetivo (${rsF(objetivo)})`, rsF(e.alObj)],
-        ['VI de las patas', e.vis.join(' · ')],
-      ])).join('');
-    html += `<div class="rs-sub">${titulo} <span>futuro ${rsF(F)} · objetivo ${rsF(objetivo)} / dolor ${rsF(dolor)}${tieneRefs ? '' : ' (de referencia: faltan cargar)'}${dte != null ? ` · vence en ${dte} días` : ''} · VI ATM ${isFinite(viAtm) ? rsF(viAtm) + '%' : '—'}${pr != null ? ` (P${pr})` : ''}${viHv ? ` · VI/HV ${rsF(viHv, 2)}x` : ''}</span></div><div class="rs-pcards">${cards}</div>`;
-
-    sec.hallazgos.push(rsHall('oportunidad', 55, `${titulo}: ${rec.nombre}`,
-      `Recomendada porque ${motivo}. Cuesta ${rec.m.cost > 0 ? 'u$s ' + rsF(rec.m.cost, 2) : 'crédito ' + rsF(-rec.m.cost, 2)}/tn; si el precio cae al dolor (${rsF(dolor)}) se obtiene ${rsF(rec.alDolor)}.`,
-      'Costo, VI vs historia y precio vs objetivo/dolor', rec.desc + '.'));
-    if (!tieneRefs) sec.hallazgos.push(rsHall('alerta', 40, `${titulo}: sin Precio Objetivo / Dolor definido`,
-      `Se usaron referencias de ${R.dolorPctDefault}% abajo y ${R.objetivoPctDefault}% arriba del futuro.`, 'Precio Objetivo / Dolor sin cargar', 'Cargarlos en el panel de arriba del módulo Desvío (quedan guardados).'));
-    if (dte != null && dte < R.diasVencAlerta) sec.hallazgos.push(rsHall('alerta', 45, `${titulo}: opciones con ${dte} días al vencimiento`,
-      'Las primas tienen poco valor tiempo y el theta se acelera.', `Días al vencimiento < ${R.diasVencAlerta}`, 'Evaluar la posición siguiente.'));
+    html += `<div class="rs-sub">${etiqueta} <span>futuro ${rsF(F)}${dte != null ? ' · vence en ' + dte + ' días' : ''}</span></div>
+      <table class="rs-table"><thead><tr><th class="rs-l">Estrategia</th><th>Costo</th><th>Piso</th><th>Techo</th><th>Break-even</th><th>−${R.escenarioPct}%</th><th>Hoy</th><th>+${R.escenarioPct}%</th><th>Vol. (tn)</th><th>Valor hoy</th></tr></thead><tbody>
+      ${filas.map(f => `<tr><td class="rs-l" style="color:${f.s.color};font-weight:600">${escHtml(f.s.name)}</td>
+        <td>${f.m.cost > 0 ? rsF(f.m.cost, 2) : 'crédito ' + rsF(-f.m.cost, 2)}</td>
+        <td>${f.m.piso != null ? rsF(f.m.piso) + (f.m.pisoHasta != null ? `<small> hasta ${f.m.pisoHasta}</small>` : '') : '<span class="rs-neg">sin piso</span>'}</td>
+        <td>${f.m.techo != null ? rsF(f.m.techo) : 'sin techo'}</td>
+        <td>${f.m.be != null ? rsF(f.m.be) : (f.m.bes.length > 1 ? 'múltiples' : '—')}</td>
+        <td>${rsF(f.dn)}</td><td>${rsF(f.sp)}</td><td>${rsF(f.up)}</td>
+        <td>${rsF(f.vol, 0)}</td><td>${f.mtm != null ? rsSigno(f.mtm, 2) : '—'}</td></tr>`).join('')}
+      </tbody></table>`;
   });
 
+  if (!hayAlguna) sec.hallazgos.push(rsHall('info', 10, 'Sin estrategias cargadas', 'No hay estrategias con patas en ninguna solapa del módulo Coberturas.', '', 'Armar las coberturas en la pestaña Coberturas.'));
   sec.html = html;
   return sec;
 }
@@ -570,12 +557,12 @@ function rsRelaciones() {
       // Gráfico desplegable: serie actual vs promedio histórico al mismo día al vencimiento
       const promDte = r.cur.map(pt => { const h = r.hist.filter(x => Math.abs(x.dte - pt.dte) <= 5); return h.length ? h.reduce((a, x) => a + x.v, 0) / h.length : null; });
       rsDet['rel-' + par.id] = { dec: par.tipo === 'ratio' ? 3 : 1, labels: r.cur.map(x => x.f.slice(5)),
-        nota: `${par.nombre} (${r.p1} / ${r.p2}) · línea punteada: promedio de ${r.nCamp} campañas anteriores al mismo día al vencimiento`,
+        nota: `${par.nombre} (${r.p1} ${par.tipo === 'ratio' ? '/' : '−'} ${r.p2}) · línea punteada: promedio de ${r.nCamp} campañas anteriores al mismo día al vencimiento`,
         datasets: [
-          { label: `${r.p1} / ${r.p2}`, data: r.cur.map(x => x.v), borderColor: '#1A6B3C', borderWidth: 2, pointRadius: 0, tension: .2 },
+          { label: `${r.p1} ${par.tipo === 'ratio' ? '/' : '−'} ${r.p2}`, data: r.cur.map(x => x.v), borderColor: '#1A6B3C', borderWidth: 2, pointRadius: 0, tension: .2 },
           { label: 'Promedio histórico', data: promDte, borderColor: '#C8A44A', borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, spanGaps: true, tension: .2 },
         ] };
-      rows += `<tr class="rs-click" onclick="rsToggleDet(this,'rel-${par.id}',7)"><td class="rs-l"><span class="rs-caret">▸</span>${par.nombre}</td><td>${r.p1} / ${r.p2}</td><td><b>${fmt(r.actual)}</b></td><td>${fmt(r.mean)}</td><td class="${r.pct <= R.percentilBajo || r.pct >= R.percentilAlto ? 'rs-hot' : ''}">P${r.pct}</td><td>${rsSigno(r.z, 1)}σ</td><td>${r.nCamp}</td></tr>`;
+      rows += `<tr class="rs-click" onclick="rsToggleDet(this,'rel-${par.id}',7)"><td class="rs-l"><span class="rs-caret">▸</span>${par.nombre}</td><td>${r.p1} ${par.tipo === 'ratio' ? '/' : '−'} ${r.p2}</td><td><b>${fmt(r.actual)}</b></td><td>${fmt(r.mean)}</td><td class="${r.pct <= R.percentilBajo || r.pct >= R.percentilAlto ? 'rs-hot' : ''}">P${r.pct}</td><td>${rsSigno(r.z, 1)}σ</td><td>${r.nCamp}</td></tr>`;
       const ctx = `${par.nombre} (${r.p1}/${r.p2}) en ${fmt(r.actual)} contra un promedio histórico de ${fmt(r.mean)} ${r.enVentana ? `a ~${r.dte} días del vencimiento` : ''}: percentil ${r.pct} de ${r.nCamp} campañas.`;
       const regla = `Percentil ≤ P${R.percentilBajo} o ≥ P${R.percentilAlto} vs campañas anteriores`;
       // Carry alto en términos relativos pero todavía negativo: guardar no se paga en sí.

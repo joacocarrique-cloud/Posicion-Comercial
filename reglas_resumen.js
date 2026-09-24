@@ -27,20 +27,16 @@ const RS_REGLAS = {
     variacionDestacadaPct: 5,     // |variación 30 días| ≥ 5% → comentario
   },
 
-  // ─── Coberturas propuestas ───
-  // Para cada posición con Precio Objetivo / Dolor (PRECIOS_REFERENCIA en globals.js) se arman
-  // 3 estructuras con las primas de A3:
-  //   1) Put al precio dolor           → seguro puro, sin techo
-  //   2) Collar dolor / objetivo       → compra put al dolor, vende call al objetivo
-  //   3) Put spread desde el futuro    → compra put cerca del futuro, vende put debajo del dolor
-  // Si falta el objetivo o el dolor, se usan estos % sobre el futuro como referencia:
+  // ─── Coberturas: estrategias cargadas en el módulo Coberturas ───
   coberturas: {
-    dolorPctDefault: 8,           // dolor = futuro × (1 − 8%)
-    objetivoPctDefault: 10,       // objetivo = futuro × (1 + 10%)
+    maxEstrategiasPorSolapa: 4,   // se toman las de mayor volumen
+    escenarioPct: 15,             // escenarios de baja / suba para comparar estrategias (±%)
     costoCaroPct: 3.0,            // prima neta > 3% del futuro → cara
-    viBarataPercentil: 30,        // VI ≤ P30 → conviene comprar opciones (put)
-    viCaraPercentil: 70,          // VI ≥ P70 → conviene financiar vendiendo prima (collar / spread)
-    diasVencAlerta: 30,           // menos de 30 días al vencimiento → aviso
+    costoBaratoPct: 1.0,          // prima neta < 1% del futuro → barata
+    pisoLejanoPct: 10,            // piso más de 10% debajo del futuro → protección lejana
+    techoPegadoPct: 5,            // techo a menos de 5% del futuro → resigna casi toda la suba
+    diasVencAlerta: 30,           // menos de 30 días al vencimiento → decidir rolleo / cierre
+    diasVencAviso: 60,
   },
 
   // ─── Volatilidad ───
@@ -75,22 +71,20 @@ const RS_REGLAS = {
     minPuntosHist: 15,            // si hay menos puntos comparables, se usa toda la historia
     // tipo 'ratio' = precio1 / precio2 · tipo 'spread' = precio1 − precio2 · carry: true = spread de almacenaje
     // desfase = año de la posición 2 − año de la posición 1
+    // Relaciones entre productos: siempre SOJA en el numerador (soja / maíz, soja / trigo).
     pares: [
       { id: 'soja_maiz',  nombre: 'Soja MAY / Maíz ABR',  tipo: 'ratio',  c1: 'soja',  m1: 'MAY', c2: 'maiz',  m2: 'ABR', desfase: 0,
         alta: 'La soja está cara en relación al maíz: priorizar ventas / coberturas de soja.',
         baja: 'El maíz está caro en relación a la soja: priorizar ventas / coberturas de maíz.' },
-      { id: 'trigo_maiz', nombre: 'Trigo DIC / Maíz ABR', tipo: 'ratio',  c1: 'trigo', m1: 'DIC', c2: 'maiz',  m2: 'ABR', desfase: 1,
-        alta: 'El trigo está caro en relación al maíz: priorizar ventas de trigo.',
-        baja: 'El maíz está caro en relación al trigo: priorizar ventas de maíz.' },
-      { id: 'trigo_soja', nombre: 'Trigo DIC / Soja MAY', tipo: 'ratio',  c1: 'trigo', m1: 'DIC', c2: 'soja',  m2: 'MAY', desfase: 1,
-        alta: 'El trigo está caro en relación a la soja: priorizar ventas de trigo.',
-        baja: 'La soja está cara en relación al trigo: priorizar ventas de soja.' },
+      { id: 'soja_trigo', nombre: 'Soja MAY / Trigo DIC', tipo: 'ratio',  c1: 'soja',  m1: 'MAY', c2: 'trigo', m2: 'DIC', desfase: -1,
+        alta: 'La soja está cara en relación al trigo: priorizar ventas / coberturas de soja.',
+        baja: 'El trigo está caro en relación a la soja: priorizar ventas / coberturas de trigo.' },
       { id: 'soja_vieja_nueva', nombre: 'Soja NOV − MAY (vieja vs nueva)', tipo: 'spread', c1: 'soja', m1: 'NOV', c2: 'soja', m2: 'MAY', desfase: 1,
         alta: 'Prima alta de la vieja cosecha: conviene vender el stock disponible antes que la nueva.',
         baja: 'La vieja cosecha paga poco sobre la nueva: no hay premio por vender stock ya.' },
-      { id: 'maiz_carry', nombre: 'Maíz JUL − ABR (carry)', tipo: 'spread', carry: true, c1: 'maiz', m1: 'JUL', c2: 'maiz', m2: 'ABR', desfase: 0,
-        alta: 'El mercado paga bien por guardar maíz de ABR a JUL: favorece retener / vender diferido.',
-        baja: 'El carry ABR→JUL es bajo: no paga guardar, favorece vender en cosecha.' },
+      { id: 'maiz_abr_jul', nombre: 'Maíz ABR − JUL', tipo: 'spread', c1: 'maiz', m1: 'ABR', c2: 'maiz', m2: 'JUL', desfase: 0,
+        alta: 'ABR paga mucho más que JUL: favorece vender / fijar en cosecha (ABR) antes que diferido.',
+        baja: 'La diferencia ABR − JUL está baja: JUL paga relativamente bien comparado con otros años, favorece vender / fijar JUL.' },
       { id: 'trigo_carry', nombre: 'Trigo MAR − DIC (carry)', tipo: 'spread', carry: true, c1: 'trigo', m1: 'MAR', c2: 'trigo', m2: 'DIC', desfase: -1,
         alta: 'El mercado paga bien por guardar trigo de DIC a MAR: favorece retener / vender diferido.',
         baja: 'El carry DIC→MAR es bajo: no paga guardar, favorece vender en cosecha.' },
