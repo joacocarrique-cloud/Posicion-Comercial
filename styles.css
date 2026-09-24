@@ -135,7 +135,8 @@ body {
 .mod-pill.active { background: rgba(255,255,255,0.96); color: var(--es-green-dark); border-color: transparent; font-weight: 700; }
 
 /* ─── Container ─── */
-.container { max-width: 1320px; margin: 0 auto; padding: 20px 24px; }
+/* Ancho fluido: la Suite ocupa todo el ancho del monitor (antes tope de 1320px). */
+.container { width: 100%; max-width: none; margin: 0; padding: 20px 32px; }
 
 /* ─── Tabs ─── */
 .tabs-bar {
@@ -826,8 +827,6 @@ body {
 /* ─── Retenciones Tab ─── */
 .ret-section {
   display: none;
-  max-width: 1100px;
-  margin: 0 auto;
 }
 .ret-topbar {
   display: flex;
