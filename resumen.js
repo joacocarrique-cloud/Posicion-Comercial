@@ -86,14 +86,10 @@ function rsMercado() {
   return sec;
 }
 
-// ═══════════════════════════════════════════════════
-// 1b) CONTROL DE DATOS MANUALES
-// Tasas, dólar futuro, almacenaje y crushing no vienen de ninguna fuente automática:
-// se revisa si siguen con el valor de fábrica o pasaron su vigencia (storage.js).
-// ═══════════════════════════════════════════════════
+// Aviso para agregar a un comentario que usa parámetros manuales (storage.js) que siguen
+// con el valor de fábrica o pasaron su vigencia.
 const RS_PARAMS_MERCADO = id => !/^fondeo-(monto|fecha)$/.test(id);   // monto y fecha son decisiones, no datos de mercado
 
-// Aviso para agregar al texto de un comentario que usa esos parámetros
 function rsAvisoDatos(ids) {
   if (typeof paramsEstado !== 'function') return '';
   const pend = paramsEstado().filter(p => ids.includes(p.id) && p.estado !== 'ok' && RS_PARAMS_MERCADO(p.id));
@@ -101,31 +97,14 @@ function rsAvisoDatos(ids) {
   return ` <span class="rs-warn">⚠ Usa datos manuales sin actualizar: ${pend.map(p => p.nombre + (p.estado === 'fabrica' ? ' (valor de fábrica)' : ` (cargado hace ${p.dias} días)`)).join(', ')}.</span>`;
 }
 
-function rsControlDatos() {
-  const sec = { id: 'datos', titulo: 'Control de datos manuales', hallazgos: [], html: '' };
-  if (typeof paramsEstado !== 'function') return sec;
-  const est = paramsEstado();
-  const prio = { 'Pases & Tasas': [78, 66], 'Fondeo': [58, 50], 'FAS & Retenciones': [30, 25] };
-  [...new Set(est.map(p => p.modulo))].forEach(mod => {
-    const delMod = est.filter(p => p.modulo === mod && RS_PARAMS_MERCADO(p.id));
-    const fab = delMod.filter(p => p.estado === 'fabrica'), vie = delMod.filter(p => p.estado === 'viejo');
-    const [pf, pv] = prio[mod] || [40, 30];
-    const tipo = mod === 'FAS & Retenciones' ? 'info' : 'alerta';
-    if (fab.length) sec.hallazgos.push(rsHall(tipo, pf, `${mod}: ${fab.length} dato(s) con valor de fábrica`,
-      `Nunca se cargaron: ${fab.map(p => `${p.nombre} (${p.valor})`).join(', ')}. Los comentarios de ${mod} que dependen de ellos pueden no reflejar el mercado.`,
-      'Parámetro manual sin cargar', `Cargá los valores actuales en ${mod}: quedan guardados en este navegador.`));
-    if (vie.length) sec.hallazgos.push(rsHall(tipo, pv, `${mod}: ${vie.length} dato(s) desactualizados`,
-      vie.map(p => `${p.nombre} = ${p.valor} (cargado hace ${p.dias} días; vigencia ${p.vigencia} días)`).join('; ') + '.',
-      'Parámetro manual con más días que su vigencia', `Actualizalos en ${mod}.`));
-  });
-  const badge = p => p.estado === 'ok' ? '<span class="rs-pos">al día</span>' : p.estado === 'viejo' ? `<span class="rs-neg">${p.dias} días</span>` : '<span class="rs-neg">de fábrica</span>';
-  const auto = [];
-  if (sheetData && sheetData.tcGrano) auto.push(`<tr><td class="rs-l">Pases / Fondeo</td><td class="rs-l">TC spot (implícito del grano)</td><td>${rsF(sheetData.tcGrano, 0)}</td><td>A3 ${sheetData.fechaDatos || ''}</td><td><span class="rs-pos">automático</span></td></tr>`);
-  sec.html = `<table class="rs-table"><thead><tr><th class="rs-l">Módulo</th><th class="rs-l">Dato</th><th>Valor</th><th>Última carga</th><th>Estado</th></tr></thead><tbody>
-    ${auto.join('')}
-    ${est.map(p => `<tr><td class="rs-l">${p.modulo}</td><td class="rs-l">${p.nombre}</td><td>${escHtml(p.valor)}</td><td>${p.fecha ? p.fecha.toLocaleDateString('es-AR') : '—'}</td><td>${badge(p)} <small>(vigencia ${p.vigencia} d)</small></td></tr>`).join('')}
-  </tbody></table>`;
-  return sec;
+// Tarjeta de color (verde / rojo / gris) usada en Pases y FAS
+function rsCard(color, titulo, tag, valor, sub, filas) {
+  return `<div class="rs-pcard ${color}">
+    <div class="rs-pcard-h"><span>${titulo}</span>${tag ? `<span class="rs-pcard-tag">${tag}</span>` : ''}</div>
+    <div class="rs-pcard-v">${valor}</div>
+    <div class="rs-pcard-s">${sub}</div>
+    ${filas.map(([k, v]) => `<div class="rs-pcard-row"><span>${k}</span><b>${v}</b></div>`).join('')}
+  </div>`;
 }
 
 // ═══════════════════════════════════════════════════
@@ -288,7 +267,7 @@ function rsVol() {
 }
 
 // ═══════════════════════════════════════════════════
-// 4) PASES & TASAS
+// 4) PASES: ESTRUCTURA DE LA CURVA (CARRY / INVERSO)
 // ═══════════════════════════════════════════════════
 function rsFechaVto(crop, pos) {
   const f = (sheetData && sheetData.futuros[crop] || []).find(x => x.pos === pos);
@@ -305,74 +284,51 @@ function rsFutsVigentes(crop) {
 
 function rsPases() {
   const R = RS_REGLAS.pases;
-  const sec = { id: 'pases', titulo: 'Pases & Tasas', hallazgos: [], html: '' };
-  const num = id => { const el = document.getElementById(id); return el ? (parseFloat(el.value) || 0) : 0; };
-  const credUSD = num('pase-tasa-credito-usd'), alm = num('pase-almacenaje');
+  const sec = { id: 'pases', titulo: 'Pases: ¿el mercado paga por guardar?', hallazgos: [], html: '' };
+  if (!sheetData) return sec;
+  const hoyIso = new Date().toISOString().slice(0, 10);
+  let html = '';
 
-  // A) Carry en dólares: disponible de hoy (A3) contra cada futuro vigente (hasta 12 meses).
-  //    Si A3 no trae disponible, se parte del futuro más cercano.
-  let rows = '';
-  const avA = rsAvisoDatos(['pase-tasa-credito-usd', 'pase-almacenaje']);
-  if (sheetData) {
-    ['soja', 'maiz', 'trigo'].forEach(c => {
-      const futs = rsFutsVigentes(c);
-      const disp = sheetData.disponible && sheetData.disponible[c];
-      const hoyIso = new Date().toISOString().slice(0, 10);
-      const p1 = disp && disp.usd > 0 ? { pos: 'Disponible', precio: disp.usd } : futs[0];
-      const destinos = disp && disp.usd > 0 ? futs : futs.slice(1);
-      if (!p1 || !destinos.length) return;
-      const d1 = p1.pos === 'Disponible' ? hoyIso : rsFechaVto(c, p1.pos);
-      let best = null;
-      destinos.forEach(p2 => {
-        const dias = paseDaysBetween(d1, rsFechaVto(c, p2.pos));
-        if (dias <= 0 || dias > 370) return;
-        const neta = ((p2.precio - p1.precio - alm * dias / 30) / p1.precio) * (365 / dias) * 100;
-        rows += `<tr><td class="rs-l">${rsCrop(c)}</td><td>${p1.pos} → ${p2.pos}</td><td>${dias}</td><td>${rsSigno(p2.precio - p1.precio)}</td><td class="${neta >= credUSD ? 'rs-pos' : 'rs-neg'}">${rsF(neta)}%</td></tr>`;
-        if (!best || neta > best.neta) best = { p2, dias, neta };
-      });
-      if (!best) return;
-      const dif = best.neta - credUSD;
-      if (dif > R.margenPp) sec.hallazgos.push(rsHall('oportunidad', 55, `${rsCrop(c)}: el mercado paga por guardar`,
-        `El pase ${p1.pos} (${rsF(p1.precio)}) → ${best.p2.pos} (${rsF(best.p2.precio)}), ${best.dias} días, rinde ${rsF(best.neta)}% TNA neto de almacenaje, contra un crédito u$s de ${rsF(credUSD)}%.${avA}`,
-        `Tasa neta del pase > crédito u$s + ${R.margenPp} pp`, `Retener y vender ${best.p2.pos} (aunque haya que financiarse en u$s).`));
-      else if (dif < -R.margenPp) sec.hallazgos.push(rsHall('oportunidad', 50, `${rsCrop(c)}: no conviene guardar`,
-        `El mejor pase (${p1.pos} ${rsF(p1.precio)} → ${best.p2.pos} ${rsF(best.p2.precio)}) rinde ${rsF(best.neta)}% TNA neto, menos que el crédito u$s (${rsF(credUSD)}%).${avA}`,
-        `Tasa neta del pase < crédito u$s − ${R.margenPp} pp`, p1.pos === 'Disponible' ? 'Vender disponible y evitar el costo financiero de retener.' : `Vender cercano (${p1.pos}) y evitar el costo financiero de retener.`));
-      else sec.hallazgos.push(rsHall('info', 20, `${rsCrop(c)}: pase en zona neutra`, `El mejor pase (${p1.pos} → ${best.p2.pos}) rinde ${rsF(best.neta)}% TNA neto, similar al crédito u$s (${rsF(credUSD)}%).${avA}`, `Diferencia dentro de ±${R.margenPp} pp`, ''));
-    });
-  }
+  ['soja', 'maiz', 'trigo'].forEach(c => {
+    const futs = rsFutsVigentes(c).filter(f => paseDaysBetween(hoyIso, rsFechaVto(c, f.pos)) <= R.horizonteDias);
+    const disp = sheetData.disponible && sheetData.disponible[c];
+    // Base: el disponible de hoy (A3); si no hay, el futuro más cercano
+    const base = disp && disp.usd > 0
+      ? { pos: 'Disponible', precio: disp.usd, fecha: hoyIso }
+      : (futs[0] ? { pos: futs[0].pos, precio: futs[0].precio, fecha: rsFechaVto(c, futs[0].pos) } : null);
+    const destinos = base && base.pos === 'Disponible' ? futs : futs.slice(1);
+    if (!base || !destinos.length) return;
+    const pts = destinos.map(f => {
+      const dias = paseDaysBetween(base.fecha, rsFechaVto(c, f.pos));
+      const dif = f.precio - base.precio;
+      return { pos: f.pos, precio: f.precio, dias, dif, tna: dias > 0 ? dif / base.precio * 365 / dias * 100 : 0 };
+    }).filter(x => x.dias > 0);
+    if (!pts.length) return;
 
-  // B) Comparador de estrategias de venta: el par configurado en el módulo Pases
-  try {
-    if (!document.getElementById('pase-p1-price').value && typeof paseUpdatePositions === 'function') paseUpdatePositions();
-    const inp = paseGetInputs();
-    const pairs = paseBuildPairs(inp);
-    if (pairs.length) {
-      const pair = pairs[0];
-      const calc = paseCalcPair(pair, inp.almacenaje);
-      const strats = paseCalcStrategies(pair, inp, calc);
-      // Se recomienda la mejor alternativa SIN riesgo cambiario; si la de mayor resultado
-      // tiene exposición al TC, se menciona aparte.
-      const top = strats[0];
-      const best = strats.find(s => !s.riskTC) || top;
-      const base = strats.find(s => s.isBase) || strats[strats.length - 1];
-      const delta = best.resultUSD - base.resultUSD;
-      if (top !== best && top.resultUSD - best.resultUSD >= R.ventajaMinUsd) sec.hallazgos.push(rsHall('info', 30, `${pair.label}: alternativa con riesgo cambiario`,
-        `${top.name.replace(/^[①-⑨]\s*/, '')} daría ${rsF(top.resultUSD)} u$s/tn (${rsSigno(top.resultUSD - best.resultUSD, 2)} vs la mejor cubierta), pero sin cobertura de TC.`,
-        'Alternativa con exposición cambiaria', 'Solo si se acepta el riesgo de devaluación.'));
-      const tcTxt = `TC spot ${rsF(inp.tcSpot, 0)} / futuro ${rsF(inp.tcFut2, 0)}`
-        + rsAvisoDatos(['pase-tasa-credito-usd', 'pase-tasa-credito-ars', 'pase-tasa-caucion-usd', 'pase-tasa-caucion-ars', 'pase-tasa-lecap', 'pase-tasa-cheques', 'pase-tc-fut2', 'pase-almacenaje']).replace(/\.<\/span>$/, '</span>');
-      if (calc.tasaTCimpl > R.devaAtipicaTna || calc.tasaTCimpl < 0) sec.hallazgos.push(rsHall('alerta', 60, 'Pases: revisar tipo de cambio', `La devaluación implícita del TC cargado es ${rsF(calc.tasaTCimpl)}% TNA, un valor atípico. ${tcTxt}.`, `Deva implícita > ${R.devaAtipicaTna}% o negativa`, 'Actualizar TC spot y futuro ROFEX en Pases & Tasas.'));
-      if (best.isBase || delta < R.ventajaMinUsd) sec.hallazgos.push(rsHall('oportunidad', 45, `${pair.label}: vender hoy`,
-        `Ninguna alternativa mejora a vender ${pair.from.name} hoy y aplicar la caja al costo de capital por más de ${R.ventajaMinUsd} u$s/tn. ${tcTxt}.`,
-        'Mejor alternativa vs. vender hoy < ventaja mínima', 'Vender cercano.'));
-      else sec.hallazgos.push(rsHall('oportunidad', 52, `${pair.label}: ${best.name.replace(/^[①-⑨]\s*/, '')}`,
-        `Es la mejor alternativa: ${rsF(best.resultUSD)} u$s/tn a la fecha de ${pair.to.name}, ${rsSigno(delta, 2)} u$s/tn contra vender hoy.${best.riskTC ? ' ⚠ Tiene exposición cambiaria.' : ''} ${tcTxt}.`,
-        `Ranking del comparador de estrategias de venta`, best.desc));
-    }
-  } catch (e) { console.warn('Resumen/Pases:', e); }
+    const cerc = pts[0];
+    const maxP = pts.reduce((a, b) => (b.dif > a.dif ? b : a));
+    const minP = pts.reduce((a, b) => (b.dif < a.dif ? b : a));
+    const estado = cerc.dif > R.carryMinUsd ? 'carry' : cerc.dif < -R.carryMinUsd ? 'inverso' : 'plano';
+    const color = estado === 'carry' ? 'verde' : estado === 'inverso' ? 'rojo' : 'gris';
+    const tag = estado === 'carry' ? 'CARRY' : estado === 'inverso' ? 'INVERSO' : 'PLANO';
 
-  sec.html = rows ? `<table class="rs-table"><thead><tr><th class="rs-l">Cultivo</th><th>Pase</th><th>Días</th><th>Pase u$s/tn</th><th>TNA neta vs crédito ${rsF(credUSD)}%</th></tr></thead><tbody>${rows}</tbody></table>` : '';
+    html += rsCard(color, `${rsCrop(c)} · ${base.pos} ${rsF(base.precio)}`, tag,
+      `${rsSigno(cerc.dif)} u$s`, `${base.pos} → ${cerc.pos} (${cerc.dias} días)`,
+      pts.map(x => [`${x.pos} · ${rsF(x.precio)}`, `${rsSigno(x.dif)} · ${rsF(x.tna)}% TNA`]));
+
+    const regla = `Diferencia ${base.pos} → posición cercana: > +${R.carryMinUsd} carry · < −${R.carryMinUsd} inverso`;
+    const contra = (minP.dif < -R.carryMinUsd && estado !== 'inverso') ? ` Contra ${minP.pos} está en inverso (${rsSigno(minP.dif)}).` : '';
+    if (estado === 'carry') sec.hallazgos.push(rsHall('oportunidad', 45, `${rsCrop(c)}: mercado en carry`,
+      `${base.pos} ${rsF(base.precio)} → ${maxP.pos} ${rsF(maxP.precio)}: ${rsSigno(maxP.dif)} u$s/tn en ${maxP.dias} días (${rsF(maxP.tna)}% TNA bruta).${contra}`,
+      regla, `El mercado paga por guardar hasta ${maxP.pos}: conviene retener y vender diferido si almacenaje + costo financiero están por debajo de ${rsF(maxP.tna)}% anual.`));
+    else if (estado === 'inverso') sec.hallazgos.push(rsHall('oportunidad', 50, `${rsCrop(c)}: mercado en inverso`,
+      `${base.pos} ${rsF(base.precio)} → ${cerc.pos} ${rsF(cerc.precio)}: ${rsSigno(cerc.dif)} u$s/tn. Las posiciones diferidas pagan menos que hoy.${maxP.dif > R.carryMinUsd ? ` (${maxP.pos} sí paga ${rsSigno(maxP.dif)}.)` : ''}`,
+      regla, 'El mercado castiga guardar: priorizar la venta del disponible / posición cercana.'));
+    else sec.hallazgos.push(rsHall('info', 30, `${rsCrop(c)}: curva plana`,
+      `${base.pos} ${rsF(base.precio)} → ${cerc.pos} ${rsF(cerc.precio)}: ${rsSigno(cerc.dif)} u$s/tn.${contra}`, regla, 'Guardar no suma ni resta: decide el costo de almacenaje y financiamiento.'));
+  });
+
+  sec.html = html ? `<div class="rs-pcards">${html}</div>` : '';
   return sec;
 }
 
@@ -406,7 +362,7 @@ function rsFondeo() {
 }
 
 // ═══════════════════════════════════════════════════
-// 6) FAS & RETENCIONES (cronograma y crushing)
+// 6) FAS TEÓRICO VS MERCADO (posiciones clave, retenciones, crushing)
 // ═══════════════════════════════════════════════════
 function rsFobExacto(crop, pos) {
   const key = (typeof FOB_KEY_MAP !== 'undefined') ? FOB_KEY_MAP[crop] : crop;
@@ -423,9 +379,62 @@ function rsPosConFob(crop) {
   return null;
 }
 
+// Próximo contrato vigente de un mes (p.ej. 'ABR' → ABR27): primero A3; si A3 no lo lista,
+// se arma por calendario (este año si el mes todavía no llegó, si no el próximo).
+function rsProxPos(crop, mes) {
+  const f = sheetData ? rsFutsVigentes(crop).find(x => x.pos.slice(0, 3) === mes) : null;
+  if (f) return { pos: f.pos, fut: f.precio };
+  const m = ASST_MES[mes], hoy = new Date(), y = hoy.getFullYear(), m0 = hoy.getMonth() + 1;
+  return { pos: mes + rsYY(m > m0 ? y : y + 1), fut: null };
+}
+
 function rsFas() {
   const R = RS_REGLAS.fas;
-  const sec = { id: 'fas', titulo: 'FAS & Retenciones', hallazgos: [], html: '' };
+  const sec = { id: 'fas', titulo: 'FAS teórico vs mercado', hallazgos: [], html: '' };
+  let html = '';
+
+  // Tarjetas: futuro A3 vs FAS teórico en las posiciones clave de cada cultivo
+  Object.entries(R.posiciones).forEach(([c, meses]) => {
+    const items = meses.map(mes => rsProxPos(c, mes))
+      .sort((a, b) => posSortKey(a.pos) - posSortKey(b.pos))
+      .map(x => {
+        const fb = rsFobExacto(c, x.pos);
+        const ret = getRetencionForPos(c, x.pos);
+        const fobbing = RET_DEFAULTS[c].fobbing;
+        const fas = fb ? fb.fob * (1 - ret / 100) - fobbing : null;
+        const dif = (fas != null && x.fut != null) ? x.fut - fas : null;
+        return { ...x, fob: fb ? fb.fob : null, ret, fobbing, fas, dif };
+      });
+    const cards = items.map(x => {
+      const color = x.dif == null ? 'gris' : x.dif >= 0 ? 'verde' : 'rojo';
+      const tag = x.dif == null ? '' : x.dif >= 0 ? 'SOBRE PARIDAD' : 'BAJO PARIDAD';
+      const valor = x.dif != null ? `${rsSigno(x.dif)} u$s` : '—';
+      const sub = x.dif != null ? 'futuro − FAS teórico' : (x.fas == null ? 'sin FOB para esta posición' : 'sin futuro en A3');
+      return rsCard(color, `${rsCrop(c)} ${x.pos}`, tag, valor, sub, [
+        ['Futuro A3', x.fut != null ? rsF(x.fut) : '—'],
+        ['FAS teórico', x.fas != null ? rsF(x.fas) : '—'],
+        ['FOB', x.fob != null ? rsF(x.fob, 0) : '—'],
+        ['Retención', rsF(x.ret, 2) + '%'],
+        ['Fobbing', rsF(x.fobbing, 0)],
+      ]);
+    }).join('');
+    html += `<div class="rs-crop-lbl">${rsCrop(c)}</div><div class="rs-pcards">${cards}</div>`;
+
+    // Un comentario por cultivo que resume sus posiciones
+    const conDif = items.filter(x => x.dif != null);
+    if (!conDif.length) return;
+    const sobre = conDif.filter(x => x.dif >= 0), bajo = conDif.filter(x => x.dif < 0);
+    const detalle = conDif.map(x => `${x.pos} ${rsSigno(x.dif)} ${x.dif >= 0 ? '🟢' : '🔴'}`).join(' · ');
+    const maxAbs = Math.max(...conDif.map(x => Math.abs(x.dif)));
+    const regla = `Futuro vs FAS teórico (FOB × (1 − retención) − fobbing); relevante si |diferencia| > ${R.spreadUsd} u$s/tn`;
+    const tipo = maxAbs > R.spreadUsd ? 'oportunidad' : 'info';
+    const prio = maxAbs > R.spreadUsd ? Math.min(60, 40 + Math.round(maxAbs)) : 30;   // ≥ 30: siempre entra al texto
+    let accion;
+    if (sobre.length && !bajo.length) accion = 'El mercado paga por encima de la paridad de exportación en todas las posiciones: buen momento para vender / fijar precio.';
+    else if (bajo.length && !sobre.length) accion = 'Todas las posiciones pagan debajo de la paridad: la exportación tiene margen, hay espacio para negociar; no apurar ventas.';
+    else accion = `Priorizar ventas / fijaciones en ${sobre.map(x => x.pos).join(' y ')} (sobre paridad) antes que en ${bajo.map(x => x.pos).join(' y ')}.`;
+    sec.hallazgos.push(rsHall(tipo, prio, `${rsCrop(c)}: precio vs paridad de exportación`, detalle + '.', regla, accion));
+  });
 
   // Próximos escalones del cronograma de retenciones
   const hoy = new Date(), y0 = hoy.getFullYear(), m0 = hoy.getMonth() + 1;
@@ -439,7 +448,7 @@ function rsFas() {
     const impacto = fb ? fb.fob * (actual - prox.ret) / 100 : null;
     sec.hallazgos.push(rsHall('info', 30, `${rsCrop(c)}: baja la retención en ${RS_MES[prox.m - 1]}-${prox.y}`,
       `Pasa de ${rsF(actual, 2)}% a ${rsF(prox.ret, 2)}%${impacto != null ? `: con el FOB actual (${rsF(fb.fob, 0)}) el FAS teórico sube ~${rsF(impacto)} u$s/tn` : ''}.`,
-      'Cronograma de retenciones (RET_SCHEDULE)', 'Considerarlo al elegir la posición de venta: las posiciones posteriores al escalón tienen mejor paridad.'));
+      'Cronograma de retenciones (RET_SCHEDULE)', 'Ya está incluido en el FAS de cada posición: las posteriores al escalón tienen mejor paridad.'));
   });
 
   // Crushing vs exportación de poroto (soja)
@@ -457,11 +466,13 @@ function rsFas() {
       `FAS crushing > FAS poroto + ${R.crushVsGranoUsd}`, 'Cotizar la soja a fábrica antes que a exportación.'));
     else sec.hallazgos.push(rsHall('info', 15, 'Soja: crushing vs poroto', `FAS crushing ${rsF(crush)} vs FAS poroto ${rsF(grano)} (${fb.pos}): diferencia ${rsSigno(dif)} u$s/tn.${avC}`, 'Paridad industria vs exportación', ''));
   }
+
+  sec.html = html;
   return sec;
 }
 
 // ═══════════════════════════════════════════════════
-// 7) RELACIONES DE PRECIOS (+ FAS teórico vs futuro)
+// 7) RELACIONES DE PRECIOS
 // ═══════════════════════════════════════════════════
 function rsIndexFutpos() {
   const idx = {}; let maxF = '';
@@ -542,24 +553,7 @@ function rsRelaciones() {
     });
   }
 
-  // FAS teórico vs futuro
-  let rowsFas = '';
-  R.fasCultivos.forEach(c => {
-    const fb = rsPosConFob(c);
-    if (!fb) return;
-    const ret = getRetencionForPos(c, fb.pos);
-    const fas = fb.fob * (1 - ret / 100) - RET_DEFAULTS[c].fobbing;
-    const dif = fb.fut - fas;
-    rowsFas += `<tr><td class="rs-l">${rsCrop(c)}</td><td>${fb.pos}</td><td>${rsF(fb.fob, 0)}</td><td>${rsF(ret, 2)}%</td><td>${rsF(fas)}</td><td>${rsF(fb.fut)}</td><td class="${dif >= 0 ? 'rs-pos' : 'rs-neg'}">${rsSigno(dif)}</td></tr>`;
-    const txt = `${rsCrop(c)} ${fb.pos}: futuro ${rsF(fb.fut)} vs FAS teórico ${rsF(fas)} (FOB ${rsF(fb.fob, 0)}, retención ${rsF(ret, 2)}%).`;
-    const regla = `|Futuro − FAS teórico| > ${RS_REGLAS.fas.spreadUsd} u$s/tn`;
-    if (dif > RS_REGLAS.fas.spreadUsd) sec.hallazgos.push(rsHall('oportunidad', 48, `${rsCrop(c)}: el mercado paga sobre paridad (${rsSigno(dif)})`, txt, regla, 'Buen momento para vender / fijar: el precio supera lo que la exportación puede pagar por paridad.'));
-    else if (dif < -RS_REGLAS.fas.spreadUsd) sec.hallazgos.push(rsHall('oportunidad', 42, `${rsCrop(c)}: el mercado paga debajo de paridad (${rsSigno(dif)})`, txt, regla, 'La exportación tiene margen: hay espacio para negociar mejor precio; no apurar ventas.'));
-    else sec.hallazgos.push(rsHall('info', 12, `${rsCrop(c)}: precio en línea con la paridad`, txt, regla, ''));
-  });
-
-  sec.html = (rows ? `<table class="rs-table"><thead><tr><th class="rs-l">Relación</th><th>Posiciones</th><th>Actual</th><th>Prom. hist.</th><th>Percentil</th><th>Desvío</th><th>Campañas</th></tr></thead><tbody>${rows}</tbody></table>` : '')
-    + (rowsFas ? `<table class="rs-table" style="margin-top:12px"><thead><tr><th class="rs-l">FAS teórico vs futuro</th><th>Posición</th><th>FOB</th><th>Retención</th><th>FAS teórico</th><th>Futuro</th><th>Diferencia</th></tr></thead><tbody>${rowsFas}</tbody></table>` : '');
+  sec.html = rows ? `<table class="rs-table"><thead><tr><th class="rs-l">Relación</th><th>Posiciones</th><th>Actual</th><th>Prom. hist.</th><th>Percentil</th><th>Desvío</th><th>Campañas</th></tr></thead><tbody>${rows}</tbody></table>` : '';
   return sec;
 }
 
@@ -618,7 +612,7 @@ function rsLineUp() {
 // ═══════════════════════════════════════════════════
 // GENERACIÓN DEL INFORME
 // ═══════════════════════════════════════════════════
-const RS_ANALIZADORES = [rsMercado, rsControlDatos, rsCoberturas, rsVol, rsPases, rsFondeo, rsFas, rsRelaciones, rsDesvio, rsLineUp];
+const RS_ANALIZADORES = [rsMercado, rsCoberturas, rsVol, rsFas, rsPases, rsFondeo, rsRelaciones, rsDesvio, rsLineUp];
 
 function rsGenerar() {
   const secciones = RS_ANALIZADORES.map(fn => {

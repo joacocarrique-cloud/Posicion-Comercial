@@ -40,16 +40,23 @@ const RS_REGLAS = {
     viHvCara: 1.5,                // VI/HV20 > 1,5 → opciones caras
   },
 
-  // ─── Pases & Tasas ───
+  // ─── Pases: ¿el mercado está en carry? ───
+  // Se compara el disponible de hoy (A3) contra cada futuro. Posición cercana más cara que
+  // el disponible = CARRY (paga guardar); más barata = INVERSO; dentro de ±carryMinUsd = PLANO.
   pases: {
-    margenPp: 1.0,                // tasa neta del pase vs crédito u$s: ±1 pp = zona indiferente
-    ventajaMinUsd: 0.5,           // diferencia mínima (u$s/tn) para recomendar una alternativa
-    devaAtipicaTna: 80,           // deva implícita > 80% TNA → revisar TC cargado
+    carryMinUsd: 2,               // u$s/tn de diferencia para considerar carry / inverso
+    horizonteDias: 400,           // posiciones a considerar (hasta ~13 meses)
   },
 
-  // ─── FAS & Retenciones ───
+  // ─── FAS teórico vs mercado ───
   fas: {
-    spreadUsd: 5,                 // |futuro − FAS teórico| > 5 u$s/tn → comentario
+    // Posiciones clave por cultivo: se toma el próximo contrato vigente de cada mes
+    posiciones: {
+      maiz:  ['ABR', 'JUL', 'DIC'],
+      soja:  ['NOV', 'MAY', 'JUL'],
+      trigo: ['DIC', 'MAR', 'JUL'],
+    },
+    spreadUsd: 5,                 // |futuro − FAS teórico| > 5 u$s/tn → comentario destacado
     crushVsGranoUsd: 10,          // FAS crushing supera al de poroto por > 10 u$s/tn
     horizonteRetMeses: 6,         // avisar escalones de retención dentro de los próximos 6 meses
   },
@@ -82,8 +89,6 @@ const RS_REGLAS = {
         alta: 'El mercado paga bien por guardar trigo de DIC a MAR: favorece retener / vender diferido.',
         baja: 'El carry DIC→MAR es bajo: no paga guardar, favorece vender en cosecha.' },
     ],
-    // FAS teórico vs futuro: cultivos a comparar (posición más cercana con FOB)
-    fasCultivos: ['soja', 'maiz', 'trigo'],
   },
 
   // ─── Desvío de precios ───

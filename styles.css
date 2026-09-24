@@ -461,6 +461,24 @@ body {
 .rs-pos { color: var(--green); font-weight: 600; }
 .rs-neg { color: var(--red); font-weight: 600; }
 .rs-hot { background: var(--es-gold-light); font-weight: 700; }
+/* Tarjetas de color: verde = sobre paridad / carry · rojo = bajo paridad / inverso */
+.rs-pcards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 6px; }
+@media (max-width: 900px) { .rs-pcards { grid-template-columns: minmax(0, 1fr); } }
+.rs-pcard { border: 1px solid var(--border); border-top: 4px solid var(--border-2); border-radius: 10px; padding: 12px 14px; background: var(--bg-card); break-inside: avoid; }
+.rs-pcard.verde { border-color: #b9dcc5; border-top-color: var(--green); background: #f2faf5; }
+.rs-pcard.rojo  { border-color: #efc6c6; border-top-color: var(--red);   background: #fdf3f3; }
+.rs-pcard.gris  { border-top-color: var(--text-3); background: var(--bg-input); }
+.rs-pcard-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; }
+.rs-pcard-tag { font-size: 10px; font-weight: 700; letter-spacing: .04em; padding: 2px 8px; border-radius: 999px; color: #fff; background: var(--text-3); white-space: nowrap; }
+.rs-pcard.verde .rs-pcard-tag { background: var(--green); }
+.rs-pcard.rojo .rs-pcard-tag { background: var(--red); }
+.rs-pcard-v { font: 700 24px var(--mono); margin: 8px 0 0; }
+.rs-pcard.verde .rs-pcard-v { color: var(--green); }
+.rs-pcard.rojo .rs-pcard-v { color: var(--red); }
+.rs-pcard-s { font-size: 11px; color: var(--text-3); margin-bottom: 6px; }
+.rs-pcard-row { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--text-2); border-top: 1px dashed var(--border); padding-top: 4px; margin-top: 4px; }
+.rs-pcard-row b { font-family: var(--mono); font-weight: 600; color: var(--text); }
+.rs-crop-lbl { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-2); margin: 12px 0 6px; }
 .rs-warn { display: block; margin-top: 4px; color: #8a5a00; font-size: 11.5px; font-weight: 600; }
 .rs-note { font-size: 11px; color: var(--text-3); margin: 6px 0 20px; }
 @media print { .rs-halls { grid-template-columns: 1fr 1fr; } .rs-actions { display: none !important; } }
