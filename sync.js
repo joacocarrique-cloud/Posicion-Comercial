@@ -262,8 +262,11 @@ function defaultPositionFor(crop) {
   if (!sheetData) return '';
   const futs = (sheetData.futuros[crop] || []).filter(f => f.precio > 0);
   const opts = sheetData.opciones[crop] || {};
-  const conOpc = futs.find(f => opts[f.pos] && (opts[f.pos].puts.some(o => o.prima > 0) || opts[f.pos].calls.some(o => o.prima > 0)));
-  return (conOpc || futs[0] || {}).pos || '';
+  const tieneOpc = f => opts[f.pos] && (opts[f.pos].puts.some(o => o.prima > 0) || opts[f.pos].calls.some(o => o.prima > 0));
+  // Preferencia: posición clave con opciones > cualquiera con opciones > posición clave > la primera
+  const pick = futs.find(f => esPosClave(crop, f.pos) && tieneOpc(f)) || futs.find(tieneOpc)
+    || futs.find(f => esPosClave(crop, f.pos)) || futs[0];
+  return (pick || {}).pos || '';
 }
 
 function parseSheetCSV(csvText) {

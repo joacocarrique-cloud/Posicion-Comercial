@@ -20,6 +20,13 @@ const RS_REGLAS = {
   // (la que está venciendo tiene poco interés abierto y distorsiona las tasas).
   diasMinPosicion: 15,
 
+  // ─── Mercado y datos ───
+  // Las posiciones son las POSICIONES_CLAVE de globals.js
+  mercado: {
+    diasGrafico: 30,              // ventana del mini gráfico y de la variación
+    variacionDestacadaPct: 5,     // |variación 30 días| ≥ 5% → comentario
+  },
+
   // ─── Coberturas ───
   coberturas: {
     maxEstrategiasPorSolapa: 4,   // se toman las de mayor volumen
@@ -50,13 +57,8 @@ const RS_REGLAS = {
 
   // ─── FAS teórico vs mercado ───
   fas: {
-    // Posiciones clave por cultivo: se toma el próximo contrato vigente de cada mes
-    posiciones: {
-      maiz:  ['ABR', 'JUL', 'DIC'],
-      soja:  ['NOV', 'MAY', 'JUL'],
-      trigo: ['DIC', 'MAR', 'JUL'],
-    },
-    spreadUsd: 5,                 // |futuro − FAS teórico| > 5 u$s/tn → comentario destacado
+    // Las posiciones son las POSICIONES_CLAVE de globals.js (próximo contrato vigente de cada mes)
+    spreadUsd: 5,                // |futuro − FAS teórico| > 5 u$s/tn → comentario destacado
     crushVsGranoUsd: 10,          // FAS crushing supera al de poroto por > 10 u$s/tn
     horizonteRetMeses: 6,         // avisar escalones de retención dentro de los próximos 6 meses
   },

@@ -73,6 +73,36 @@ const SHEET_CONFIG = {
 const FOB_SHEET_ID = '1Fmvsn0o2OpTD8BXnqw8sDTG_4Kr9zu_tWvcy7R7Zjjo';
 const FOB_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTgEfkB1sib9NvyYkC7LQGqf_zZmnCuB9IDJT_Nx7INHkiuoH7ZYJhTOo7ormKKT0iEEUF6sPbCDW59/pub?gid=515809769&single=true&output=csv';
 
+// ═══════════════════════════════════════════════════
+// ─── CONFIGURACIÓN COMERCIAL (editar acá) ───
+// ═══════════════════════════════════════════════════
+
+// Posiciones de referencia por cultivo (las que tienen volumen). Se usa el próximo
+// contrato vigente de cada mes. Las usan el Resumen (mercado, carry, FAS), los
+// defaults de Pases y Coberturas, el Panel en Vivo y las posiciones principales de Desvío.
+const POSICIONES_CLAVE = {
+  soja:  ['NOV', 'MAY', 'JUL'],
+  maiz:  ['ABR', 'JUL', 'DIC'],
+  trigo: ['DIC', 'MAR', 'JUL'],
+};
+
+// true si la posición (p.ej. 'MAY27') es de un mes clave del cultivo.
+// Cultivos sin lista (girasol) no filtran: todas sus posiciones cuentan.
+function esPosClave(crop, pos) {
+  const meses = POSICIONES_CLAVE[crop];
+  return !meses || meses.includes(String(pos || '').slice(0, 3).toUpperCase());
+}
+
+// Precio Objetivo y Precio Dolor (u$s/tn) por cultivo + mes de posición. Fijos para
+// todos los usuarios: el módulo Desvío los muestra (sin edición) y el Resumen los usa.
+// null = sin definir (no se dibuja la línea).
+const PRECIOS_REFERENCIA = {
+  'soja|MAY':  { obj: null, dol: null },
+  'maiz|ABR':  { obj: null, dol: null },
+  'maiz|JUL':  { obj: null, dol: null },
+  'trigo|DIC': { obj: null, dol: null },
+};
+
 // ─── Crop/month mappings ───
 const CROP_CODE_MAP = {
   'SOJ': 'soja', 'MAI': 'maiz', 'TRI': 'trigo', 'GIR': 'girasol',

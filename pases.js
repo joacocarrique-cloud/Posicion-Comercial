@@ -90,7 +90,10 @@ function paseUpdatePositions() {
     // tiene poco interés abierto y distorsiona la tasa del pase).
     const disp = paseDisponible();
     const minIso = (() => { const d = new Date(); d.setDate(d.getDate() + 15); return d.toISOString().slice(0, 10); })();
-    const vigentes = positions.filter(p => paseFechaPos(p.posCode) >= minIso).map(p => p.posCode);
+    // Se priorizan las posiciones clave del cultivo (las que tienen volumen)
+    const vig = positions.filter(p => paseFechaPos(p.posCode) >= minIso);
+    const vigClave = vig.filter(p => esPosClave(paseGrain, p.posCode));
+    const vigentes = (vigClave.length >= 2 ? vigClave : vig).map(p => p.posCode);
     const idxDe = code => Array.from(sel2.options).findIndex(o => o.value === code);
 
     if (!document.getElementById('pase-p1-price').value) {

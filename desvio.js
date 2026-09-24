@@ -9,7 +9,8 @@ let dvCrop='',dvPos='',dvActiveCamps={},dvSingleMode=null;
 let dvOverlayChart=null,dvSingleChart=null,dvSeasonChart=null;
 let dvVolCvChart=null,dvVolRealChart=null,dvVolRangoChart=null;
 
-const DV_KEY_POS={soja:['MAY','JUL','NOV'],maiz:['ABR','JUL'],trigo:['DIC','JUL']};
+// Posiciones principales = las posiciones clave de la configuración comercial (globals.js)
+const DV_KEY_POS=POSICIONES_CLAVE;
 // Mes en que arranca la cosecha nueva de cada cultivo: una posición en ese mes
 // (o posterior) pertenece a la campaña anio/anio+1, no a la del año anterior.
 // El trigo se cosecha en diciembre, así que Dic-26 = campaña 26/27.
@@ -77,10 +78,15 @@ let _dvRefTimer=null;
 
 function dvRefKey(crop,pos){return (crop||dvCrop)+'|'+(pos||dvPos);}
 
+// Los precios de referencia son FIJOS: salen de PRECIOS_REFERENCIA (globals.js), iguales
+// para todos los usuarios. Ya no se cargan ni se guardan en el navegador.
 function dvGetRefs(crop,pos){
-  const r=dvRefs[dvRefKey(crop,pos)]||{};
+  const r=(typeof PRECIOS_REFERENCIA!=='undefined'&&PRECIOS_REFERENCIA[dvRefKey(crop,pos)])||{};
   const clean=v=>(typeof v==='number'&&isFinite(v)&&v>0)?v:null;
   return{obj:clean(r.obj),dol:clean(r.dol)};
+}
+function dvTieneRefs(crop,pos){
+  return typeof PRECIOS_REFERENCIA!=='undefined'&&!!PRECIOS_REFERENCIA[dvRefKey(crop,pos)];
 }
 
 function dvSaveRefs(){
@@ -93,16 +99,22 @@ function dvSyncRefInputs(){
   const r=dvGetRefs();
   const io=document.getElementById('dv-ref-objetivo');
   const id=document.getElementById('dv-ref-dolor');
+  const tiene=dvTieneRefs();
+  [io,id].forEach(el=>{if(el){el.readOnly=true;el.disabled=!tiene;el.title='Definido en la configuración comercial (PRECIOS_REFERENCIA en globals.js)';}});
   if(io)io.value=(r.obj!=null)?r.obj:'';
   if(id)id.value=(r.dol!=null)?r.dol:'';
   const hint=document.getElementById('dv-ref-hint');
   if(hint&&dvCrop&&dvPos){
     const cropLabel=dvCrop.charAt(0).toUpperCase()+dvCrop.slice(1);
-    hint.textContent='Valores de '+cropLabel+' '+dvPos+' · se guardan por posición y aplican a todas sus campañas';
+    hint.textContent=tiene
+      ?('Valores fijos de '+cropLabel+' '+dvPos+' (configuración comercial) · aplican a todas sus campañas'+(r.obj==null&&r.dol==null?' · todavía sin definir':''))
+      :('Sin precios de referencia para '+cropLabel+' '+dvPos+' · se definen solo para Soja MAY, Maíz ABR/JUL y Trigo DIC');
   }
 }
 
+// (Sin uso: los inputs son de solo lectura desde que los precios de referencia son fijos.)
 function dvUpdateRefLines(){
+  if(typeof PRECIOS_REFERENCIA!=='undefined')return;
   const parseRef=id=>{
     const el=document.getElementById(id);
     if(!el)return null;

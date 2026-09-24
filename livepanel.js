@@ -66,7 +66,8 @@ function renderLivePanel() {
 function renderLiveFuturos() {
   let cards = '';
   Object.keys(LIVE_CROP_LABELS).forEach(crop => {
-    const list = (sheetData.futuros[crop] || []).filter(f => f.precio > 0);
+    // Solo posiciones clave (las de referencia, con volumen)
+    const list = (sheetData.futuros[crop] || []).filter(f => f.precio > 0 && esPosClave(crop, f.pos));
     if (list.length === 0) return;
     let rows = list.map(f => `
       <tr>

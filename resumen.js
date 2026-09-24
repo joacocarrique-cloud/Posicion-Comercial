@@ -53,39 +53,6 @@ function rsDte(pos) {
 // ═══════════════════════════════════════════════════
 // 1) MERCADO / ESTADO DE LOS DATOS
 // ═══════════════════════════════════════════════════
-function rsMercado() {
-  const sec = { id: 'mercado', titulo: 'Mercado y datos', hallazgos: [], html: '' };
-  if (!sheetData) {
-    sec.hallazgos.push(rsHall('alerta', 90, 'Sin datos de A3', 'No hay precios de futuros ni opciones cargados. El resumen queda incompleto.', 'Datos A3 disponibles', 'Sincronizar A3.'));
-    return sec;
-  }
-  const fd = sheetData.fechaDatos || '';
-  const m = fd.match(/(\d{2})-(\d{2})-(\d{4})/);
-  if (m) {
-    const f = new Date(+m[3], +m[2] - 1, +m[1]); const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
-    const dias = Math.round((hoy - f) / 86400000);
-    if (dias > RS_REGLAS.diasDatosViejos) {
-      sec.hallazgos.push(rsHall('alerta', 85, 'Datos de mercado desactualizados',
-        `Los precios de A3 son del ${fd} (${dias} días). Las conclusiones pueden no reflejar el mercado de hoy.`,
-        `Antigüedad > ${RS_REGLAS.diasDatosViejos} días`, 'Sincronizar A3 y regenerar el resumen.'));
-    }
-  }
-  // Tabla de futuros cercanos
-  let rows = '';
-  ['soja', 'maiz', 'trigo', 'girasol'].forEach(c => {
-    const list = (sheetData.futuros[c] || []).filter(f => f.precio > 0).slice(0, 4);
-    if (!list.length) return;
-    rows += `<tr><td class="rs-l">${rsCrop(c)}</td>${list.map(f => `<td>${f.pos}<br><b>${rsF(f.precio)}</b></td>`).join('')}${'<td></td>'.repeat(4 - list.length)}</tr>`;
-  });
-  // Disponible (u$s y $) y TC implícito del grano
-  const disp = sheetData.disponible || {};
-  const dispTxt = ['soja', 'maiz', 'trigo'].filter(c => disp[c] && disp[c].usd > 0)
-    .map(c => `${rsCrop(c)} u$s ${rsF(disp[c].usd)}${disp[c].ars ? ' / $ ' + rsF(disp[c].ars, 0) : ''}`).join(' · ');
-  sec.html = `<table class="rs-table"><thead><tr><th class="rs-l">Futuros A3 (u$s/tn)</th><th colspan="4">Posiciones más cercanas</th></tr></thead><tbody>${rows}</tbody></table>`
-    + (dispTxt ? `<div class="rs-sub" style="font-weight:400">Disponible: ${dispTxt}${sheetData.tcGrano ? ` · <b>TC implícito del grano ${rsF(sheetData.tcGrano, 0)}</b>` : ''}</div>` : '');
-  return sec;
-}
-
 // Aviso para agregar a un comentario que usa parámetros manuales (storage.js) que siguen
 // con el valor de fábrica o pasaron su vigencia.
 const RS_PARAMS_MERCADO = id => !/^fondeo-(monto|fecha)$/.test(id);   // monto y fecha son decisiones, no datos de mercado
@@ -105,6 +72,80 @@ function rsCard(color, titulo, tag, valor, sub, filas) {
     <div class="rs-pcard-s">${sub}</div>
     ${filas.map(([k, v]) => `<div class="rs-pcard-row"><span>${k}</span><b>${v}</b></div>`).join('')}
   </div>`;
+}
+
+// Posiciones clave de un cultivo (POSICIONES_CLAVE), en orden cronológico
+function rsPosClave(crop) {
+  return (POSICIONES_CLAVE[crop] || []).map(mes => rsProxPos(crop, mes))
+    .sort((a, b) => posSortKey(a.pos) - posSortKey(b.pos));
+}
+
+// Mini gráfico (SVG) de una serie de precios
+function rsSpark(vals, color) {
+  if (!vals || vals.length < 2) return '<div class="rs-spark-empty">sin histórico</div>';
+  const W = 200, H = 46, min = Math.min(...vals), max = Math.max(...vals), rg = (max - min) || 1;
+  const pts = vals.map((v, i) => [i / (vals.length - 1) * W, H - 3 - (v - min) / rg * (H - 6)]);
+  const line = pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+  return `<svg class="rs-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+    <polygon points="0,${H} ${line} ${W},${H}" fill="${color}" fill-opacity=".10"/>
+    <polyline points="${line}" fill="none" stroke="${color}" stroke-width="1.8" vector-effect="non-scaling-stroke"/>
+    <circle cx="${pts[pts.length - 1][0]}" cy="${pts[pts.length - 1][1]}" r="2.6" fill="${color}"/>
+  </svg>`;
+}
+
+function rsMercado() {
+  const R = RS_REGLAS.mercado;
+  const sec = { id: 'mercado', titulo: 'Mercado y datos', hallazgos: [], html: '' };
+  if (!sheetData) {
+    sec.hallazgos.push(rsHall('alerta', 90, 'Sin datos de A3', 'No hay precios de futuros ni opciones cargados. El resumen queda incompleto.', 'Datos A3 disponibles', 'Sincronizar A3.'));
+    return sec;
+  }
+  const fd = sheetData.fechaDatos || '';
+  const m = fd.match(/(\d{2})-(\d{2})-(\d{4})/);
+  if (m) {
+    const f = new Date(+m[3], +m[2] - 1, +m[1]); const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    const dias = Math.round((hoy - f) / 86400000);
+    if (dias > RS_REGLAS.diasDatosViejos) {
+      sec.hallazgos.push(rsHall('alerta', 85, 'Datos de mercado desactualizados',
+        `Los precios de A3 son del ${fd} (${dias} días). Las conclusiones pueden no reflejar el mercado de hoy.`,
+        `Antigüedad > ${RS_REGLAS.diasDatosViejos} días`, 'Sincronizar A3 y regenerar el resumen.'));
+    }
+  }
+
+  // Serie de los últimos N días (histórico de Drive) por posición
+  const cache = ASST_FUTPOS.length ? rsIndexFutpos() : null;
+  const desde = cache ? (() => { const d = new Date(cache.maxF + 'T12:00:00'); d.setDate(d.getDate() - R.diasGrafico); return d.toISOString().slice(0, 10); })() : '';
+  let html = '';
+  Object.keys(POSICIONES_CLAVE).forEach(c => {
+    const cards = rsPosClave(c).map(x => {
+      const rows = cache ? cache.idx[c + '|' + x.pos] : null;
+      const serie = rows ? Object.keys(rows).filter(f => f >= desde).sort().map(f => rows[f].precio).filter(v => v > 0) : [];
+      const ultimo = x.fut != null ? x.fut : (serie.length ? serie[serie.length - 1] : null);
+      if (ultimo == null) return '';
+      if (serie.length && x.fut != null && serie[serie.length - 1] !== x.fut) serie.push(x.fut);
+      const var$ = serie.length > 1 ? ultimo - serie[0] : null;
+      const varP = var$ != null ? var$ / serie[0] * 100 : null;
+      const color = var$ == null ? '#7e8574' : var$ >= 0 ? '#1a854a' : '#c43030';
+      if (varP != null && Math.abs(varP) >= R.variacionDestacadaPct) sec.hallazgos.push(rsHall('info', 35,
+        `${rsCrop(c)} ${x.pos}: ${varP >= 0 ? 'subió' : 'bajó'} ${rsF(Math.abs(varP))}% en ${R.diasGrafico} días`,
+        `Pasó de ${rsF(serie[0])} a ${rsF(ultimo)} u$s/tn (${rsSigno(var$)}).`, `|Variación ${R.diasGrafico} días| ≥ ${R.variacionDestacadaPct}%`, ''));
+      return `<div class="rs-mcard">
+        <div class="rs-mcard-h"><span>${rsCrop(c)} ${x.pos}</span><b>${rsF(ultimo)}</b></div>
+        ${rsSpark(serie, color)}
+        <div class="rs-mcard-f"><span>${serie.length > 1 ? `mín ${rsF(Math.min(...serie))} · máx ${rsF(Math.max(...serie))}` : ''}</span>
+          <span style="color:${color};font-weight:700">${var$ != null ? `${rsSigno(var$)} (${rsSigno(varP)}%)` : '—'}</span></div>
+      </div>`;
+    }).join('');
+    if (cards) html += `<div class="rs-crop-lbl">${rsCrop(c)}</div><div class="rs-mcards">${cards}</div>`;
+  });
+
+  // Disponible (u$s y $) y TC implícito del grano
+  const disp = sheetData.disponible || {};
+  const dispTxt = ['soja', 'maiz', 'trigo'].filter(c => disp[c] && disp[c].usd > 0)
+    .map(c => `${rsCrop(c)} u$s ${rsF(disp[c].usd)}${disp[c].ars ? ' / $ ' + rsF(disp[c].ars, 0) : ''}`).join(' · ');
+  sec.html = `<div class="rs-sub" style="font-weight:400;margin-top:0">Futuros A3 en u$s/tn · evolución y variación de los últimos ${R.diasGrafico} días</div>${html}`
+    + (dispTxt ? `<div class="rs-sub" style="font-weight:400">Disponible: ${dispTxt}${sheetData.tcGrano ? ` · <b>TC implícito del grano ${rsF(sheetData.tcGrano, 0)}</b>` : ''}</div>` : '');
+  return sec;
 }
 
 // ═══════════════════════════════════════════════════
@@ -290,7 +331,9 @@ function rsPases() {
   let html = '';
 
   ['soja', 'maiz', 'trigo'].forEach(c => {
-    const futs = rsFutsVigentes(c).filter(f => paseDaysBetween(hoyIso, rsFechaVto(c, f.pos)) <= R.horizonteDias);
+    // Solo posiciones clave (POSICIONES_CLAVE) con futuro en A3
+    const futs = rsPosClave(c).filter(x => x.fut != null).map(x => ({ pos: x.pos, precio: x.fut }))
+      .filter(f => paseDaysBetween(hoyIso, rsFechaVto(c, f.pos)) <= R.horizonteDias);
     const disp = sheetData.disponible && sheetData.disponible[c];
     // Base: el disponible de hoy (A3); si no hay, el futuro más cercano
     const base = disp && disp.usd > 0
@@ -314,7 +357,7 @@ function rsPases() {
 
     html += rsCard(color, `${rsCrop(c)} · ${base.pos} ${rsF(base.precio)}`, tag,
       `${rsSigno(cerc.dif)} u$s`, `${base.pos} → ${cerc.pos} (${cerc.dias} días)`,
-      pts.map(x => [`${x.pos} · ${rsF(x.precio)}`, `${rsSigno(x.dif)} · ${rsF(x.tna)}% TNA`]));
+      pts.map(x => [`${x.pos} · ${rsF(x.precio)}`, `${rsSigno(x.dif)} · ${rsSigno(x.tna)}% TNA`]));
 
     const regla = `Diferencia ${base.pos} → posición cercana: > +${R.carryMinUsd} carry · < −${R.carryMinUsd} inverso`;
     const contra = (minP.dif < -R.carryMinUsd && estado !== 'inverso') ? ` Contra ${minP.pos} está en inverso (${rsSigno(minP.dif)}).` : '';
@@ -394,9 +437,8 @@ function rsFas() {
   let html = '';
 
   // Tarjetas: futuro A3 vs FAS teórico en las posiciones clave de cada cultivo
-  Object.entries(R.posiciones).forEach(([c, meses]) => {
-    const items = meses.map(mes => rsProxPos(c, mes))
-      .sort((a, b) => posSortKey(a.pos) - posSortKey(b.pos))
+  Object.keys(POSICIONES_CLAVE).forEach(c => {
+    const items = rsPosClave(c)
       .map(x => {
         const fb = rsFobExacto(c, x.pos);
         const ret = getRetencionForPos(c, x.pos);
@@ -566,7 +608,7 @@ function rsDesvio() {
   if (!ASST_FUTPOS.length) return sec;
   const { idx, maxF } = rsIndexFutpos();
   let rows = '';
-  Object.keys(DV_KEY_POS).forEach(c => DV_KEY_POS[c].forEach(mes => {
+  Object.keys(POSICIONES_CLAVE).forEach(c => POSICIONES_CLAVE[c].forEach(mes => {
     const anc = rsAnclaje(c, mes, maxF);
     if (!anc) return;
     const serie = Object.values(idx[c + '|' + anc.pos] || {}).map(r => r.precio).filter(v => v > 0);

@@ -478,6 +478,15 @@ body {
 .rs-pcard-s { font-size: 11px; color: var(--text-3); margin-bottom: 6px; }
 .rs-pcard-row { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--text-2); border-top: 1px dashed var(--border); padding-top: 4px; margin-top: 4px; }
 .rs-pcard-row b { font-family: var(--mono); font-weight: 600; color: var(--text); }
+/* Mercado: tarjetas con mini gráfico de 30 días */
+.rs-mcards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 900px) { .rs-mcards { grid-template-columns: minmax(0, 1fr); } }
+.rs-mcard { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px 8px; background: var(--bg-card); break-inside: avoid; }
+.rs-mcard-h { display: flex; justify-content: space-between; align-items: baseline; font-size: 12.5px; font-weight: 700; }
+.rs-mcard-h b { font: 700 17px var(--mono); }
+.rs-spark { display: block; width: 100%; height: 46px; margin: 6px 0 4px; }
+.rs-spark-empty { height: 46px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--text-3); }
+.rs-mcard-f { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--text-3); font-family: var(--mono); }
 .rs-crop-lbl { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-2); margin: 12px 0 6px; }
 .rs-warn { display: block; margin-top: 4px; color: #8a5a00; font-size: 11.5px; font-weight: 600; }
 .rs-note { font-size: 11px; color: var(--text-3); margin: 6px 0 20px; }
