@@ -93,9 +93,10 @@ function esPosClave(crop, pos) {
   return !meses || meses.includes(String(pos || '').slice(0, 3).toUpperCase());
 }
 
-// Precio Objetivo y Precio Dolor (u$s/tn) por cultivo + mes de posición. Fijos para
-// todos los usuarios: el módulo Desvío los muestra (sin edición) y el Resumen los usa.
-// null = sin definir (no se dibuja la línea).
+// Posiciones con Precio Objetivo y Precio Dolor (u$s/tn). Los valores se cargan en el
+// panel de arriba del módulo Desvío y quedan guardados en el navegador; los de acá son
+// solo el valor inicial mientras no se cargue nada (null = sin definir).
+// Los usan el módulo Desvío y el Resumen (coberturas propuestas y desvío).
 const PRECIOS_REFERENCIA = {
   'soja|MAY':  { obj: null, dol: null },
   'maiz|ABR':  { obj: null, dol: null },

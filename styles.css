@@ -484,7 +484,14 @@ body {
 .dv-refs-title span { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--text-3); font-size: 11px; }
 .dv-refs-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 @media (max-width: 1000px) { .dv-refs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.dv-ref-card { text-align: left; font: inherit; cursor: pointer; background: var(--bg-card); border: 1px solid var(--border); border-top: 4px solid var(--border-2); border-radius: 10px; padding: 10px 12px; box-shadow: var(--shadow); transition: border-color .15s; }
+.dv-ref-in { width: 80px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-input); font: 600 13px var(--mono); text-align: right; color: var(--text); }
+.dv-ref-in:focus { outline: none; border-color: var(--es-green); background: #fff; }
+.dv-ref-card-row { align-items: center; }
+.dv-ref-card-f { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 6px; }
+.dv-ref-card-f .dv-ref-card-e { margin-top: 0; }
+.dv-ref-ver { font: 600 11px var(--font); color: var(--es-green); background: none; border: none; cursor: pointer; padding: 2px 0; white-space: nowrap; }
+.dv-ref-ver:hover { text-decoration: underline; }
+.dv-ref-card { text-align: left; font: inherit; background: var(--bg-card); border: 1px solid var(--border); border-top: 4px solid var(--border-2); border-radius: 10px; padding: 10px 12px; box-shadow: var(--shadow); transition: border-color .15s; }
 .dv-ref-card:hover { border-color: var(--es-green); }
 .dv-ref-card.ok { border-top-color: var(--green); background: #f2faf5; }
 .dv-ref-card.bad { border-top-color: var(--red); background: #fdf3f3; }

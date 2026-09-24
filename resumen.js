@@ -205,7 +205,7 @@ function rsCoberturas() {
       html += `<div class="rs-sub">${titulo} <span>sin ${!F ? 'futuro' : 'opciones'} en A3</span></div>`;
       return;
     }
-    const refs = PRECIOS_REFERENCIA[key];
+    const refs = dvGetRefs(crop, mesPos);   // los que se cargan en el panel de Desvío
     const tieneRefs = refs.obj > 0 && refs.dol > 0;
     const dolor = refs.dol > 0 ? refs.dol : F * (1 - R.dolorPctDefault / 100);
     const objetivo = refs.obj > 0 ? refs.obj : F * (1 + R.objetivoPctDefault / 100);
@@ -270,7 +270,7 @@ function rsCoberturas() {
       `Recomendada porque ${motivo}. Cuesta ${rec.m.cost > 0 ? 'u$s ' + rsF(rec.m.cost, 2) : 'crédito ' + rsF(-rec.m.cost, 2)}/tn; si el precio cae al dolor (${rsF(dolor)}) se obtiene ${rsF(rec.alDolor)}.`,
       'Costo, VI vs historia y precio vs objetivo/dolor', rec.desc + '.'));
     if (!tieneRefs) sec.hallazgos.push(rsHall('alerta', 40, `${titulo}: sin Precio Objetivo / Dolor definido`,
-      `Se usaron referencias de ${R.dolorPctDefault}% abajo y ${R.objetivoPctDefault}% arriba del futuro.`, 'PRECIOS_REFERENCIA sin valores', 'Cargar los valores en PRECIOS_REFERENCIA (globals.js).'));
+      `Se usaron referencias de ${R.dolorPctDefault}% abajo y ${R.objetivoPctDefault}% arriba del futuro.`, 'Precio Objetivo / Dolor sin cargar', 'Cargarlos en el panel de arriba del módulo Desvío (quedan guardados).'));
     if (dte != null && dte < R.diasVencAlerta) sec.hallazgos.push(rsHall('alerta', 45, `${titulo}: opciones con ${dte} días al vencimiento`,
       'Las primas tienen poco valor tiempo y el theta se acelera.', `Días al vencimiento < ${R.diasVencAlerta}`, 'Evaluar la posición siguiente.'));
   });

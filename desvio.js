@@ -78,12 +78,33 @@ let _dvRefTimer=null;
 
 function dvRefKey(crop,pos){return (crop||dvCrop)+'|'+(pos||dvPos);}
 
-// Los precios de referencia son FIJOS: salen de PRECIOS_REFERENCIA (globals.js), iguales
-// para todos los usuarios. Ya no se cargan ni se guardan en el navegador.
+// Precios de referencia de las posiciones de PRECIOS_REFERENCIA (globals.js). Se cargan en
+// el panel de arriba del módulo y quedan guardados en el navegador (dvRefs / localStorage);
+// si todavía no se cargaron, se usa el valor por defecto de globals.js.
 function dvGetRefs(crop,pos){
-  const r=(typeof PRECIOS_REFERENCIA!=='undefined'&&PRECIOS_REFERENCIA[dvRefKey(crop,pos)])||{};
+  const key=dvRefKey(crop,pos);
+  const def=(typeof PRECIOS_REFERENCIA!=='undefined'&&PRECIOS_REFERENCIA[key])||null;
+  if(!def)return{obj:null,dol:null};
+  const guard=dvRefs[key]||{};
   const clean=v=>(typeof v==='number'&&isFinite(v)&&v>0)?v:null;
-  return{obj:clean(r.obj),dol:clean(r.dol)};
+  return{obj:clean(guard.obj)??clean(def.obj),dol:clean(guard.dol)??clean(def.dol)};
+}
+
+// Guarda un valor del panel (campo = 'obj' | 'dol'). Vacío = se borra.
+function dvSetRef(key,campo,valor){
+  // Acepta "340,5" y "340.5"; con coma, los puntos se toman como separador de miles
+  const s0=String(valor||'').trim();
+  const raw=s0.includes(',')?s0.replace(/\./g,'').replace(',','.'):s0;
+  const v=parseFloat(raw);
+  dvRefs[key]=dvRefs[key]||{};
+  dvRefs[key][campo]=(isFinite(v)&&v>0)?v:null;
+  dvSaveRefs();
+  clearTimeout(_dvRefTimer);
+  _dvRefTimer=setTimeout(()=>{
+    dvActualizarEstadosPanel();
+    const det=document.getElementById('dv-detail');
+    if(det&&det.style.display!=='none'){dvRenderRefSummary();dvRenderModeButtons();dvRenderTable();dvRenderChart();}
+  },300);
 }
 function dvTieneRefs(crop,pos){
   return typeof PRECIOS_REFERENCIA!=='undefined'&&!!PRECIOS_REFERENCIA[dvRefKey(crop,pos)];
@@ -266,27 +287,50 @@ function dvPrecioActual(crop,mes){
   return best?{pos:best.pos,precio:best.precio}:null;
 }
 
+const dvF1=v=>v.toLocaleString('es-AR',{minimumFractionDigits:1,maximumFractionDigits:1});
+
+// Estado de una tarjeta según precio actual vs objetivo / dolor
+function dvEstadoRef(crop,mes){
+  const r=dvGetRefs(crop,mes),px=dvPrecioActual(crop,mes);
+  if(px&&r.obj!=null&&px.precio>=r.obj)return{txt:'✓ En objetivo',cls:'ok'};
+  if(px&&r.dol!=null&&px.precio<=r.dol)return{txt:'⚠ Debajo del dolor',cls:'bad'};
+  if(px&&r.obj!=null)return{txt:'Faltan u$s '+dvF1(r.obj-px.precio)+' al objetivo',cls:''};
+  if(px&&r.dol!=null)return{txt:'u$s '+dvF1(px.precio-r.dol)+' sobre el dolor',cls:''};
+  return{txt:'Cargá objetivo y dolor',cls:''};
+}
+
+// Actualiza solo color y leyenda de las tarjetas (sin rehacer los inputs, para no perder el foco)
+function dvActualizarEstadosPanel(){
+  if(typeof PRECIOS_REFERENCIA==='undefined')return;
+  Object.keys(PRECIOS_REFERENCIA).forEach(k=>{
+    const [crop,mes]=k.split('|');
+    const card=document.getElementById('dv-refcard-'+crop+'-'+mes);
+    if(!card)return;
+    const e=dvEstadoRef(crop,mes);
+    card.classList.remove('ok','bad');if(e.cls)card.classList.add(e.cls);
+    card.querySelector('.dv-ref-card-e').textContent=e.txt;
+  });
+}
+
 function dvRenderRefsPanel(){
   const el=document.getElementById('dv-refs-panel');
   if(!el||typeof PRECIOS_REFERENCIA==='undefined')return;
-  const f1=v=>v.toLocaleString('es-AR',{minimumFractionDigits:1,maximumFractionDigits:1});
   const cards=Object.keys(PRECIOS_REFERENCIA).map(k=>{
     const [crop,mes]=k.split('|');
     const r=dvGetRefs(crop,mes);
     const px=dvPrecioActual(crop,mes);
-    let estado='Sin definir',cls='';
-    if(px&&r.obj!=null&&px.precio>=r.obj){estado='✓ En objetivo';cls='ok';}
-    else if(px&&r.dol!=null&&px.precio<=r.dol){estado='⚠ Debajo del dolor';cls='bad';}
-    else if(px&&r.obj!=null)estado='Faltan u$s '+f1(r.obj-px.precio)+' al objetivo';
-    else if(px&&r.dol!=null)estado='u$s '+f1(px.precio-r.dol)+' sobre el dolor';
-    return `<button type="button" class="dv-ref-card ${cls}" title="Ver el detalle de ${DV_CROP_LBL[crop]||crop} ${mes}" onclick="dvCrop='${crop}';dvPos='${mes}';dvEnterDetail();">
-      <div class="dv-ref-card-h"><span>${DV_CROP_LBL[crop]||crop} ${px?px.pos:mes}</span><b>${px?'u$s '+f1(px.precio):'—'}</b></div>
-      <div class="dv-ref-card-row"><span><i style="background:${DV_REF_OBJ_COLOR}"></i>Objetivo</span><b>${r.obj!=null?f1(r.obj):'—'}</b></div>
-      <div class="dv-ref-card-row"><span><i style="background:${DV_REF_DOL_COLOR}"></i>Dolor</span><b>${r.dol!=null?f1(r.dol):'—'}</b></div>
-      <div class="dv-ref-card-e">${estado}</div>
-    </button>`;
+    const e=dvEstadoRef(crop,mes);
+    const inp=(campo,v,color,lbl)=>`<label class="dv-ref-card-row"><span><i style="background:${color}"></i>${lbl}</span>
+      <input class="dv-ref-in" type="text" inputmode="decimal" placeholder="—" value="${v!=null?String(v).replace('.',','):''}" oninput="dvSetRef('${k}','${campo}',this.value)"></label>`;
+    return `<div class="dv-ref-card ${e.cls}" id="dv-refcard-${crop}-${mes}">
+      <div class="dv-ref-card-h"><span>${DV_CROP_LBL[crop]||crop} ${px?px.pos:mes}</span><b>${px?'u$s '+dvF1(px.precio):'—'}</b></div>
+      ${inp('obj',r.obj,DV_REF_OBJ_COLOR,'Objetivo')}
+      ${inp('dol',r.dol,DV_REF_DOL_COLOR,'Dolor')}
+      <div class="dv-ref-card-f"><span class="dv-ref-card-e">${e.txt}</span>
+        <button type="button" class="dv-ref-ver" onclick="dvCrop='${crop}';dvPos='${mes}';dvEnterDetail();">Ver detalle →</button></div>
+    </div>`;
   }).join('');
-  el.innerHTML=`<div class="dv-refs-title">Precios Objetivo y Dolor <span>· fijos, aplican a todas las campañas de cada posición · click para ver el detalle</span></div><div class="dv-refs-grid">${cards}</div>`;
+  el.innerHTML=`<div class="dv-refs-title">Precios Objetivo y Dolor <span>· cargalos acá: quedan guardados en este navegador y aplican a todas las campañas de cada posición</span></div><div class="dv-refs-grid">${cards}</div>`;
 }
 
 function dvRenderOverview(){
