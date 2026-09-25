@@ -234,6 +234,8 @@ body {
   color: var(--text);
   transition: border-color 0.2s;
 }
+/* El ícono de calendario de Chrome suma 2px: se compensa para que la fecha mida igual que el resto */
+.field input[type="date"] { padding-top: 6px; padding-bottom: 6px; }
 .field input:focus, .field select:focus {
   outline: none;
   border-color: var(--es-green);
@@ -1511,6 +1513,15 @@ body {
   gap: 10px;
   margin-bottom: 8px;
 }
+/* Etiquetas de 1 o 2 líneas: la etiqueta queda pegada a su input y todos los inputs de la fila alineados abajo */
+.pase-params-row .field { justify-content: flex-end; min-width: 0; }
+.pase-params-row .field input { width: 100%; min-width: 0; box-sizing: border-box; }
+/* Inputs destacados (crédito u$s / ARS): borde visual de 2px sin cambiar la altura del input */
+.field input.input-hl-usd, .field input.input-hl-ars { font-weight: 700; }
+.field input.input-hl-usd { border-color: var(--es-green); box-shadow: inset 0 0 0 1px var(--es-green); background: var(--es-green-light); color: var(--es-green-dark); }
+.field input.input-hl-ars { border-color: var(--es-gold); box-shadow: inset 0 0 0 1px var(--es-gold); background: var(--es-gold-light); color: #96700e; }
+.field input.input-hl-usd:focus { box-shadow: inset 0 0 0 1px var(--es-green), 0 0 0 3px rgba(26,107,60,.1); }
+.field input.input-hl-ars:focus { border-color: var(--es-gold); box-shadow: inset 0 0 0 1px var(--es-gold), 0 0 0 3px rgba(200,164,74,.18); }
 .pase-matrix {
   background: var(--bg-card);
   border: 1px solid var(--border);
