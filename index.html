@@ -30,6 +30,7 @@
       <button class="mod-pill" onclick="toggleTheory()">📙 Manual</button>
       <button class="mod-pill" id="pill-lineup" onclick="toggleLineUp()">🚢 Line-Up</button>
       <button class="mod-pill" id="pill-resumen" onclick="toggleResumen()">🧭 Resumen</button>
+      <button class="mod-pill" id="pill-escenarios" onclick="toggleEscenarios()">🎯 Escenarios</button>
     </nav>
     <button class="btn-export-pdf" onclick="exportarPDF()" title="Exportar a PDF el módulo activo">🖨 PDF</button>
   </div>
@@ -837,6 +838,12 @@
   <!-- ═══ RESUMEN COMERCIAL (lo arma resumen.js) ═══ -->
   <div id="resumen-space" style="display:none;"></div>
 
+  <!-- ═══ ESCENARIOS: posición comercial + coberturas (lo arma escenarios.js) ═══ -->
+  <div id="esc-space" style="display:none;">
+    <input type="file" id="esc-file" accept=".html,.htm,.json" style="display:none" onchange="escImportar(event)">
+    <div id="esc-body"></div>
+  </div>
+
 </div><!-- /container: Spreads y Desvío quedan adentro, con el mismo margen que el resto -->
 
   <!-- ═══ ALERTAS ═══ -->
@@ -854,9 +861,10 @@
 // Los -space se muestran/ocultan con style inline (sin !important), que pierde
 // contra las reglas !important de @media print. Por eso marcamos el módulo
 // activo en <body data-print-mod="..."> y el CSS resuelve a partir de ahí.
-var PRINT_SPACES = ['workspace', 'ret-space', 'pase-space', 'spreads-space', 'desvio-space', 'theory-space', 'resumen-space'];
+var PRINT_SPACES = ['workspace', 'ret-space', 'pase-space', 'spreads-space', 'desvio-space', 'theory-space', 'resumen-space', 'esc-space'];
 var PRINT_TITLES = {
   'resumen-space': 'Resumen Comercial',
+  'esc-space':     'Escenarios de Posición',
   'ret-space':     'FAS & Retenciones',
   'pase-space':    'Pases & Tasas',
   'spreads-space': 'Spreads',
@@ -937,11 +945,11 @@ window.addEventListener('afterprint', function() {
 // que muestra la antigüedad de los datos y, si están viejos o faltan, sincroniza.
 (function () {
   const SOLO_EN_COBERTURAS = ['tabs-container', 'mkt-bar', 'fob-bar'];
-  const MODULOS_A3 = ['ret-space', 'pase-space', 'spreads-space', 'desvio-space', 'resumen-space'];
+  const MODULOS_A3 = ['ret-space', 'pase-space', 'spreads-space', 'desvio-space', 'resumen-space', 'esc-space'];
   const DIAS_RANCIO = 2;
 
   const SPACES = ['workspace', 'ret-space', 'pase-space', 'spreads-space',
-                  'desvio-space', 'theory-space', 'resumen-space'];
+                  'desvio-space', 'theory-space', 'resumen-space', 'esc-space'];
 
   const visible = el => el && el.offsetParent !== null;
   const moduloActivo = () => SPACES.find(id => visible(document.getElementById(id))) || null;
@@ -1041,6 +1049,7 @@ window.addEventListener('afterprint', function() {
 <script src="lineup.js"></script>
 <script src="reglas_resumen.js"></script>
 <script src="resumen.js"></script>
+<script src="escenarios.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

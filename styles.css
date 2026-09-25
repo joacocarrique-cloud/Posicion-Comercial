@@ -2157,9 +2157,10 @@ body {
 
   /* ─── Solo se imprime el módulo activo ─── */
   #workspace, #ret-space, #pase-space,
-  #spreads-space, #desvio-space, #theory-space, #resumen-space {
+  #spreads-space, #desvio-space, #theory-space, #resumen-space, #esc-space {
     display: none !important;
   }
+  body[data-print-mod="esc-space"]     #esc-space,
   body[data-print-mod="resumen-space"] #resumen-space,
   body[data-print-mod="ret-space"]     #ret-space,
   body[data-print-mod="pase-space"]    #pase-space,
@@ -2462,4 +2463,49 @@ body {
     color: #7e8574;
     font-family: 'JetBrains Mono', monospace;
   }
+}
+
+/* ─── Escenarios: posición comercial + coberturas ─── */
+.esc-vacio { max-width: 760px; }
+.esc-vacio p { font-size: 13px; color: var(--text-2); margin: 10px 0; line-height: 1.5; }
+.esc-nota { font-size: 12px !important; color: var(--text-3) !important; }
+.esc-ctrl { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-end; }
+.esc-ctrl-bloque { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.esc-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--text-3); }
+.esc-slider { display: flex; align-items: center; gap: 8px; font: 11px var(--mono); color: var(--text-3); flex-wrap: wrap; }
+.esc-slider input[type=range] { width: 260px; max-width: 100%; accent-color: var(--es-green); }
+.esc-delta-lbl { font: 700 13px var(--mono); color: var(--text); margin-left: 6px; }
+.esc-preset { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; }
+.esc-chk { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; cursor: pointer; }
+.esc-inline { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); }
+.esc-in { font: 12px var(--mono); padding: 4px 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-input); color: var(--text); max-width: 110px; }
+.esc-in:focus { outline: none; border-color: var(--es-green); box-shadow: 0 0 0 2px rgba(26,107,60,.1); }
+.esc-in-s { width: 58px; }
+.esc-in-m { width: 84px; }
+.esc-in.is-estimada { background: #fff6d6; border-color: var(--es-gold); }
+.esc-h3-sub { font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-3); margin-left: 6px; }
+.esc-row { cursor: pointer; }
+.esc-row:hover td { background: var(--es-green-light); }
+.esc-tot td { font-weight: 700; border-top: 2px solid var(--border-2); background: var(--bg-input); }
+.esc-tabs { display: flex; gap: 6px; margin: 4px 0 12px; flex-wrap: wrap; }
+.esc-tab { font: 600 13px var(--font); padding: 7px 16px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-2); cursor: pointer; }
+.esc-tab.active { background: var(--es-green); border-color: var(--es-green); color: #fff; }
+.esc-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 14px; align-items: start; }
+@media (max-width: 1100px) { .esc-grid { grid-template-columns: minmax(0, 1fr); } }
+.esc-pos td:nth-child(2) { font-weight: 600; }
+.esc-muted { color: var(--text-3); font-size: 10.5px; font-family: var(--font); }
+td.esc-muted { font-size: 11px; }
+.esc-c { text-align: center !important; }
+.esc-off td { opacity: .45; }
+.esc-legs td { vertical-align: top; }
+.esc-legs-foot { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.esc-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+@media (max-width: 900px) { .esc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.esc-kpi { background: var(--bg-card); padding: 12px 8px; box-shadow: var(--shadow); }
+.esc-kpi .k-val { font-size: 15px; }
+.esc-kpi-n { font-size: 10.5px; color: var(--text-3); margin-top: 4px; line-height: 1.3; }
+.esc-chart-wrap { position: relative; height: 420px; }
+@media print {
+  #esc-space .esc-ctrl, #esc-space .esc-tabs, #esc-space .esc-legs-foot, #esc-space .rs-actions { display: none !important; }
+  #esc-space .esc-grid { grid-template-columns: minmax(0, 1fr); }
 }

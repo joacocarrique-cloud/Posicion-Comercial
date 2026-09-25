@@ -6,7 +6,8 @@
 function isWorkspaceMode() {
   return !theoryMode && !retMode && !paseMode && !spreadMode && !desvioMode
     && !(typeof lineupMode !== 'undefined' && lineupMode)
-    && !(typeof resumenMode !== 'undefined' && resumenMode);
+    && !(typeof resumenMode !== 'undefined' && resumenMode)
+    && !(typeof escMode !== 'undefined' && escMode);
 }
 
 function renderAll() {
@@ -25,6 +26,7 @@ function renderAll() {
 const UI_MODULOS = {
   workspace: 'switchToWorkspace', ret: 'toggleRetenciones', pase: 'togglePases', spreads: 'toggleSpreads',
   desvio: 'toggleDesvio', theory: 'toggleTheory', lineup: 'toggleLineUp', resumen: 'toggleResumen',
+  escenarios: 'toggleEscenarios',
 };
 Object.entries(UI_MODULOS).forEach(([k, fn]) => {
   const orig = window[fn];
