@@ -6,7 +6,7 @@
 //
 // Precio final (u$s/tn de producción disponible) a un movimiento d del mercado:
 //   [ fijadas × precio físico fijado
-//   + (a fijar + saldo a vender) × mercado × (1 + d)
+//   + (a fijar + total a vender) × mercado × (1 + d)
 //   + resultado a vencimiento de los FyO abiertos (futuro de su posición × (1 + d))
 //   + resultado de las coberturas propuestas ] / producción disponible
 // A diferencia del "Precio Final" del Excel, acá los futuros no suman toneladas
@@ -16,7 +16,7 @@
 let escMode = false;
 let escPos = null;          // posición importada del tablero (subconjunto compacto)
 let escChart = null;
-let escState = { delta: 0, crop: 'trigo', otm: 3, presetCrops: ['trigo', 'maiz', 'soja'], presetBase: 'sincob',
+let escState = { delta: 0, crop: 'trigo', otm: 3, presetCrops: ['trigo', 'maiz', 'soja'],
                  legs: {}, excl: {}, fut0: {}, mercado: {}, seq: 1 };
 
 const ESC_POS_KEY = 'espartina_esc_posicion_v1';
@@ -203,8 +203,11 @@ function escCobBaja(c, conProp) {
   if (conProp) escLegs(c).forEach(suma);
   return Math.max(0, tn) / p.disp;
 }
-// Toneladas que siguen expuestas a una baja (mismo criterio)
+// Saldo sin cobertura a la baja (mismo criterio): a fijar + total a vender − futuros
+// vendidos − puts netos. Las tn a fijar no tienen precio, así que cuentan como descubiertas.
 function escTnSinCob(c, conProp) { return Math.max(0, escPos.cultivos[c].disp * (1 - escCobBaja(c, conProp))); }
+// Toneladas cubiertas de más: a partir de acá el precio final sube si el mercado baja
+function escTnSobrecob(c, conProp) { return Math.max(0, escPos.cultivos[c].disp * (escCobBaja(c, conProp) - 1)); }
 
 // Prima neta de las coberturas propuestas (u$s; positivo = se paga)
 function escCostoProp(c) {
@@ -269,14 +272,13 @@ async function escAsegurarA3() {
   try { await syncFromSheet(); } catch (e) {}
 }
 
-// Put X% abajo del futuro en cada cultivo marcado, por las tn sin cobertura a la baja
-// (lo que no tapan fijaciones, futuros vendidos ni puts) o por todo el saldo a vender.
+// Put X% abajo del futuro en cada cultivo marcado, por el saldo sin cobertura a la baja
+// (lo que no tapan fijaciones, futuros vendidos, puts ni las patas cargadas a mano).
 // Reemplaza las patas que se generaron así antes y deja las cargadas a mano.
 async function escProponerPuts() {
   await escAsegurarA3();
   const otm = escNum(document.getElementById('esc-otm').value);
   escState.otm = otm != null ? otm : 3;
-  escState.presetBase = document.getElementById('esc-base').value;
   const sinPrima = [];
   escState.presetCrops.filter(c => escPos.cultivos[c]).forEach(c => {
     const pos = escPosDefault(c);
@@ -284,7 +286,7 @@ async function escProponerPuts() {
     const strike = escStrikeCercano(c, pos, 'put', F0 * (1 - escState.otm / 100));
     const prima = escPrimaA3(c, pos, 'put', strike);
     escState.legs[c] = escLegs(c).filter(l => !l.preset);
-    const tn = escState.presetBase === 'saldo' ? (escPos.cultivos[c].tav || 0) : escTnSinCob(c, true);
+    const tn = escTnSinCob(c, true);
     if (!(tn >= 1)) return;
     if (prima == null) sinPrima.push(ESC_CROP_LBL[c]);
     escState.legs[c].push({ id: escState.seq++, dir: 'buy', tipo: 'put', pos, strike,
@@ -315,7 +317,7 @@ function escAgregarPata() {
   const F0 = escFutA3(c, pos) || escMercado(c);
   const strike = escStrikeCercano(c, pos, 'put', F0 * 0.97);
   escLegs(c).push({ id: escState.seq++, dir: 'buy', tipo: 'put', pos, strike,
-    prima: escPrimaA3(c, pos, 'put', strike) || 0, tn: Math.round(escPos.cultivos[c].tav || 0), auto: true });
+    prima: escPrimaA3(c, pos, 'put', strike) || 0, tn: Math.round(escTnSinCob(c, true)), auto: true });
   escGuardar();
   escRender();
 }
@@ -404,12 +406,9 @@ function escRender() {
         </div>
       </div>
       <div class="esc-ctrl-bloque">
-        <label class="esc-lbl">Atajo: comprar puts por lo que queda por vender</label>
+        <label class="esc-lbl">Atajo: comprar puts por el saldo sin cobertura a la baja</label>
         <div class="esc-preset">
           ${cropsPos.map(c => `<label class="esc-chk"><input type="checkbox" ${escState.presetCrops.includes(c) ? 'checked' : ''} onchange="escTogglePresetCrop('${c}', this.checked)"> ${ESC_CROP_LBL[c]}</label>`).join('')}
-          <span class="esc-inline">por <select id="esc-base" class="esc-in" style="max-width:none">
-            <option value="sincob" ${escState.presetBase !== 'saldo' ? 'selected' : ''}>tn sin cobertura a la baja</option>
-            <option value="saldo" ${escState.presetBase === 'saldo' ? 'selected' : ''}>todo el saldo a vender</option></select></span>
           <span class="esc-inline">strike <input id="esc-otm" class="esc-in esc-in-s" type="text" inputmode="decimal" value="${escState.otm}">% abajo del futuro</span>
           <button class="btn btn-sm" onclick="escProponerPuts()">Proponer puts</button>
           <button class="btn btn-outline btn-sm" onclick="escLimpiar(false)">Limpiar propuestas</button>
@@ -450,6 +449,20 @@ function escHtmlVacio() {
   </div>`;
 }
 
+// Desglose del saldo sin cobertura: "a fijar + sin vender − futuros vendidos ± puts netos"
+function escDetalleSinCob(c) {
+  const p = escPos.cultivos[c];
+  let fut = 0, puts = 0;   // futuros vendidos netos · puts comprados netos (FyO incluidos)
+  escFyo(c).filter(escFyoIncluido).forEach(l => {
+    const s = l.dir === 'sell' ? 1 : -1;
+    if (l.tipo === 'futuro') fut += s * l.tn;
+    else if (l.tipo === 'put') puts -= s * l.tn;
+  });
+  const term = (v, pos, neg) => Math.abs(v) < 1 ? '' : (v > 0 ? ` − ${escF(v, 0)} ${pos}` : ` + ${escF(-v, 0)} ${neg}`);
+  return `${escF(p.afijar, 0)} a fijar + ${escF(p.tav, 0)} sin vender`
+    + term(fut, 'fut. vendidos', 'fut. comprados') + term(puts, 'puts comprados', 'puts vendidos');
+}
+
 function escHtmlPosicion() {
   const c = escState.crop, p = escPos.cultivos[c];
   const fyo = escFyo(c);
@@ -472,8 +485,9 @@ function escHtmlPosicion() {
     <table class="rs-table esc-pos">
       ${fila('Producción disponible', escF(p.disp, 0) + ' tn')}
       ${fila('Fijadas', escF(p.fij, 0) + ' tn', `a u$s ${escF(p.ppvFis)} (precio prom. físico)`)}
-      ${fila('A fijar', escF(p.afijar, 0) + ' tn', 'toman el precio del escenario')}
-      ${fila('<b>Saldo a vender</b>', '<b>' + escF(p.tav, 0) + ' tn</b>', 'toman el precio del escenario')}
+      ${fila('A fijar', escF(p.afijar, 0) + ' tn', 'sin precio: toman el del escenario')}
+      ${fila('Sin vender (Total a vender)', escF(p.tav, 0) + ' tn', 'toman el precio del escenario')}
+      ${fila('<b>Saldo sin cobertura a la baja</b>', '<b>' + escF(escTnSinCob(c, false), 0) + ' tn</b>', escDetalleSinCob(c))}
       <tr><td class="rs-l">Precio mercado hoy</td><td><input class="esc-in esc-in-m" type="text" inputmode="decimal" value="${escF(M)}" onchange="escSetMercado(this.value)" title="Del tablero. Editalo para probar otra base; vacío vuelve al del tablero."></td>
         <td class="rs-l esc-muted">${escState.mercado[c] ? 'editado (tablero: ' + escF(p.mercado) + ')' : 'del tablero'}</td></tr>
       ${fila('Precio dolor / objetivo', `${escF(p.dolor)} / ${escF(p.objetivo)}`)}
@@ -520,8 +534,9 @@ function escHtmlPropuesta() {
     <div class="esc-legs-foot">
       <button class="btn btn-sm" onclick="escAgregarPata()">+ Agregar pata</button>
       ${legs.length ? `<button class="btn btn-sm btn-outline" onclick="escLimpiar(true)">Borrar las de ${ESC_CROP_LBL[c]}</button>` : ''}
-      <span class="esc-muted">Saldo a vender: ${escF(p.tav, 0)} tn · Sin cobertura a la baja hoy: ${escF(escTnSinCob(c, false), 0)} tn</span>
-    </div>`;
+      <span class="esc-muted">Saldo sin cobertura a la baja: ${escF(escTnSinCob(c, false), 0)} tn${legs.length ? ` → ${escF(escTnSinCob(c, true), 0)} tn con la propuesta` : ''}</span>
+    </div>
+    ${escTnSobrecob(c, true) >= 1 ? `<div class="esc-aviso">⚠ Sobrecubierto en <b>${escF(escTnSobrecob(c, true), 0)} tn</b>: hay más cobertura a la baja que producción sin precio, así que el precio final sube si el mercado baja.</div>` : ''}`;
 }
 
 // Consolidado, KPIs, gráfico y tabla (todo lo que depende del escenario)
@@ -538,17 +553,18 @@ function escRenderResultados() {
 
 function escRenderConsolidado(d) {
   const crops = ESC_CROPS.filter(x => escPos.cultivos[x]);
-  let tAct = 0, tProp = 0, tCosto = 0, tDisp = 0, tTav = 0;
+  let tAct = 0, tProp = 0, tCosto = 0, tDisp = 0, tSinA = 0, tSinP = 0;
   const rows = crops.map(x => {
     const p = escPos.cultivos[x];
     const iA = escIngreso(x, d, false), iP = escIngreso(x, d, true), costo = escCostoProp(x);
     const pfA = iA / p.disp, pfP = iP / p.disp;
     const hay = escLegs(x).length > 0;
-    tAct += iA; tProp += iP; tCosto += costo; tDisp += p.disp; tTav += p.tav || 0;
+    const sinA = escTnSinCob(x, false), sinP = escTnSinCob(x, true), sobre = escTnSobrecob(x, true) >= 1;
+    tAct += iA; tProp += iP; tCosto += costo; tDisp += p.disp; tSinA += sinA; tSinP += sinP;
     return `<tr class="esc-row ${x === escState.crop ? 'rs-hot' : ''}" onclick="escSetCrop('${x}')" title="Ver ${ESC_CROP_LBL[x]}">
       <td class="rs-l"><b>${ESC_CROP_LBL[x]}</b></td>
-      <td>${escF(p.disp, 0)}</td><td>${escF(p.tav, 0)}</td>
-      <td>${escPct(escCobBaja(x, false))}${hay ? ` → <b>${escPct(escCobBaja(x, true))}</b>` : ''}</td>
+      <td>${escF(p.disp, 0)}</td><td>${escF(sinA, 0)}${hay ? ` → <b>${escF(sinP, 0)}</b>` : ''}</td>
+      <td>${escPct(escCobBaja(x, false))}${hay ? ` → <b class="${sobre ? 'rs-neg' : ''}" title="${sobre ? 'Sobrecubierto' : ''}">${escPct(escCobBaja(x, true))}${sobre ? ' ⚠' : ''}</b>` : ''}</td>
       <td>${escF(pfA)}</td>
       <td>${hay ? `<b>${escF(pfP)}</b>` : '—'}</td>
       <td class="${hay ? escCls(pfP - pfA) : ''}">${hay ? escSig(pfP - pfA) : ''}</td>
@@ -558,10 +574,10 @@ function escRenderConsolidado(d) {
   }).join('');
   document.getElementById('esc-cons-sub').textContent = `escenario ${escSig(d * 100, 0)}% · u$s/tn salvo indicación`;
   document.getElementById('esc-cons').innerHTML = `<thead><tr>
-      <th class="rs-l">Cultivo</th><th>Prod. disp. (tn)</th><th>Saldo a vender (tn)</th><th>Cob. a la baja</th>
+      <th class="rs-l">Cultivo</th><th>Prod. disp. (tn)</th><th>Sin cob. a la baja (tn)</th><th>Cob. a la baja</th>
       <th>Precio final actual</th><th>Con cobertura</th><th>Diferencia</th><th>Costo primas</th><th>Resultado total</th>
     </tr></thead><tbody>${rows}
-    <tr class="esc-tot"><td class="rs-l">Total</td><td>${escF(tDisp, 0)}</td><td>${escF(tTav, 0)}</td><td></td>
+    <tr class="esc-tot"><td class="rs-l">Total</td><td>${escF(tDisp, 0)}</td><td>${escF(tSinA, 0)}${Math.abs(tSinP - tSinA) >= 1 ? ' → ' + escF(tSinP, 0) : ''}</td><td></td>
       <td colspan="2" class="esc-muted">Ingreso: ${escUsd(tAct)} → ${escUsd(tProp)}</td><td></td>
       <td>${escUsd(tCosto)}</td><td class="${escCls(tProp - tAct)}">${escUsd(tProp - tAct)}</td></tr></tbody>`;
 }
@@ -571,7 +587,7 @@ function escRenderKpis(c, d) {
   const hay = escLegs(c).length > 0;
   const pfA = escPrecioFinal(c, d, false), pfP = escPrecioFinal(c, d, true);
   const cA = escPrecioFinal(c, -0.30, false), cP = escPrecioFinal(c, -0.30, true);
-  const sinA = escTnSinCob(c, false), sinP = escTnSinCob(c, true);
+  const sinA = escTnSinCob(c, false), sinP = escTnSinCob(c, true), sobre = escTnSobrecob(c, true);
   const costo = escCostoProp(c);
   const kpi = (lbl, act, prop, nota) => `<div class="kpi-card esc-kpi">
     <div class="k-lbl">${lbl}</div>
@@ -581,7 +597,8 @@ function escRenderKpis(c, d) {
     kpi(`Precio final (${escSig(d * 100, 0)}%)`, escF(pfA), escF(pfP), hay ? `${escSig(pfP - pfA)} u$s/tn` : 'actual')
     + kpi('Si el mercado cae 30%', escF(cA), escF(cP), hay ? `${escSig(cP - cA)} u$s/tn` : '')
     + kpi('Cobertura a la baja', escPct(escCobBaja(c, false)), escPct(escCobBaja(c, true)),
-          `sin cubrir: ${escF(sinA, 0)}${hay ? ' → ' + escF(sinP, 0) : ''} tn`)
+          hay && sobre >= 1 ? `<span class="red-txt">⚠ sobrecubierto en ${escF(sobre, 0)} tn</span>`
+                            : `sin cubrir: ${escF(sinA, 0)}${hay ? ' → ' + escF(sinP, 0) : ''} tn`)
     + kpi('Costo de la cobertura', hay ? escUsd(costo) : '—', null, hay ? `${escF(costo / p.disp, 2)} u$s/tn de producción` : 'sin propuesta');
 }
 
