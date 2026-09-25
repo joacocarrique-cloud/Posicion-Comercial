@@ -21,6 +21,17 @@ function renderAll() {
   saveState();
 }
 
+// ─── Módulo abierto: se recuerda al navegar y se reabre al recargar la página ───
+const UI_MODULOS = {
+  workspace: 'switchToWorkspace', ret: 'toggleRetenciones', pase: 'togglePases', spreads: 'toggleSpreads',
+  desvio: 'toggleDesvio', theory: 'toggleTheory', lineup: 'toggleLineUp', resumen: 'toggleResumen',
+};
+Object.entries(UI_MODULOS).forEach(([k, fn]) => {
+  const orig = window[fn];
+  if (typeof orig !== 'function') return;
+  window[fn] = function () { const r = orig.apply(this, arguments); uiSet('modulo', k); return r; };
+});
+
 // Cada paso del arranque es independiente: si uno falla, los demás siguen.
 window.onload = () => {
   // Valores manuales guardados (tasas, dólar futuro, etc.) antes de cualquier cálculo
@@ -40,4 +51,9 @@ window.onload = () => {
   Promise.resolve().then(() => syncFOBFromSheet()).catch(e => console.warn('Sync FOB:', e));
   Promise.resolve().then(() => asstInit()).catch(e => console.warn('Asistente:', e));
   if (typeof startLiveAutoRefresh === 'function') startLiveAutoRefresh();
+  // Reabrir el módulo en el que se estaba (cada módulo recarga sus datos al llegar A3)
+  const mod = uiGet('modulo', 'workspace');
+  if (mod !== 'workspace' && typeof window[UI_MODULOS[mod]] === 'function') {
+    try { window[UI_MODULOS[mod]](); } catch (e) { console.warn('No se pudo reabrir el módulo', mod, e); }
+  }
 };

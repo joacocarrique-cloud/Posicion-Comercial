@@ -45,6 +45,21 @@ function showSaveIndicator() {
 })();
 
 // ═══════════════════════════════════════════════════
+// ─── ESTADO DE PANTALLA ───
+// Lo que se estaba mirando (módulo abierto, cultivo, posiciones elegidas en cada módulo)
+// para que se mantenga al pasar de un módulo a otro y al recargar la página.
+// ═══════════════════════════════════════════════════
+const UI_KEY = 'espartina_ui_v1';
+let _ui = (function () {
+  try { return JSON.parse(localStorage.getItem(UI_KEY)) || {}; } catch (e) { return {}; }
+})();
+function uiGet(k, def) { return (_ui[k] !== undefined) ? _ui[k] : def; }
+function uiSet(k, v) {
+  _ui[k] = v;
+  try { localStorage.setItem(UI_KEY, JSON.stringify(_ui)); } catch (e) { /* sin espacio */ }
+}
+
+// ═══════════════════════════════════════════════════
 // ─── PARÁMETROS MANUALES ───
 // Valores que no vienen de ninguna fuente automática (tasas, dólar futuro, almacenaje,
 // costos de crushing, datos de fondeo). Se guardan en el navegador con la fecha de

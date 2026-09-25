@@ -76,9 +76,52 @@ function retChangeCultivo() {
     document.getElementById('ret-fas-obj-2').value = d.fasObj2;
   }
 
+  retElegirPosiciones(cultivo, hasPos2);
+  retObjDesdeFuturo(1);
+  if (hasPos2) retObjDesdeFuturo(2);
+  if (typeof uiSet === 'function') uiSet('cultivo', cultivo);
+
   retApplySchedule();
   // Apply FOB from sheet AFTER positions are populated
   applyFOBToRetenciones();
+}
+
+// Posiciones por defecto: las que se eligieron la última vez para este cultivo; si no,
+// las posiciones clave (POSICIONES_CLAVE) que no están por vencer.
+function retElegirPosiciones(cultivo, hasPos2) {
+  const sel1 = document.getElementById('ret-posicion'), sel2 = document.getElementById('ret-posicion-2');
+  const hay = (sel, v) => v && Array.from(sel.options).some(o => o.value === v);
+  const guard = (typeof uiGet === 'function' ? uiGet('retPos', {}) : {})[cultivo] || {};
+  const lim = new Date(); lim.setDate(lim.getDate() + 15); const limIso = lim.toISOString().slice(0, 10);
+  const vigClave = Array.from(sel1.options).map(o => o.value).filter(v => {
+    const code = v.toUpperCase();
+    const f = (typeof sheetData !== 'undefined' && sheetData && sheetData.futuros[cultivo] || []).find(x => x.pos === code);
+    const vto = f && f.vto && typeof paseParseVto === 'function' ? paseParseVto(f.vto) : '';
+    return esPosClave(cultivo, code) && (!vto || vto >= limIso);
+  });
+  if (hay(sel1, guard.p1)) sel1.value = guard.p1; else if (vigClave[0]) sel1.value = vigClave[0];
+  if (hasPos2) {
+    if (hay(sel2, guard.p2)) sel2.value = guard.p2;
+    else { const otra = vigClave.find(v => v !== sel1.value); if (otra) sel2.value = otra; }
+  }
+}
+
+// FAS objetivo = precio del futuro de la posición elegida (A3). n = 1 o 2.
+function retObjDesdeFuturo(n) {
+  const sel = document.getElementById(n === 1 ? 'ret-posicion' : 'ret-posicion-2');
+  const inp = document.getElementById(n === 1 ? 'ret-fas-obj' : 'ret-fas-obj-2');
+  const opt = sel && sel.selectedOptions[0];
+  const precio = opt ? parseFloat(opt.dataset.precio) : NaN;
+  if (inp && precio > 0) inp.value = precio;
+}
+
+// Recuerda las posiciones elegidas por cultivo (para volver a encontrarlas al cambiar de módulo)
+function retGuardarPosiciones() {
+  if (typeof uiSet !== 'function') return;
+  const cultivo = document.getElementById('ret-cultivo').value;
+  const todas = uiGet('retPos', {});
+  todas[cultivo] = { p1: document.getElementById('ret-posicion').value, p2: document.getElementById('ret-posicion-2').value };
+  uiSet('retPos', todas);
 }
 
 function retCascBar(name, val, pct, bg, textColor) {

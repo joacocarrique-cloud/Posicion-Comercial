@@ -14,12 +14,21 @@ function togglePases() {
   renderTabs();
   renderModules();
   if (typeof fondeoHide === 'function') fondeoHide();
+  // Arranca en el último cultivo que se estuvo mirando (en cualquier módulo)
+  const cUlt = uiGet('cultivo');
+  if (cUlt && cUlt !== paseGrain && ['soja', 'maiz', 'trigo', 'girasol'].includes(cUlt)) {
+    paseGrain = cUlt;
+    const orden = ['soja', 'maiz', 'trigo', 'girasol'];
+    document.querySelectorAll('.pase-chip').forEach((c, i) => c.classList.toggle('active', orden[i] === cUlt));
+    ['pase-p1-price', 'pase-p2-price', 'pase-p3-price'].forEach(id => { document.getElementById(id).value = ''; });
+  }
   paseUpdatePositions();
   paseCalc();
 }
 
 function paseSetGrain(grain, event) {
   paseGrain = grain;
+  uiSet('cultivo', grain);
   document.querySelectorAll('.pase-chip').forEach(c => c.classList.remove('active'));
   event.target.classList.add('active');
   // Al cambiar de grano se recalculan los defaults (disponible y posiciones de ese grano)

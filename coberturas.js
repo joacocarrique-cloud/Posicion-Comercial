@@ -250,6 +250,9 @@ function toggleRetenciones() {
   document.getElementById('btn-update-primas').style.display = 'none';
   renderTabs();
   renderModules();
+  // Arranca en el último cultivo que se estuvo mirando (en cualquier módulo)
+  const cSel = document.getElementById('ret-cultivo'), cUlt = uiGet('cultivo');
+  if (cUlt && cSel.querySelector(`option[value="${cUlt}"]`)) cSel.value = cUlt;
   retChangeCultivo();
   // Sync FOB from sheet when entering retenciones module
   if (Object.keys(fobData).length === 0) syncFOBFromSheet();
@@ -344,6 +347,8 @@ function onCultChange() {
   const crop = document.getElementById('mkt-crop-select').value;
   const t = getActiveTab();
   t.assetVal = crop;
+  t.pos = null;   // al cambiar de cultivo, la posición del cultivo anterior ya no aplica
+  uiSet('cultivo', crop);
 
   if (sheetData) {
     // A3 data loaded — use real data

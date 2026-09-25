@@ -136,10 +136,11 @@ function getFOBForCultivo(cultivo, posicion) {
 
 
 function applyFOBToRetenciones() {
-  if (Object.keys(fobData).length === 0) return;
-
   const cultivoEl = document.getElementById('ret-cultivo');
   if (!cultivoEl) return;
+  // Sin datos del Sheet FOB igual se calcula (con el FOB cargado a mano / por defecto):
+  // si no, el panel quedaba con los números de ejemplo del HTML.
+  if (Object.keys(fobData).length === 0) { retCalc(); return; }
   const cultivo = cultivoEl.value;
   const key = FOB_KEY_MAP[cultivo];
   if (!key) { retCalc(); return; }   // girasol: FOB manual
@@ -201,6 +202,7 @@ function applyFOBToRetenciones() {
 }
 
 function onRetPos2Change() {
+  if (typeof retObjDesdeFuturo === 'function') { retObjDesdeFuturo(2); retGuardarPosiciones(); }
   applyFOBToRetenciones();
 }
 
@@ -710,6 +712,7 @@ function changeMarketPosition() {
 function onRetPosicionChange() {
   // When position changes in retenciones: alícuota del cronograma + FOB del sheet, y recalcular
   if (typeof retApplySchedule === 'function') retApplySchedule();
+  if (typeof retObjDesdeFuturo === 'function') { retObjDesdeFuturo(1); retGuardarPosiciones(); }
   applyFOBToRetenciones();
 }
 
