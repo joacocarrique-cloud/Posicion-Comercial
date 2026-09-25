@@ -167,27 +167,132 @@ function escCompactar(d) {
   return { v: ESC_POS_VERSION, meta: d.meta || {}, cultivos, fyo, importado: new Date().toISOString() };
 }
 
+// Toma el texto del tablero (archivo elegido o vinculado) y lo deja como posición activa
+function escAplicarTexto(texto, file) {
+  escPos = escCompactar(escExtraerDatos(texto));
+  escPos.archivoNombre = file.name;
+  escPos.archivoMod = file.lastModified;
+  escPosVieja = false;
+  try { localStorage.setItem(ESC_POS_KEY, JSON.stringify(escPos)); } catch (e) {}
+  escMigrarMaiz();
+  if (!escPos.cultivos[escState.crop]) escState.crop = escCrops()[0];
+  escGuardar();
+}
+
 function escElegirArchivo() { document.getElementById('esc-file').click(); }
 
 function escImportar(ev) {
   const file = ev.target.files && ev.target.files[0];
   ev.target.value = '';
   if (!file) return;
-  const rd = new FileReader();
-  rd.onload = () => {
-    try {
-      escPos = escCompactar(escExtraerDatos(String(rd.result)));
-      escPosVieja = false;
-      try { localStorage.setItem(ESC_POS_KEY, JSON.stringify(escPos)); } catch (e) {}
-      escMigrarMaiz();
-      if (!escPos.cultivos[escState.crop]) escState.crop = escCrops()[0];
-      escGuardar();
-      escRender();
-    } catch (e) {
-      alert('No pude leer la posición: ' + e.message);
+  file.text().then(t => { escAplicarTexto(t, file); escRender(); })
+    .catch(e => alert('No pude leer la posición: ' + e.message));
+}
+
+// ─── Vínculo con el archivo del tablero (Chrome / Edge) ───
+// Se elige una vez "Posicion Comercial 26-27.html" y el navegador guarda el acceso al archivo
+// (en IndexedDB, solo en esta PC). Al abrir el módulo o volver a la pestaña se relee si cambió.
+// Nada se sube a ningún lado: se lee el mismo archivo de OneDrive que regenera el .bat.
+const ESC_IDB = 'espartina_escenarios', ESC_IDB_STORE = 'handles';
+let escVinculo = null;   // { handle, nombre, estado: 'ok' | 'permiso' | 'error', msg, leido }
+
+function escVinculoSoportado() { return typeof window.showOpenFilePicker === 'function'; }
+
+function escIdb(modo, fn) {
+  return new Promise((res, rej) => {
+    if (!window.indexedDB) return rej(new Error('Sin IndexedDB'));
+    const rq = indexedDB.open(ESC_IDB, 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore(ESC_IDB_STORE);
+    rq.onerror = () => rej(rq.error);
+    rq.onsuccess = () => {
+      const tx = rq.result.transaction(ESC_IDB_STORE, modo);
+      const r = fn(tx.objectStore(ESC_IDB_STORE));
+      tx.oncomplete = () => res(r ? r.result : undefined);
+      tx.onerror = () => rej(tx.error);
+    };
+  });
+}
+
+async function escVincular() {
+  if (!escVinculoSoportado()) { escElegirArchivo(); return; }
+  let h;
+  try {
+    [h] = await window.showOpenFilePicker({ types: [{ description: 'Tablero de posición comercial',
+      accept: { 'text/html': ['.html', '.htm'], 'application/json': ['.json'] } }] });
+  } catch (e) { return; }   // canceló el diálogo
+  try { await escIdb('readwrite', s => s.put(h, 'tablero')); } catch (e) {}
+  escVinculo = { handle: h, nombre: h.name };
+  await escLeerVinculado(true, true);
+}
+
+async function escDesvincular() {
+  if (!confirm('¿Desvincular el tablero? La posición cargada queda, pero ya no se actualiza sola.')) return;
+  try { await escIdb('readwrite', s => s.delete('tablero')); } catch (e) {}
+  escVinculo = null;
+  escRender();
+}
+
+// interactivo: puede pedir el permiso de lectura (el navegador lo exige desde un clic).
+// forzar: relee aunque el archivo no haya cambiado.
+async function escLeerVinculado(interactivo, forzar) {
+  if (!escVinculoSoportado()) return;
+  if (!escVinculo) {
+    let h = null;
+    try { h = await escIdb('readonly', s => s.get('tablero')); } catch (e) {}
+    if (!h) return;
+    escVinculo = { handle: h, nombre: h.name };
+  }
+  const antes = escVinculo.estado;
+  try {
+    const h = escVinculo.handle;
+    let perm = await h.queryPermission({ mode: 'read' });
+    if (perm !== 'granted' && interactivo) perm = await h.requestPermission({ mode: 'read' });
+    if (perm !== 'granted') {
+      escVinculo.estado = 'permiso';
+    } else {
+      const file = await h.getFile();
+      escVinculo.estado = 'ok';
+      escVinculo.leido = new Date();
+      if (forzar || !escPos || escPos.archivoMod !== file.lastModified) {
+        escAplicarTexto(await file.text(), file);
+        escVinculo.cambio = true;
+      }
     }
+  } catch (e) {
+    escVinculo.estado = 'error';
+    escVinculo.msg = e.name === 'NotFoundError' ? 'no encuentro el archivo (¿se movió o renombró?)' : e.message;
+  }
+  if (escMode && (escVinculo.cambio || escVinculo.estado !== antes)) escRender();
+  escVinculo.cambio = false;
+}
+
+// Botones y leyenda del vínculo para el encabezado del módulo
+function escHtmlVinculo() {
+  if (!escVinculoSoportado()) return {
+    botones: `<button class="btn btn-outline btn-sm" onclick="escElegirArchivo()" title="Elegí el archivo Posicion Comercial 26-27.html">📂 Actualizar posición</button>`,
+    meta: ' · este navegador no permite vincular el archivo (usá Chrome o Edge)'
   };
-  rd.readAsText(file);
+  const v = escVinculo;
+  if (!v) return {
+    botones: `<button class="btn btn-sm" onclick="escVincular()" title="Elegí una vez Posicion Comercial 26-27.html y se actualiza solo">🔗 Vincular tablero</button>
+      <button class="btn btn-outline btn-sm" onclick="escElegirArchivo()">📂 Cargar una vez</button>`,
+    meta: ' · sin vincular: cargada a mano'
+  };
+  const nom = escHtml(v.nombre);
+  if (v.estado === 'permiso') return {
+    botones: `<button class="btn btn-sm" onclick="escLeerVinculado(true)" title="El navegador pide confirmar el acceso al archivo">🔗 Reconectar ${nom}</button>`,
+    meta: ` · vinculado a ${nom}: hace falta un clic para volver a leerlo`
+  };
+  if (v.estado === 'error') return {
+    botones: `<button class="btn btn-sm" onclick="escVincular()">🔗 Volver a vincular</button>`,
+    meta: ` · <span class="red-txt">vínculo con ${nom}: ${escHtml(v.msg || 'error')}</span>`
+  };
+  return {
+    botones: `<button class="btn btn-outline btn-sm" onclick="escLeerVinculado(true, true)" title="Relee el archivo ahora">🔄 Releer</button>
+      <button class="btn btn-outline btn-sm" onclick="escVincular()" title="Vincular otro archivo">🔗 Cambiar</button>
+      <button class="btn btn-outline btn-sm" onclick="escDesvincular()">Desvincular</button>`,
+    meta: ` · 🔗 vinculado a ${nom}, se relee solo al abrir el módulo`
+  };
 }
 
 // ═══════════════════════════════════════════════════
@@ -484,6 +589,7 @@ function escRender() {
   if (!escPos.cultivos[escState.crop]) escState.crop = escCrops()[0];
 
   const m = escPos.meta || {};
+  const vin = escHtmlVinculo();
   const dPct = Math.round(escState.delta * 100);
   const ejeIn = (k, tit) => `<input id="esc-eje-${k}" class="esc-in esc-in-m" type="text" inputmode="decimal" title="${tit}. Vacío = automático." onchange="escSetEje('${k}', this.value)">`;
 
@@ -493,11 +599,9 @@ function escRender() {
         <div class="rs-title">🎯 Escenarios de posición</div>
         <div class="rs-subt">Posición comercial + coberturas propuestas: qué precio final le queda a cada cultivo según hacia dónde vaya el mercado.</div>
       </div>
-      <div class="rs-actions">
-        <button class="btn btn-outline btn-sm" onclick="escElegirArchivo()" title="Elegí el archivo Posicion Comercial 26-27.html">📂 Actualizar posición</button>
-      </div>
+      <div class="rs-actions">${vin.botones}</div>
     </div>
-    <div class="rs-meta">Posición: ${escHtml(m.archivo || 'tablero')} · Excel modificado ${escHtml(m.modificado || '—')} · generado ${escHtml(m.generado || '—')}${sheetData ? ` · A3 ${escHtml(sheetData.fechaDatos || '')}` : ' · sin datos A3 (strikes y primas a mano)'}</div>
+    <div class="rs-meta">Posición: ${escHtml(m.archivo || 'tablero')} · Excel modificado ${escHtml(m.modificado || '—')} · generado ${escHtml(m.generado || '—')}${vin.meta}${sheetData ? ` · A3 ${escHtml(sheetData.fechaDatos || '')}` : ' · sin datos A3 (strikes y primas a mano)'}</div>
 
     <div class="rs-card esc-ctrl">
       <div class="esc-ctrl-bloque">
@@ -558,8 +662,12 @@ function escHtmlVacio() {
     <div class="rs-title">🎯 Escenarios de posición</div>
     ${escPosVieja ? '<p class="esc-aviso">El módulo cambió (ahora separa maíz temprano y tardío): volvé a cargar el tablero. Las coberturas que tenías cargadas se conservan.</p>' : ''}
     <p>Para simular coberturas sobre la posición real, cargá el tablero <b>Posicion Comercial 26-27.html</b>, el mismo archivo que abrís para ver la posición.</p>
-    <p class="esc-nota">La suite lee los datos que ya trae ese archivo (producción, fijado, a fijar, saldo a vender y FyO abiertos). Quedan guardados solo en este navegador; no se suben a ningún lado. Cada vez que regenerás el tablero, volvé a cargarlo acá.</p>
-    <button class="btn" onclick="escElegirArchivo()">📂 Cargar posición comercial</button>
+    <p class="esc-nota">La suite lee los datos que ya trae ese archivo (producción, fijado, a fijar, saldo a vender y FyO abiertos). Quedan solo en este navegador; no se suben a ningún lado.${escVinculoSoportado() ? ' Si lo <b>vinculás</b>, se vuelve a leer solo cada vez que abrís el módulo, así que alcanza con regenerar el tablero.' : ' Cada vez que regenerás el tablero, volvé a cargarlo acá.'}</p>
+    ${escVinculo && escVinculo.estado === 'permiso'
+      ? `<button class="btn" onclick="escLeerVinculado(true)">🔗 Reconectar ${escHtml(escVinculo.nombre)}</button>`
+      : escVinculoSoportado()
+        ? `<button class="btn" onclick="escVincular()">🔗 Vincular tablero de posición</button> <button class="btn btn-outline" onclick="escElegirArchivo()">📂 Cargar una vez</button>`
+        : `<button class="btn" onclick="escElegirArchivo()">📂 Cargar posición comercial</button>`}
   </div>`;
 }
 
@@ -898,6 +1006,7 @@ async function toggleEscenarios() {
   escMarcarPill();
   escRender();
   if (typeof refrescarBarras === 'function') refrescarBarras();
+  await escLeerVinculado(false);
   if (!sheetData && escPos) {
     await escAsegurarA3();
     if (escMode) { escRefrescarPrimas(); escRender(); }
@@ -941,5 +1050,8 @@ function escMarcarPill() {
     return r;
   };
 })();
+
+// Al volver a la pestaña (p.ej. después de regenerar el tablero) se relee el archivo vinculado
+window.addEventListener('focus', () => { if (escMode) escLeerVinculado(false); });
 
 escCargarGuardado();
