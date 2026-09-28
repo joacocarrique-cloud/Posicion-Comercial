@@ -7,7 +7,8 @@
 // Precio final (u$s/tn de producción disponible) a un movimiento d del mercado:
 //   [ fijadas × precio físico fijado
 //   + (a fijar + total a vender) × mercado × (1 + d)
-//   + resultado a vencimiento de los FyO abiertos (futuro de su posición × (1 + d))
+//   + resultado a vencimiento de los FyO abiertos (futuro de su posición × (1 + d);
+//     los de otra plaza, como Kansas, a MATBA × (1 + d) + un basis fijo en u$s/tn)
 //   + resultado de las coberturas propuestas ] / producción disponible
 // A diferencia del "Precio Final" del Excel, acá los futuros no suman toneladas
 // (cubren el saldo) y las opciones sí mueven el precio según el escenario.
@@ -28,7 +29,7 @@ let escPosVieja = false;    // había una posición guardada con un formato ante
 // legs: formato anterior (una sola cobertura por cultivo), se migra a estr al cargar
 let escState = { delta: 0, crop: 'trigo', otm: 3, presetCrops: ['trigo', 'maiz_temp', 'maiz_tard', 'soja'],
                  legs: {}, estr: {}, elegida: {}, editando: {}, detalle: false,
-                 excl: {}, fut0: {}, mercado: {}, ejes: {}, seq: 1 };
+                 excl: {}, basis: {}, mercado: {}, ejes: {}, seq: 1 };
 
 const ESC_POS_KEY = 'espartina_esc_posicion_v1';
 const ESC_STATE_KEY = 'espartina_esc_estado_v1';
@@ -107,7 +108,8 @@ function escCargarGuardado() {
     const r = localStorage.getItem(ESC_STATE_KEY);
     if (r) escState = Object.assign(escState, JSON.parse(r) || {});
   } catch (e) {}
-  ['legs', 'estr', 'elegida', 'editando', 'ejes'].forEach(k => { escState[k] = escState[k] || {}; });
+  ['legs', 'estr', 'elegida', 'editando', 'ejes', 'basis'].forEach(k => { escState[k] = escState[k] || {}; });
+  delete escState.fut0;   // antes se cargaba el futuro de hoy de otra plaza; ahora es MATBA + basis
   escMigrarMaiz();
 }
 function escGuardar() {
@@ -369,16 +371,29 @@ function escFutA3(c, pos) {
   const f = sheetData.futuros[a3].find(x => x.pos === pos && x.precio > 0);
   return f ? f.precio : null;
 }
+// ─── Otras plazas (Kansas, Chicago): basis fijo contra MATBA ───
+// Otra plaza = MATBA de la misma posición + basis (u$s/tn), hoy y en cada escenario: se mueve
+// los mismos u$s que MATBA, no el mismo %. El basis se edita por plaza; Kansas arranca en +30.
+const ESC_BASIS_DEF = { KAN: 30 };
+function escOtraPlaza(l) { return !!l.plaza && l.plaza !== 'ROS'; }
+function escBasis(l) {
+  const v = escState.basis[l.plaza];
+  if (v != null) return v;
+  return ESC_BASIS_DEF[l.plaza] != null ? ESC_BASIS_DEF[l.plaza] : null;
+}
+// Futuro MATBA de hoy para la posición de la pata (sin A3: precio de mercado del tablero)
+function escFutRos(c, l) { return escFutA3(c, l.pos) || escMercado(c); }
 function escF0(c, l) {
-  if (l.plaza && l.plaza !== 'ROS') return escState.fut0[l.ins] || null;   // otro subyacente (p.ej. Kansas)
-  return escFutA3(c, l.pos) || escMercado(c);
+  if (!escOtraPlaza(l)) return escFutRos(c, l);
+  const b = escBasis(l);
+  return b == null ? null : escFutRos(c, l) + b;
 }
 
-// Un FyO abierto entra al cálculo salvo que se lo excluya. Los de otra plaza
-// (Kansas, Chicago) solo entran si se carga el precio de hoy de su subyacente.
+// Un FyO abierto entra al cálculo salvo que se lo excluya. Los de otra plaza solo
+// entran si tienen basis (Kansas lo trae por defecto; Chicago hay que cargarlo).
 function escFyoIncluido(l) {
   if (escState.excl[l.ins]) return false;
-  if (l.plaza && l.plaza !== 'ROS') return escState.fut0[l.ins] > 0;
+  if (escOtraPlaza(l)) return escBasis(l) != null;
   return true;
 }
 function escFyo(c) { const b = escBase(c); return escPos.fyo.filter(l => b.includes(l.crop)); }
@@ -405,7 +420,8 @@ function escLegsEdit(c) {
 function escValorPata(c, l, d) {
   const F0 = escF0(c, l);
   if (!(F0 > 0) || !(l.tn > 0)) return 0;
-  const F = F0 * (1 + d);
+  // Otra plaza: MATBA del escenario + basis fijo
+  const F = escOtraPlaza(l) ? escFutRos(c, l) * (1 + d) + escBasis(l) : F0 * (1 + d);
   if (l.tipo === 'futuro') return (l.dir === 'sell' ? 1 : -1) * l.tn * ((l.strike || F0) - F);
   const intr = l.tipo === 'put' ? Math.max(l.strike - F, 0) : Math.max(F - l.strike, 0);
   return (l.dir === 'buy' ? 1 : -1) * l.tn * (intr - (l.prima || 0));
@@ -784,7 +800,8 @@ function escEditarPata(id, campo, valor) {
 }
 
 function escSetExcl(ins, incluido) { escState.excl[ins] = !incluido; escGuardar(); escRender(); }
-function escSetFut0(ins, v) { const n = escNum(v); if (n > 0) escState.fut0[ins] = n; else delete escState.fut0[ins]; escGuardar(); escRender(); }
+// Basis de una plaza (vale para todos sus FyO); vacío vuelve al de defecto
+function escSetBasis(plaza, v) { const n = escNum(v); if (n != null) escState.basis[plaza] = n; else delete escState.basis[plaza]; escGuardar(); escRender(); }
 function escSetMercado(v) { const n = escNum(v); if (n > 0) escState.mercado[escState.crop] = n; else delete escState.mercado[escState.crop]; escGuardar(); escRender(); }
 function escSetCrop(c) { escState.crop = c; escGuardar(); escRender(); }
 
@@ -936,16 +953,20 @@ function escHtmlPosicion() {
   const M = escMercado(c);
   const fila = (k, v, extra = '') => `<tr><td class="rs-l">${k}</td><td>${v}</td><td class="rs-l esc-muted">${extra}</td></tr>`;
   const fyoRows = fyo.map(l => {
-    const otraPlaza = l.plaza && l.plaza !== 'ROS';
+    const otraPlaza = escOtraPlaza(l), b = otraPlaza ? escBasis(l) : null;
     const F0 = escF0(l.crop, l);
     const lado = l.tipo === 'futuro' ? (l.dir === 'sell' ? 'Venta' : 'Compra') : (l.dir === 'buy' ? 'Compra' : 'Venta');
-    const precio = l.tipo === 'futuro' ? escF(l.strike) : `prima ${escF(l.prima, 2)}`;
+    // En otra plaza: a qué precio de MATBA equivale el strike (o el precio del futuro)
+    const equiv = otraPlaza && b != null
+      ? `<div class="esc-muted">${l.tipo === 'futuro' ? '' : `strike ${escF(l.strike, 0)} `}= MATBA ${escF(l.strike - b)}</div>` : '';
+    const precio = (l.tipo === 'futuro' ? escF(l.strike) : `prima ${escF(l.prima, 2)}`) + equiv;
+    const chk = `<input type="checkbox" title="Incluir en el cálculo" ${escFyoIncluido(l) ? 'checked' : ''} onchange="escSetExcl('${escHtml(l.ins)}', this.checked)">`;
     const ctrl = otraPlaza
-      ? `<input class="esc-in esc-in-m" type="text" inputmode="decimal" placeholder="futuro hoy" title="Otro subyacente (${escHtml(l.plaza)}): cargá su precio de hoy para incluirlo. Se mueve el mismo % que el escenario." value="${escState.fut0[l.ins] || ''}" onchange="escSetFut0('${escHtml(l.ins)}', this.value)">`
-      : `<input type="checkbox" title="Incluir en el cálculo" ${escFyoIncluido(l) ? 'checked' : ''} onchange="escSetExcl('${escHtml(l.ins)}', this.checked)">`;
+      ? `${chk} <span class="esc-inline esc-basis" title="Basis ${escHtml(l.plaza)} contra MATBA (u$s/tn): ${escHtml(l.plaza)} = MATBA + basis, hoy y en todos los escenarios. Vale para todos los FyO de ${escHtml(l.plaza)}. Vacío = ${ESC_BASIS_DEF[l.plaza] != null ? 'vuelve a ' + ESC_BASIS_DEF[l.plaza] : 'no se incluye'}.">basis <input class="esc-in esc-in-s" type="text" inputmode="decimal" placeholder="u$s/tn" value="${b != null ? escF(b, 1).replace(/,0$/, '') : ''}" onchange="escSetBasis('${escHtml(l.plaza)}', this.value)"></span>`
+      : chk;
     return `<tr class="${escFyoIncluido(l) ? '' : 'esc-off'}">
       <td class="rs-l">${escHtml(l.ins)}${grupo ? ` <span class="esc-muted">${escLbl(l.crop).replace('Maíz ', '')}</span>` : ''}</td><td>${lado}</td><td>${escF(l.tn, 0)}</td><td>${precio}</td>
-      <td>${F0 > 0 ? escF(F0) : '—'}</td><td class="esc-c">${ctrl}</td></tr>`;
+      <td>${F0 > 0 ? escF(F0) : '—'}${otraPlaza && F0 > 0 ? `<div class="esc-muted">MATBA ${escF(escFutRos(l.crop, l))} ${b < 0 ? '−' : '+'} ${escF(Math.abs(b), 0)}</div>` : ''}</td><td class="esc-c">${ctrl}</td></tr>`;
   }).join('');
 
   const mercadoFila = grupo
@@ -955,14 +976,19 @@ function escHtmlPosicion() {
   const difTablero = grupo ? (escPos.cultivos[c].disp || 0) - p.disp : 0;
   const r = escResumenTn(c, false);
   const neto = (v, pos, neg) => Math.abs(v) < 1 ? '' : v > 0 ? pos : neg;
+  // Puts / calls de otra plaza incluidos: cobertura cruzada, con su strike equivalente en MATBA
+  const cruzada = tipo => {
+    const ls = fyo.filter(l => l.tipo === tipo && escOtraPlaza(l) && escFyoIncluido(l));
+    return ls.length ? `incluye ${ls.map(l => `${l.dir === 'buy' ? '' : '−'}${escF(l.tn, 0)} ${escHtml(l.plaza)} (strike ${escF(l.strike, 0)} = MATBA ${escF(l.strike - escBasis(l), 0)})`).join(', ')}` : '';
+  };
 
   return `<h3>Posición ${escLbl(c)}</h3>
     ${grupo ? `<div class="esc-nota-grupo">Suma de ${escBase(c).map(escLbl).join(' y ')}, con la estrategia elegida de cada uno.</div>` : ''}
     <table class="rs-table esc-pos">
       ${fila('Producción total', escF(r.disp, 0) + ' tn', Math.abs(difTablero) >= 1 ? `el tablero muestra ${escF(escPos.cultivos[c].disp, 0)} tn en la columna total` : '')}
       ${fila('Tn vendidas (forwards + futuros)', escF(r.vendidas, 0) + ' tn', `${escF(r.fij, 0)} fijadas${Math.abs(r.fut) >= 1 ? ` ${r.fut > 0 ? '+' : '−'} ${escF(Math.abs(r.fut), 0)} futuros ${r.fut > 0 ? 'vendidos' : 'comprados'}` : ''}`)}
-      ${fila('Tn cobertura a la baja (puts)', escF(r.puts, 0) + ' tn', neto(r.puts, 'puts comprados netos', 'puts vendidos netos'))}
-      ${fila('Tn cobertura a la suba (calls)', escF(r.calls, 0) + ' tn', neto(r.calls, 'calls comprados netos', 'calls vendidos netos'))}
+      ${fila('Tn cobertura a la baja (puts)', escF(r.puts, 0) + ' tn', [neto(r.puts, 'puts comprados netos', 'puts vendidos netos'), cruzada('put')].filter(Boolean).join(' · '))}
+      ${fila('Tn cobertura a la suba (calls)', escF(r.calls, 0) + ' tn', [neto(r.calls, 'calls comprados netos', 'calls vendidos netos'), cruzada('call')].filter(Boolean).join(' · '))}
       ${fila('<b>% cobertura a la baja</b>', `<b>${escPct(r.pctBaja)}</b>`, r.sobrecob >= 1 ? `<span class="red-txt">⚠ sobrecubierto en ${escF(r.sobrecob, 0)} tn</span>` : `sin cubrir: ${escF(escTnSinCob(c, false), 0)} tn`)}
       ${fila('<b>% a la suba</b>', `<b>${escPct(r.pctSuba)}</b>`, `acompañan una suba: ${escF(r.tnSuba, 0)} tn`)}
       ${mercadoFila}
@@ -977,7 +1003,7 @@ function escHtmlPosicion() {
         ${fila('Precio dolor / objetivo', `${escF(p.dolor)} / ${escF(p.objetivo)}`)}
         ${fila('Precio Final (Excel)', escF(p.precioFinal), 'referencia: fórmula del tablero')}
       </table>
-      <div class="rs-sub">FyO abiertos <span>se valúan a vencimiento contra el futuro de su posición${sheetData ? ' (A3)' : ' (sin A3: precio mercado)'}</span></div>
+      <div class="rs-sub">FyO abiertos <span>se valúan a vencimiento contra el futuro de su posición${sheetData ? ' (A3)' : ' (sin A3: precio mercado)'}${fyo.some(escOtraPlaza) ? ' · otras plazas = MATBA + basis fijo' : ''}</span></div>
       ${fyo.length ? `<div class="rs-tw"><table class="rs-table esc-fyo">
         <thead><tr><th class="rs-l">Instrumento</th><th>Lado</th><th>Tn</th><th>Precio</th><th>Futuro hoy</th><th class="esc-c">Incluir</th></tr></thead>
         <tbody>${fyoRows}</tbody></table></div>` : '<div class="rs-empty">Sin futuros ni opciones abiertos.</div>'}
