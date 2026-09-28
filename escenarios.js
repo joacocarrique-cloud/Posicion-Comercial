@@ -14,14 +14,21 @@
 //
 // Maíz se trabaja separado en temprano (posición ABR) y tardío (posición JUL);
 // "Maíz total" es la suma de los dos, con las coberturas de cada uno.
+//
+// Cada cultivo puede tener varias estrategias (puts, put sintético, collar…) para
+// compararlas; la marcada como elegida (★) es la que va al consolidado y a Maíz total.
 // ═══════════════════════════════════════════════════
 
 let escMode = false;
 let escPos = null;          // posición importada del tablero (subconjunto compacto)
 let escChart = null;
+let escChartDif = null;
 let escPosVieja = false;    // había una posición guardada con un formato anterior
+// estr[c] = [{ id, nombre, color, legs }] · elegida[c] / editando[c] = id de estrategia
+// legs: formato anterior (una sola cobertura por cultivo), se migra a estr al cargar
 let escState = { delta: 0, crop: 'trigo', otm: 3, presetCrops: ['trigo', 'maiz_temp', 'maiz_tard', 'soja'],
-                 legs: {}, excl: {}, fut0: {}, mercado: {}, ejes: {}, seq: 1 };
+                 legs: {}, estr: {}, elegida: {}, editando: {}, detalle: false,
+                 excl: {}, fut0: {}, mercado: {}, ejes: {}, seq: 1 };
 
 const ESC_POS_KEY = 'espartina_esc_posicion_v1';
 const ESC_STATE_KEY = 'espartina_esc_estado_v1';
@@ -49,6 +56,18 @@ const ESC_TABLA = [-0.30, -0.20, -0.10, 0, 0.10, 0.20, 0.30];
 const ESC_COLOR_ACT = '#2563eb';
 const ESC_COLOR_PROP = '#1A6B3C';
 const ESC_COLOR_CRUCE = '#b7791f';
+// Colores de estrategia: la paleta de Coberturas sin el azul de "Posición actual"
+const ESC_COLORES = (typeof COLORS !== 'undefined' ? COLORS : ['#1A6B3C', '#d97706', '#0891b2', '#be185d', '#65a30d'])
+  .filter(x => x !== ESC_COLOR_ACT);
+// Áreas entre la posición actual y la estrategia elegida
+const ESC_FILL_GANA = 'rgba(26,107,60,0.13)';     // la estrategia queda mejor
+const ESC_FILL_PIERDE = 'rgba(37,99,235,0.13)';   // no hacer nada queda mejor
+// Plantillas: [nombre, preset de globals.js]; sin preset = venta de futuro
+const ESC_PLANTILLAS = [
+  ['Put seco', 'Put Seco'], ['Put sintético (futuro + call)', 'Futuro + Call'], ['Put spread', 'Put Spread'],
+  ['Piso eficiente', 'Piso Eficiente'], ['Collar', 'Collar'], ['Gaviota', 'Gaviota'],
+  ['Venta de futuro', null], ['Lanzamiento cubierto', 'Lanzamiento Cubierto']
+];
 
 // ─── Helpers ───
 function escF(n, d = 1) {
@@ -88,7 +107,7 @@ function escCargarGuardado() {
     const r = localStorage.getItem(ESC_STATE_KEY);
     if (r) escState = Object.assign(escState, JSON.parse(r) || {});
   } catch (e) {}
-  escState.ejes = escState.ejes || {};
+  ['legs', 'estr', 'elegida', 'editando', 'ejes'].forEach(k => { escState[k] = escState[k] || {}; });
   escMigrarMaiz();
 }
 function escGuardar() {
@@ -97,17 +116,50 @@ function escGuardar() {
 }
 
 // Coberturas guardadas cuando maíz era un solo cultivo: se reparten por mes de posición
+// (Queda en escState.legs.maiz hasta que se cargue un tablero con maíz separado.)
 function escMigrarMaiz() {
-  if (!escPos || !escEsGrupo('maiz')) return;
-  const viejas = escState.legs.maiz || [];
-  viejas.forEach(l => {
-    const destino = ESC_MAIZ_TARDIO.includes(String(l.pos || '').slice(0, 3)) ? 'maiz_tard' : 'maiz_temp';
-    (escState.legs[destino] = escState.legs[destino] || []).push(l);
+  if (escPos && escEsGrupo('maiz')) {
+    const viejas = escState.legs.maiz || [];
+    viejas.forEach(l => {
+      const destino = ESC_MAIZ_TARDIO.includes(String(l.pos || '').slice(0, 3)) ? 'maiz_tard' : 'maiz_temp';
+      (escState.legs[destino] = escState.legs[destino] || []).push(l);
+    });
+    delete escState.legs.maiz;
+    delete escState.mercado.maiz;
+    if (escState.presetCrops.includes('maiz'))
+      escState.presetCrops = escState.presetCrops.filter(x => x !== 'maiz').concat(['maiz_temp', 'maiz_tard']);
+  }
+  escMigrarEstrategias();
+}
+
+// Formato anterior (una lista de patas por cultivo): pasa a ser la estrategia "Propuesta", elegida
+function escMigrarEstrategias() {
+  Object.keys(escState.legs).forEach(c => {
+    if (c === 'maiz') return;
+    const legs = escState.legs[c] || [];
+    if (legs.length) {
+      const e = escNuevaEstr(c, 'Propuesta', legs);
+      if (legs.some(l => l.preset)) e.atajo = true;
+      if (!escEstr(c, escState.elegida[c])) escState.elegida[c] = e.id;
+    }
+    delete escState.legs[c];
   });
-  delete escState.legs.maiz;
-  delete escState.mercado.maiz;
-  if (escState.presetCrops.includes('maiz'))
-    escState.presetCrops = escState.presetCrops.filter(x => x !== 'maiz').concat(['maiz_temp', 'maiz_tard']);
+}
+
+// ─── Estrategias de un cultivo base ───
+function escEstrs(c) { return escState.estr[c] || (escState.estr[c] = []); }
+function escEstr(c, id) { return (escState.estr[c] || []).find(e => e.id === id) || null; }
+function escElegida(c) { return escEstr(c, escState.elegida[c]) || (escState.estr[c] || [])[0] || null; }
+function escEditando(c) { return escEstr(c, escState.editando[c]) || escElegida(c); }
+function escNuevaEstr(c, nombre, legs) {
+  const lista = escEstrs(c);
+  const usados = lista.map(e => e.color);
+  const color = ESC_COLORES.find(x => !usados.includes(x)) || ESC_COLORES[lista.length % ESC_COLORES.length];
+  let nom = nombre, k = 2;
+  while (lista.some(e => e.nombre === nom)) nom = `${nombre} ${k++}`;
+  const e = { id: escState.seq++, nombre: nom, color, legs: legs || [] };
+  lista.push(e);
+  return e;
 }
 
 // ═══════════════════════════════════════════════════
@@ -330,10 +382,23 @@ function escFyoIncluido(l) {
   return true;
 }
 function escFyo(c) { const b = escBase(c); return escPos.fyo.filter(l => b.includes(l.crop)); }
-// Coberturas propuestas. En un grupo es la lista (de solo lectura) de las de sus partes.
-function escLegs(c) {
-  if (escPos && escEsGrupo(c)) return escBase(c).reduce((a, b) => a.concat(escLegs(b).map(l => Object.assign({ parte: b }, l))), []);
-  return escState.legs[c] || (escState.legs[c] = []);
+// Patas de una estrategia. est: false = ninguna (posición actual) · true / omitido = la elegida ·
+// número = esa estrategia. En un grupo es la lista (de solo lectura) de las elegidas de sus partes.
+function escLegs(c, est = true) {
+  if (!est) return [];
+  if (escPos && escEsGrupo(c)) return escBase(c).reduce((a, b) => {
+    const e = escElegida(b);
+    return a.concat(escLegs(b).map(l => Object.assign({ parte: b, estr: e ? e.nombre : '' }, l)));
+  }, []);
+  const e = est === true ? escElegida(c) : escEstr(c, est);
+  return e ? e.legs : [];
+}
+// Patas de la estrategia en edición; si el cultivo no tiene ninguna, se crea
+function escLegsEdit(c) {
+  let e = escEditando(c);
+  if (!e) { e = escNuevaEstr(c, 'Estrategia'); escState.elegida[c] = e.id; }
+  escState.editando[c] = e.id;
+  return e.legs;
 }
 
 // Resultado a vencimiento de una pata (u$s totales) con el mercado movido d
@@ -346,19 +411,25 @@ function escValorPata(c, l, d) {
   return (l.dir === 'buy' ? 1 : -1) * l.tn * (intr - (l.prima || 0));
 }
 
-function escIngreso(c, d, conProp) {
-  if (escEsGrupo(c)) return escSum(c, b => escIngreso(b, d, conProp));
+// est: igual que en escLegs (false = posición actual, true = elegida, número = esa estrategia)
+function escIngreso(c, d, est) {
+  if (escEsGrupo(c)) return escSum(c, b => escIngreso(b, d, est));
   const p = escPos.cultivos[c];
   const M = escMercado(c) * (1 + d);
   let usd = (p.fij || 0) * (p.ppvFis || 0) + ((p.afijar || 0) + (p.tav || 0)) * M;
   escFyo(c).filter(escFyoIncluido).forEach(l => { usd += escValorPata(c, l, d); });
-  if (conProp) escLegs(c).forEach(l => { usd += escValorPata(c, l, d); });
+  escLegs(c, est).forEach(l => { usd += escValorPata(c, l, d); });
   return usd;
 }
-function escPrecioFinal(c, d, conProp) { return escIngreso(c, d, conProp) / escDisp(c); }
+function escPrecioFinal(c, d, est) { return escIngreso(c, d, est) / escDisp(c); }
+// Diferencia en u$s totales entre una estrategia y la posición actual, con el mercado en x
+function escDifUsd(c, x, est) {
+  const d = x / escMercado(c) - 1;
+  return escIngreso(c, d, est) - escIngreso(c, d, false);
+}
 
 // Tn cubiertas a la baja con el criterio del tablero: fijadas + futuros vendidos + puts netos
-function escTnCubiertas(c, conProp) {
+function escTnCubiertas(c, est) {
   let tn = escPos.cultivos[c].fij || 0;
   const suma = l => {
     const s = l.dir === 'sell' ? 1 : -1;
@@ -366,45 +437,92 @@ function escTnCubiertas(c, conProp) {
     else if (l.tipo === 'put') tn -= s * l.tn;
   };
   escFyo(c).filter(escFyoIncluido).forEach(suma);
-  if (conProp) escLegs(c).forEach(suma);
+  escLegs(c, est).forEach(suma);
   return tn;
 }
 // Saldo sin cobertura a la baja: a fijar + total a vender − futuros vendidos − puts netos.
 // Las tn a fijar no tienen precio, así que cuentan como descubiertas.
-function escTnSinCob(c, conProp) {
-  return escSum(c, b => Math.max(0, escPos.cultivos[b].disp - escTnCubiertas(b, conProp)));
+function escTnSinCob(c, est) {
+  return escSum(c, b => Math.max(0, escPos.cultivos[b].disp - escTnCubiertas(b, est)));
 }
 // Toneladas cubiertas de más: a partir de acá el precio final sube si el mercado baja
-function escTnSobrecob(c, conProp) {
-  return escSum(c, b => Math.max(0, escTnCubiertas(b, conProp) - escPos.cultivos[b].disp));
+function escTnSobrecob(c, est) {
+  return escSum(c, b => Math.max(0, escTnCubiertas(b, est) - escPos.cultivos[b].disp));
 }
-function escCobBaja(c, conProp) {
+function escCobBaja(c, est) {
   const disp = escDisp(c);
-  return Math.max(0, disp - escTnSinCob(c, conProp) + escTnSobrecob(c, conProp)) / disp;
+  return Math.max(0, disp - escTnSinCob(c, est) + escTnSobrecob(c, est)) / disp;
 }
 
-// Tn con techo a la suba: fijadas + futuros vendidos + calls vendidos netos (un call comprado
-// devuelve participación). Sobre esas tn el precio final no acompaña una suba del mercado.
-function escTnTecho(c, conProp) {
-  return escSum(c, b => {
-    let tn = escPos.cultivos[b].fij || 0;
-    const suma = l => { if (l.tipo === 'futuro' || l.tipo === 'call') tn += (l.dir === 'sell' ? 1 : -1) * l.tn; };
+// Toneladas por instrumento (FyO incluidos + la estrategia est):
+//   vendidas = fijadas (forwards) + futuros vendidos netos · puts / calls = comprados − vendidos
+//   % a la baja = criterio del tablero (escCobBaja)
+//   % a la suba = participación: tn que acompañan una suba = producción − vendidas + calls netos
+function escResumenTn(c, est) {
+  const r = { disp: escDisp(c), fij: 0, fut: 0, puts: 0, calls: 0 };
+  escBase(c).forEach(b => {
+    r.fij += escPos.cultivos[b].fij || 0;
+    const suma = l => {
+      const s = l.dir === 'sell' ? 1 : -1;
+      if (l.tipo === 'futuro') r.fut += s * l.tn;
+      else if (l.tipo === 'put') r.puts -= s * l.tn;
+      else r.calls -= s * l.tn;
+    };
     escFyo(b).filter(escFyoIncluido).forEach(suma);
-    if (conProp) escLegs(b).forEach(suma);
-    return Math.max(0, tn);
+    escLegs(b, escEsGrupo(c) ? est && true : est).forEach(suma);
   });
+  r.vendidas = r.fij + r.fut;
+  r.tnSuba = Math.max(0, r.disp - r.vendidas + r.calls);
+  r.pctSuba = r.tnSuba / r.disp;
+  r.pctBaja = escCobBaja(c, est);
+  r.sobrecob = escTnSobrecob(c, est);
+  return r;
 }
-function escCobSuba(c, conProp) { return escTnTecho(c, conProp) / escDisp(c); }
 
-// Prima neta de las coberturas propuestas (u$s; positivo = se paga)
-function escCostoProp(c) {
-  return escLegs(c).reduce((s, l) => l.tipo === 'futuro' ? s : s + (l.dir === 'buy' ? 1 : -1) * (l.prima || 0) * (l.tn || 0), 0);
+// Prima neta de una estrategia (u$s; positivo = se paga)
+function escCostoProp(c, est = true) {
+  return escLegs(c, est).reduce((s, l) => l.tipo === 'futuro' ? s : s + (l.dir === 'buy' ? 1 : -1) * (l.prima || 0) * (l.tn || 0), 0);
 }
 
-// Precios de mercado donde se cruzan "posición actual" y "con cobertura" dentro de [xMin, xMax]
-function escCruces(c, xMin, xMax) {
+// Balance de una estrategia contra la posición actual, en u$s totales, dentro de ±ESC_RANGO del
+// mercado de hoy. Se calcula numéricamente, así sirve para cualquier combinación de patas.
+//   baja / suba: diferencia a −30% / +30% · pendBaja / pendSuba: u$s por cada u$s que se mueve el
+//   mercado en el extremo (≈0 = la diferencia quedó fija) · peor: la peor diferencia y desde dónde
+function escBalance(c, est) {
+  const M = escMercado(c), xMin = M * (1 - ESC_RANGO), xMax = M * (1 + ESC_RANGO);
+  const f = x => escDifUsd(c, x, est);
+  const N = 240;
+  let peor = Infinity, xPeor = M;
+  for (let i = 0; i <= N; i++) {
+    const x = xMin + (xMax - xMin) * i / N, v = f(x);
+    if (v < peor - 1e-6) { peor = v; xPeor = x; }
+  }
+  const h = M * 0.02;
+  const pendBaja = (f(xMin) - f(xMin + h)) / h;     // + = gana más cuanto más baja
+  const pendSuba = (f(xMax) - f(xMax - h)) / h;     // − = pierde más cuanto más sube
+  // Si la diferencia arriba quedó fija, desde qué precio (primer x donde ya vale lo mismo que el extremo)
+  let fijaDesde = null;
+  if (Math.abs(pendSuba) < 1) {
+    const vFin = f(xMax), tol = Math.max(1, Math.abs(vFin) * 0.0002);
+    const ok = x => Math.abs(f(x) - vFin) <= tol;
+    for (let i = 0; i <= N; i++) {
+      const x = M + (xMax - M) * i / N;
+      if (!ok(x)) continue;
+      // se afina entre el punto anterior de la grilla y este
+      let a = i ? M + (xMax - M) * (i - 1) / N : x, z = x;
+      for (let k = 0; k < 30 && z - a > 1e-3; k++) { const m = (a + z) / 2; if (ok(m)) z = m; else a = m; }
+      fijaDesde = z;
+      break;
+    }
+  }
+  return { M, cruces: escCruces(c, xMin, xMax, est), baja: f(M * 0.7), suba: f(M * 1.3),
+           pendBaja, pendSuba, peor, xPeor, fijaDesde, finSuba: f(xMax) };
+}
+
+// Precios de mercado donde se cruzan "posición actual" y la estrategia dentro de [xMin, xMax]
+function escCruces(c, xMin, xMax, est = true) {
   const M = escMercado(c);
-  const f = x => escPrecioFinal(c, x / M - 1, true) - escPrecioFinal(c, x / M - 1, false);
+  const f = x => escPrecioFinal(c, x / M - 1, est) - escPrecioFinal(c, x / M - 1, false);
   const N = 400, out = [];
   let x0 = xMin, f0 = f(x0);
   for (let i = 1; i <= N; i++) {
@@ -464,11 +582,43 @@ function escStrikeCercano(c, pos, tipo, objetivo) {
 
 // Refresca las primas automáticas con la última sincronización de A3
 function escRefrescarPrimas() {
-  Object.keys(escState.legs).filter(c => ESC_CULTIVOS[c]).forEach(c => (escState.legs[c] || []).forEach(l => {
+  Object.keys(escState.estr).filter(c => ESC_CULTIVOS[c]).forEach(c => escEstrs(c).forEach(e => e.legs.forEach(l => {
     if (l.tipo === 'futuro' || !l.auto) return;
     const p = escPrimaA3(c, l.pos, l.tipo, l.strike);
     if (p != null) l.prima = p;
-  }));
+  })));
+}
+
+// Patas de una plantilla (PRESETS de globals.js) sobre el futuro de la posición por defecto.
+// Los strikes se ajustan a la cadena de A3 sin repetir strike entre patas del mismo tipo
+// (misma lógica que buildPresetLegs de Coberturas) y las primas salen de A3.
+function escPatasPlantilla(c, presetNombre) {
+  const pos = escPosDefault(c);
+  const F0 = escFutA3(c, pos) || escMercado(c);
+  const preset = presetNombre && typeof PRESETS !== 'undefined' ? PRESETS.find(p => p.name === presetNombre) : null;
+  const crudas = preset ? preset.legs(F0) : [{ dir: 'sell', type: 'futuro', ratio: 1, strike: F0 }];
+  const saldo = escTnSinCob(c, false);
+  const base = saldo >= 1 ? saldo : escTnDefault(c);
+  const legs = crudas.map(l => ({ id: escState.seq++, dir: l.dir, tipo: l.type, pos, strike: l.strike,
+    tn: Math.round(base * (l.ratio || 1)), prima: 0, auto: true }));
+  ['put', 'call'].forEach(tp => {
+    const g = escCadena(c, pos, tp).map(o => o.strike).sort((a, b) => a - b);
+    const mismas = legs.filter(l => l.tipo === tp).sort((a, b) => b.strike - a.strike);
+    if (!g.length) { mismas.forEach(l => { l.strike = Math.round(l.strike); }); return; }
+    const usados = new Set();
+    mismas.forEach(l => {
+      let i = g.reduce((bi, v, k) => Math.abs(v - l.strike) < Math.abs(g[bi] - l.strike) ? k : bi, 0);
+      while (usados.has(i) && i > 0) i--;
+      while (usados.has(i) && i < g.length - 1) i++;
+      usados.add(i);
+      l.strike = g[i];
+    });
+  });
+  legs.forEach(l => {
+    if (l.tipo === 'futuro') l.strike = Math.round(F0 * 10) / 10;
+    else l.prima = escPrimaA3(c, pos, l.tipo, l.strike) || 0;
+  });
+  return legs;
 }
 
 // ═══════════════════════════════════════════════════
@@ -486,9 +636,9 @@ async function escAsegurarA3() {
   try { await syncFromSheet(); } catch (e) {}
 }
 
-// Put X% abajo del futuro en cada cultivo marcado, por el saldo sin cobertura a la baja
-// (lo que no tapan fijaciones, futuros vendidos, puts ni las patas cargadas a mano).
-// Reemplaza las patas que se generaron así antes y deja las cargadas a mano.
+// Put X% abajo del futuro en cada cultivo marcado, por el saldo sin cobertura a la baja de la
+// posición actual (lo que no tapan fijaciones, futuros vendidos ni puts). Crea o reemplaza la
+// estrategia "Puts X%" de cada cultivo y la deja elegida; las demás estrategias no se tocan.
 async function escProponerPuts() {
   await escAsegurarA3();
   const otm = escNum(document.getElementById('esc-otm').value);
@@ -499,16 +649,59 @@ async function escProponerPuts() {
     const F0 = escFutA3(c, pos) || escMercado(c);
     const strike = escStrikeCercano(c, pos, 'put', F0 * (1 - escState.otm / 100));
     const prima = escPrimaA3(c, pos, 'put', strike);
-    escState.legs[c] = escLegs(c).filter(l => !l.preset);
-    const tn = escTnSinCob(c, true);
+    const tn = escTnSinCob(c, false);
     if (!(tn >= 1)) return;
     if (prima == null) sinPrima.push(escLbl(c));
-    escState.legs[c].push({ id: escState.seq++, dir: 'buy', tipo: 'put', pos, strike,
-      prima: prima || 0, tn: Math.round(tn), auto: true, preset: true });
+    let e = escEstrs(c).find(x => x.atajo);
+    if (!e) { e = escNuevaEstr(c, 'Puts'); e.atajo = true; }
+    e.nombre = `Puts ${escF(escState.otm, 0)}%`;
+    e.legs = [{ id: escState.seq++, dir: 'buy', tipo: 'put', pos, strike, prima: prima || 0, tn: Math.round(tn), auto: true }];
+    escState.elegida[c] = escState.editando[c] = e.id;
   });
   escGuardar();
   escRender();
   if (sinPrima.length) alert(`Sin prima de A3 para: ${sinPrima.join(', ')}. Cargala a mano en la pata (quedó en 0).`);
+}
+
+// ─── Estrategias: crear desde plantilla, elegir, renombrar, borrar ───
+async function escNuevaEstrategia(v) {
+  const c = escState.crop;
+  if (!v || escEsGrupo(c)) return;
+  let e;
+  if (v === 'blanco') e = escNuevaEstr(c, 'Estrategia');
+  else if (v === 'dup') {
+    const o = escEditando(c);
+    if (!o) return;
+    e = escNuevaEstr(c, o.nombre, o.legs.map(l => Object.assign({}, l, { id: escState.seq++ })));
+  } else {
+    const pl = ESC_PLANTILLAS[+v];
+    if (!pl) return;
+    await escAsegurarA3();
+    e = escNuevaEstr(c, pl[0], escPatasPlantilla(c, pl[1]));
+  }
+  escState.editando[c] = e.id;
+  if (!escEstr(c, escState.elegida[c])) escState.elegida[c] = e.id;
+  escGuardar();
+  escRender();
+}
+function escEditarEstr(id) { escState.editando[escState.crop] = id; escGuardar(); escRender(); }
+function escElegir(id) { const c = escState.crop; escState.elegida[c] = escState.editando[c] = id; escGuardar(); escRender(); }
+function escRenombrarEstr(id) {
+  const e = escEstr(escState.crop, id);
+  const n = e && prompt('Nombre de la estrategia', e.nombre);
+  if (!n || !n.trim()) return;
+  e.nombre = n.trim();
+  escGuardar();
+  escRender();
+}
+function escBorrarEstr(id) {
+  const c = escState.crop, e = escEstr(c, id);
+  if (!e || (e.legs.length && !confirm(`¿Borrar la estrategia "${e.nombre}"?`))) return;
+  escState.estr[c] = escEstrs(c).filter(x => x.id !== id);
+  if (escState.elegida[c] === id) escState.elegida[c] = (escEstrs(c)[0] || {}).id;
+  if (escState.editando[c] === id) escState.editando[c] = escState.elegida[c];
+  escGuardar();
+  escRender();
 }
 
 function escTogglePresetCrop(c, on) {
@@ -517,21 +710,23 @@ function escTogglePresetCrop(c, on) {
   escGuardar();
 }
 
+// soloCultivo: vacía las patas de la estrategia en edición · si no, borra todas las estrategias
 function escLimpiar(soloCultivo) {
-  if (soloCultivo) escBase(escState.crop).forEach(b => { escState.legs[b] = []; });
-  else if (confirm('¿Borrar todas las coberturas propuestas de todos los cultivos?')) escState.legs = {};
+  if (soloCultivo) { const e = escEditando(escState.crop); if (e) e.legs = []; }
+  else if (confirm('¿Borrar todas las estrategias de todos los cultivos?')) { escState.estr = {}; escState.elegida = {}; escState.editando = {}; }
   else return;
   escGuardar();
   escRender();
 }
 
-// Tn por defecto de una pata nueva: el saldo sin cobertura a la baja. Si ya está todo cubierto
-// (p.ej. se agrega un call vendido para financiar los puts), las tn de la última pata o, sin
-// patas, las tn sin precio. Nunca 0: una pata en 0 tn no mueve nada.
+// Tn por defecto de una pata nueva: el saldo sin cobertura a la baja con la estrategia en edición.
+// Si ya está todo cubierto (p.ej. se agrega un call vendido para financiar los puts), las tn de
+// la última pata o, sin patas, las tn sin precio. Nunca 0: una pata en 0 tn no mueve nada.
 function escTnDefault(c, sin) {
-  const saldo = escTnSinCob(c, true);
+  const e = escEditando(c);
+  const saldo = escTnSinCob(c, e ? e.id : false);
   if (saldo >= 1) return Math.round(saldo);
-  const otras = escLegs(c).filter(l => l !== sin && l.tn > 0);
+  const otras = (e ? e.legs : []).filter(l => l !== sin && l.tn > 0);
   if (otras.length) return otras[otras.length - 1].tn;
   const p = escPos.cultivos[c];
   return Math.round((p.afijar || 0) + (p.tav || 0)) || Math.round(p.disp || 0);
@@ -543,22 +738,24 @@ function escAgregarPata() {
   const pos = escPosDefault(c);
   const F0 = escFutA3(c, pos) || escMercado(c);
   const strike = escStrikeCercano(c, pos, 'put', F0 * 0.97);
-  escLegs(c).push({ id: escState.seq++, dir: 'buy', tipo: 'put', pos, strike,
-    prima: escPrimaA3(c, pos, 'put', strike) || 0, tn: escTnDefault(c), auto: true });
+  const tn = escTnDefault(c);
+  escLegsEdit(c).push({ id: escState.seq++, dir: 'buy', tipo: 'put', pos, strike,
+    prima: escPrimaA3(c, pos, 'put', strike) || 0, tn, auto: true });
   escGuardar();
   escRender();
 }
 
 function escBorrarPata(id) {
-  const c = escState.crop;
-  escState.legs[c] = escLegs(c).filter(l => l.id !== id);
+  const legs = escLegsEdit(escState.crop);
+  const i = legs.findIndex(l => l.id === id);
+  if (i >= 0) legs.splice(i, 1);
   escGuardar();
   escRender();
 }
 
 function escEditarPata(id, campo, valor) {
   const c = escState.crop;
-  const l = escLegs(c).find(x => x.id === id);
+  const l = escLegsEdit(c).find(x => x.id === id);
   if (!l) return;
   delete l.preset;   // una pata tocada a mano ya no la reemplaza el atajo
   if (campo === 'prima') {
@@ -649,7 +846,7 @@ function escRender() {
           ${escBaseCrops().map(c => `<label class="esc-chk"><input type="checkbox" ${escState.presetCrops.includes(c) ? 'checked' : ''} onchange="escTogglePresetCrop('${c}', this.checked)"> ${escLbl(c)}</label>`).join('')}
           <span class="esc-inline">strike <input id="esc-otm" class="esc-in esc-in-s" type="text" inputmode="decimal" value="${escState.otm}">% abajo del futuro</span>
           <button class="btn btn-sm" onclick="escProponerPuts()">Proponer puts</button>
-          <button class="btn btn-outline btn-sm" onclick="escLimpiar(false)">Limpiar propuestas</button>
+          <button class="btn btn-outline btn-sm" onclick="escLimpiar(false)">Borrar estrategias</button>
         </div>
       </div>
     </div>
@@ -677,9 +874,16 @@ function escRender() {
           </div>
           <div class="esc-chart-wrap"><canvas id="esc-chart"></canvas></div>
           <div class="esc-cruce-txt" id="esc-cruce-txt"></div>
+          <div class="esc-dif-tit">Diferencia vs no hacer nada <span class="esc-muted">u$s totales · estrategia − posición actual, al mismo precio de mercado</span></div>
+          <div class="esc-dif-wrap"><canvas id="esc-chart-dif"></canvas></div>
+        </div>
+        <div id="esc-balance"></div>
+        <div class="rs-card">
+          <h3>Comparar estrategias <span class="esc-h3-sub" id="esc-comp-sub"></span></h3>
+          <div class="rs-tw"><table class="rs-table esc-comp" id="esc-comp"></table></div>
         </div>
         <div class="rs-card">
-          <h3>Precio final por escenario</h3>
+          <h3>Precio final por escenario <span class="esc-h3-sub">con la estrategia elegida</span></h3>
           <div class="rs-tw"><table class="rs-table" id="esc-tabla"></table></div>
         </div>
       </div>
@@ -749,38 +953,50 @@ function escHtmlPosicion() {
     : `<tr><td class="rs-l">Precio mercado hoy</td><td><input class="esc-in esc-in-m" type="text" inputmode="decimal" value="${escF(M)}" onchange="escSetMercado(this.value)" title="Del tablero. Editalo para probar otra base; vacío vuelve al del tablero."></td>
         <td class="rs-l esc-muted">${escState.mercado[c] ? 'editado (tablero: ' + escF(p.mercado) + ')' : 'del tablero'}</td></tr>`;
   const difTablero = grupo ? (escPos.cultivos[c].disp || 0) - p.disp : 0;
+  const r = escResumenTn(c, false);
+  const neto = (v, pos, neg) => Math.abs(v) < 1 ? '' : v > 0 ? pos : neg;
 
   return `<h3>Posición ${escLbl(c)}</h3>
-    ${grupo ? `<div class="esc-nota-grupo">Suma de ${escBase(c).map(escLbl).join(' y ')}, con las coberturas propuestas de cada uno.</div>` : ''}
+    ${grupo ? `<div class="esc-nota-grupo">Suma de ${escBase(c).map(escLbl).join(' y ')}, con la estrategia elegida de cada uno.</div>` : ''}
     <table class="rs-table esc-pos">
-      ${fila('Producción disponible', escF(p.disp, 0) + ' tn', Math.abs(difTablero) >= 1 ? `el tablero muestra ${escF(escPos.cultivos[c].disp, 0)} tn en la columna total` : '')}
-      ${fila('Fijadas', escF(p.fij, 0) + ' tn', `a u$s ${escF(p.ppvFis)} (precio prom. físico)`)}
-      ${fila('A fijar', escF(p.afijar, 0) + ' tn', 'sin precio: toman el del escenario')}
-      ${fila('Sin vender (Total a vender)', escF(p.tav, 0) + ' tn', 'toman el precio del escenario')}
-      ${fila('<b>Saldo sin cobertura a la baja</b>', '<b>' + escF(escTnSinCob(c, false), 0) + ' tn</b>', escDetalleSinCob(c))}
+      ${fila('Producción total', escF(r.disp, 0) + ' tn', Math.abs(difTablero) >= 1 ? `el tablero muestra ${escF(escPos.cultivos[c].disp, 0)} tn en la columna total` : '')}
+      ${fila('Tn vendidas (forwards + futuros)', escF(r.vendidas, 0) + ' tn', `${escF(r.fij, 0)} fijadas${Math.abs(r.fut) >= 1 ? ` ${r.fut > 0 ? '+' : '−'} ${escF(Math.abs(r.fut), 0)} futuros ${r.fut > 0 ? 'vendidos' : 'comprados'}` : ''}`)}
+      ${fila('Tn cobertura a la baja (puts)', escF(r.puts, 0) + ' tn', neto(r.puts, 'puts comprados netos', 'puts vendidos netos'))}
+      ${fila('Tn cobertura a la suba (calls)', escF(r.calls, 0) + ' tn', neto(r.calls, 'calls comprados netos', 'calls vendidos netos'))}
+      ${fila('<b>% cobertura a la baja</b>', `<b>${escPct(r.pctBaja)}</b>`, r.sobrecob >= 1 ? `<span class="red-txt">⚠ sobrecubierto en ${escF(r.sobrecob, 0)} tn</span>` : `sin cubrir: ${escF(escTnSinCob(c, false), 0)} tn`)}
+      ${fila('<b>% a la suba</b>', `<b>${escPct(r.pctSuba)}</b>`, `acompañan una suba: ${escF(r.tnSuba, 0)} tn`)}
       ${mercadoFila}
-      ${fila('Precio dolor / objetivo', `${escF(p.dolor)} / ${escF(p.objetivo)}`)}
-      ${fila('Precio Final (Excel)', escF(p.precioFinal), 'referencia: fórmula del tablero')}
     </table>
-    <div class="rs-sub">FyO abiertos <span>se valúan a vencimiento contra el futuro de su posición${sheetData ? ' (A3)' : ' (sin A3: precio mercado)'}</span></div>
-    ${fyo.length ? `<div class="rs-tw"><table class="rs-table esc-fyo">
-      <thead><tr><th class="rs-l">Instrumento</th><th>Lado</th><th>Tn</th><th>Precio</th><th>Futuro hoy</th><th class="esc-c">Incluir</th></tr></thead>
-      <tbody>${fyoRows}</tbody></table></div>` : '<div class="rs-empty">Sin futuros ni opciones abiertos.</div>'}`;
+    <details class="esc-det" ${escState.detalle ? 'open' : ''} ontoggle="if (escState.detalle !== this.open) { escState.detalle = this.open; escGuardar(); }">
+      <summary>Detalle físico y FyO abiertos (${fyo.length})</summary>
+      <table class="rs-table esc-pos">
+        ${fila('Fijadas', escF(p.fij, 0) + ' tn', `a u$s ${escF(p.ppvFis)} (precio prom. físico)`)}
+        ${fila('A fijar', escF(p.afijar, 0) + ' tn', 'sin precio: toman el del escenario')}
+        ${fila('Sin vender (Total a vender)', escF(p.tav, 0) + ' tn', 'toman el precio del escenario')}
+        ${fila('Saldo sin cobertura a la baja', escF(escTnSinCob(c, false), 0) + ' tn', escDetalleSinCob(c))}
+        ${fila('Precio dolor / objetivo', `${escF(p.dolor)} / ${escF(p.objetivo)}`)}
+        ${fila('Precio Final (Excel)', escF(p.precioFinal), 'referencia: fórmula del tablero')}
+      </table>
+      <div class="rs-sub">FyO abiertos <span>se valúan a vencimiento contra el futuro de su posición${sheetData ? ' (A3)' : ' (sin A3: precio mercado)'}</span></div>
+      ${fyo.length ? `<div class="rs-tw"><table class="rs-table esc-fyo">
+        <thead><tr><th class="rs-l">Instrumento</th><th>Lado</th><th>Tn</th><th>Precio</th><th>Futuro hoy</th><th class="esc-c">Incluir</th></tr></thead>
+        <tbody>${fyoRows}</tbody></table></div>` : '<div class="rs-empty">Sin futuros ni opciones abiertos.</div>'}
+    </details>`;
 }
 
 // En un grupo las coberturas se muestran de solo lectura: se cargan en cada parte
 function escHtmlPropuestaGrupo(c) {
   const legs = escLegs(c);
   const rows = legs.map(l => `<tr>
-      <td class="rs-l">${escLbl(l.parte)}</td><td>${l.dir === 'buy' ? 'Compra' : 'Venta'}</td>
+      <td class="rs-l">${escLbl(l.parte)} <span class="esc-muted">${escHtml(l.estr)}</span></td><td>${l.dir === 'buy' ? 'Compra' : 'Venta'}</td>
       <td>${l.tipo === 'futuro' ? 'Futuro' : l.tipo === 'put' ? 'Put' : 'Call'}</td><td>${escHtml(l.pos || '')}</td>
       <td>${escF(l.strike, l.tipo === 'futuro' ? 1 : 0)}</td><td>${l.tipo === 'futuro' ? '—' : escF(l.prima, 2)}</td><td>${escF(l.tn, 0)}</td></tr>`).join('');
-  return `<h3>Cobertura propuesta ${escLbl(c)}</h3>
+  return `<h3>Estrategias elegidas ${escLbl(c)}</h3>
     ${legs.length ? `<div class="rs-tw"><table class="rs-table esc-legs">
-      <thead><tr><th class="rs-l">Parte</th><th>Operación</th><th>Instr.</th><th>Posición</th><th>Strike / precio</th><th>Prima</th><th>Tn</th></tr></thead>
-      <tbody>${rows}</tbody></table></div>` : `<div class="rs-empty">Sin coberturas propuestas.</div>`}
+      <thead><tr><th class="rs-l">Parte · estrategia</th><th>Operación</th><th>Instr.</th><th>Posición</th><th>Strike / precio</th><th>Prima</th><th>Tn</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>` : `<div class="rs-empty">Sin estrategias elegidas.</div>`}
     <div class="esc-legs-foot">
-      ${escBase(c).map(b => `<button class="btn btn-sm btn-outline" onclick="escSetCrop('${b}')">Editar ${escLbl(b)}</button>`).join('')}
+      ${escBase(c).map(b => `<button class="btn btn-sm btn-outline" onclick="escSetCrop('${b}')">Comparar en ${escLbl(b)}</button>`).join('')}
       <span class="esc-muted">Saldo sin cobertura a la baja: ${escF(escTnSinCob(c, false), 0)} tn${legs.length ? ` → ${escF(escTnSinCob(c, true), 0)} tn con la propuesta` : ''}</span>
     </div>
     ${escTnSobrecob(c, true) >= 1 ? `<div class="esc-aviso">⚠ Sobrecubierto en <b>${escF(escTnSobrecob(c, true), 0)} tn</b>: hay más cobertura a la baja que producción sin precio, así que el precio final sube si el mercado baja.</div>` : ''}`;
@@ -789,7 +1005,8 @@ function escHtmlPropuestaGrupo(c) {
 function escHtmlPropuesta() {
   const c = escState.crop;
   if (escEsGrupo(c)) return escHtmlPropuestaGrupo(c);
-  const legs = escLegs(c);
+  const ed = escEditando(c), eleg = escElegida(c);
+  const legs = ed ? ed.legs : [];
   const posA3 = escPosicionesA3(c);
   const rows = legs.map(l => {
     const F0 = escFutA3(c, l.pos) || escMercado(c);
@@ -813,17 +1030,33 @@ function escHtmlPropuesta() {
     </tr>`;
   }).join('');
 
-  return `<h3>Cobertura propuesta ${escLbl(c)}</h3>
+  const chips = escEstrs(c).map(e => `<div class="esc-chip${ed && e.id === ed.id ? ' active' : ''}" style="--esc-c:${e.color}" onclick="escEditarEstr(${e.id})" title="Editar ${escHtml(e.nombre)}">
+      <button class="esc-chip-star${eleg && e.id === eleg.id ? ' on' : ''}" onclick="event.stopPropagation(); escElegir(${e.id})" title="${eleg && e.id === eleg.id ? 'Elegida: va al consolidado' : 'Marcar como elegida (va al consolidado)'}">★</button>
+      <span class="esc-chip-dot"></span><span class="esc-chip-nom">${escHtml(e.nombre)}</span>
+      <button class="esc-chip-btn" onclick="event.stopPropagation(); escRenombrarEstr(${e.id})" title="Renombrar">✎</button>
+      <button class="esc-chip-btn" onclick="event.stopPropagation(); escBorrarEstr(${e.id})" title="Borrar estrategia">✕</button>
+    </div>`).join('');
+  const menu = `<select class="esc-in esc-nueva" onchange="escNuevaEstrategia(this.value); this.value = ''" title="Agregar una estrategia para comparar">
+      <option value="">+ Estrategia…</option>
+      <optgroup label="Plantillas (strikes y primas de A3)">${ESC_PLANTILLAS.map((p, i) => `<option value="${i}">${p[0]}</option>`).join('')}</optgroup>
+      <option value="blanco">En blanco</option>
+      ${ed ? `<option value="dup">Duplicar "${escHtml(ed.nombre)}"</option>` : ''}
+    </select>`;
+  const sobre = ed ? escTnSobrecob(c, ed.id) : 0;
+
+  return `<h3>Estrategias ${escLbl(c)}</h3>
+    <div class="esc-chips">${chips}${menu}</div>
+    ${ed ? `<div class="esc-ed-tit">Patas de <b style="color:${ed.color}">${escHtml(ed.nombre)}</b>${eleg && ed.id === eleg.id ? ' <span class="esc-muted">· elegida</span>' : ''}</div>` : ''}
     ${legs.length ? `<div class="rs-tw"><table class="rs-table esc-legs">
       <thead><tr><th class="rs-l">Operación</th><th>Instr.</th><th>Posición</th><th>Strike / precio</th><th>Prima</th><th>Tn</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table></div>`
-      : `<div class="rs-empty">Sin coberturas propuestas. Usá el atajo de arriba o agregá una pata.</div>`}
+      : `<div class="rs-empty">${ed ? 'Sin patas. Agregá una.' : 'Sin estrategias. Elegí una plantilla en "+ Estrategia…", usá el atajo de arriba o agregá una pata.'}</div>`}
     <div class="esc-legs-foot">
       <button class="btn btn-sm" onclick="escAgregarPata()">+ Agregar pata</button>
-      ${legs.length ? `<button class="btn btn-sm btn-outline" onclick="escLimpiar(true)">Borrar las de ${escLbl(c)}</button>` : ''}
-      <span class="esc-muted">Saldo sin cobertura a la baja: ${escF(escTnSinCob(c, false), 0)} tn${legs.length ? ` → ${escF(escTnSinCob(c, true), 0)} tn con la propuesta` : ''}</span>
+      ${legs.length ? `<button class="btn btn-sm btn-outline" onclick="escLimpiar(true)">Vaciar patas</button>` : ''}
+      <span class="esc-muted">Saldo sin cobertura a la baja: ${escF(escTnSinCob(c, false), 0)} tn${legs.length ? ` → ${escF(escTnSinCob(c, ed.id), 0)} tn con esta estrategia` : ''}</span>
     </div>
-    ${escTnSobrecob(c, true) >= 1 ? `<div class="esc-aviso">⚠ Sobrecubierto en <b>${escF(escTnSobrecob(c, true), 0)} tn</b>: hay más cobertura a la baja que producción sin precio, así que el precio final sube si el mercado baja.</div>` : ''}`;
+    ${sobre >= 1 ? `<div class="esc-aviso">⚠ Sobrecubierto en <b>${escF(sobre, 0)} tn</b>: hay más cobertura a la baja que producción sin precio, así que el precio final sube si el mercado baja.</div>` : ''}`;
 }
 
 // Consolidado, KPIs, gráfico y tabla (todo lo que depende del escenario)
@@ -835,7 +1068,18 @@ function escRenderResultados() {
   escRenderConsolidado(d);
   escRenderKpis(c, d);
   escRenderChart(c, d);
+  escRenderBalance(c);
+  escRenderComparar(c, d);
   escRenderTabla(c, d);
+}
+
+// Curvas a dibujar y comparar en la solapa: cada estrategia con patas del cultivo; en un grupo,
+// la suma de las elegidas de sus partes. est = parámetro para escIngreso y compañía.
+function escSeries(c) {
+  if (escEsGrupo(c)) return escLegs(c).length
+    ? [{ est: true, nombre: 'Elegidas (' + escBase(c).map(b => escLbl(b).replace('Maíz ', '')).join(' + ') + ')', color: ESC_COLOR_PROP, eleg: true }] : [];
+  const eleg = escElegida(c);
+  return escEstrs(c).filter(e => e.legs.length).map(e => ({ est: e.id, nombre: e.nombre, color: e.color, eleg: !!eleg && e.id === eleg.id, id: e.id }));
 }
 
 function escRenderConsolidado(d) {
@@ -847,13 +1091,15 @@ function escRenderConsolidado(d) {
     const pfA = iA / disp, pfP = iP / disp;
     const hay = escLegs(x).length > 0;
     const sinA = escTnSinCob(x, false), sinP = escTnSinCob(x, true), sobre = escTnSobrecob(x, true) >= 1;
+    const rA = escResumenTn(x, false), rP = escResumenTn(x, true);
+    const eleg = grupo ? null : escElegida(x);
     if (!grupo) { tAct += iA; tProp += iP; tCosto += costo; tDisp += disp; tSinA += sinA; tSinP += sinP; }
     const cls = [x === escState.crop ? 'rs-hot' : '', grupo ? 'esc-grupo' : '', partes.has(x) ? 'esc-parte' : ''].join(' ');
     return `<tr class="esc-row ${cls}" onclick="escSetCrop('${x}')" title="Ver ${escLbl(x)}">
-      <td class="rs-l">${grupo ? escLbl(x) : `<b>${escLbl(x)}</b>`}</td>
+      <td class="rs-l">${grupo ? escLbl(x) : `<b>${escLbl(x)}</b>`}${hay && eleg ? ` <span class="esc-muted" style="color:${eleg.color}">★ ${escHtml(eleg.nombre)}</span>` : ''}</td>
       <td>${escF(disp, 0)}</td><td>${escF(sinA, 0)}${hay ? ` → <b>${escF(sinP, 0)}</b>` : ''}</td>
-      <td>${escPct(escCobBaja(x, false))}${hay ? ` → <b class="${sobre ? 'rs-neg' : ''}" title="${sobre ? 'Sobrecubierto' : ''}">${escPct(escCobBaja(x, true))}${sobre ? ' ⚠' : ''}</b>` : ''}</td>
-      <td>${escPct(escCobSuba(x, false))}${hay ? ` → <b>${escPct(escCobSuba(x, true))}</b>` : ''}</td>
+      <td>${escPct(rA.pctBaja)}${hay ? ` → <b class="${sobre ? 'rs-neg' : ''}" title="${sobre ? 'Sobrecubierto' : ''}">${escPct(rP.pctBaja)}${sobre ? ' ⚠' : ''}</b>` : ''}</td>
+      <td>${escPct(rA.pctSuba)}${hay ? ` → <b>${escPct(rP.pctSuba)}</b>` : ''}</td>
       <td>${escF(pfA)}</td>
       <td>${hay ? `<b>${escF(pfP)}</b>` : '—'}</td>
       <td class="${hay ? escCls(pfP - pfA) : ''}">${hay ? escSig(pfP - pfA) : ''}</td>
@@ -864,8 +1110,8 @@ function escRenderConsolidado(d) {
   document.getElementById('esc-cons-sub').textContent = `escenario ${escSig(d * 100, 0)}% · u$s/tn salvo indicación · el total no suma dos veces el maíz`;
   document.getElementById('esc-cons').innerHTML = `<thead><tr>
       <th class="rs-l">Cultivo</th><th>Prod. disp. (tn)</th><th>Sin cob. a la baja (tn)</th><th>Cob. a la baja</th>
-      <th title="Producción con precio tope: fijadas + futuros vendidos + calls vendidos − calls comprados">Techo a la suba</th>
-      <th>Precio final actual</th><th>Con cobertura</th><th>Diferencia</th><th>Costo primas</th><th>Resultado total</th>
+      <th title="Participación en la suba: (producción − vendidas + calls netos) / producción">% a la suba</th>
+      <th>Precio final actual</th><th>Con estrategia elegida</th><th>Diferencia</th><th>Costo primas</th><th>Resultado total</th>
     </tr></thead><tbody>${rows}
     <tr class="esc-tot"><td class="rs-l">Total</td><td>${escF(tDisp, 0)}</td><td>${escF(tSinA, 0)}${Math.abs(tSinP - tSinA) >= 1 ? ' → ' + escF(tSinP, 0) : ''}</td><td></td><td></td>
       <td colspan="2" class="esc-muted">Ingreso: ${escUsd(tAct)} → ${escUsd(tProp)}</td><td></td>
@@ -877,7 +1123,9 @@ function escRenderKpis(c, d) {
   const pfA = escPrecioFinal(c, d, false), pfP = escPrecioFinal(c, d, true);
   const cA = escPrecioFinal(c, -0.30, false), cP = escPrecioFinal(c, -0.30, true);
   const sinA = escTnSinCob(c, false), sinP = escTnSinCob(c, true), sobre = escTnSobrecob(c, true);
+  const rA = escResumenTn(c, false), rP = escResumenTn(c, true);
   const costo = escCostoProp(c);
+  const bal = hay ? escBalance(c, escEsGrupo(c) ? true : escElegida(c).id) : null;
   const kpi = (lbl, act, prop, nota) => `<div class="kpi-card esc-kpi">
     <div class="k-lbl">${lbl}</div>
     <div class="k-val"><span style="color:${ESC_COLOR_ACT}">${act}</span>${hay && prop != null ? ` → <span style="color:${ESC_COLOR_PROP}">${prop}</span>` : ''}</div>
@@ -888,10 +1136,11 @@ function escRenderKpis(c, d) {
     + kpi('Cobertura a la baja', escPct(escCobBaja(c, false)), escPct(escCobBaja(c, true)),
           hay && sobre >= 1 ? `<span class="red-txt">⚠ sobrecubierto en ${escF(sobre, 0)} tn</span>`
                             : `sin cubrir: ${escF(sinA, 0)}${hay ? ' → ' + escF(sinP, 0) : ''} tn`)
-    + kpi('Techo a la suba', escPct(escCobSuba(c, false)), escPct(escCobSuba(c, true)),
-          `con precio tope: ${escF(escTnTecho(c, false), 0)}${hay ? ' → ' + escF(escTnTecho(c, true), 0) : ''} tn`)
+    + kpi('% a la suba', escPct(rA.pctSuba), escPct(rP.pctSuba),
+          `acompañan una suba: ${escF(rA.tnSuba, 0)}${hay ? ' → ' + escF(rP.tnSuba, 0) : ''} tn`)
     + kpi('Costo de la cobertura', hay ? escUsd(costo) : '—', null,
-          hay ? `${escF(costo / escDisp(c), 2)} u$s/tn de producción${costo < -0.5 ? ' · cobro neto de primas' : ''}` : 'sin propuesta');
+          hay ? `primas: ${escF(costo / escDisp(c), 2)} u$s/tn de producción${costo < -0.5 ? ' (cobro neto)' : ''}`
+              + (bal.peor < -0.5 ? ` · máx. en contra: <b>${escUsd(bal.peor)}</b>` : '') : 'sin estrategia elegida');
 }
 
 // Líneas verticales: escenario elegido (gris) y cruces entre las dos curvas (dorado)
@@ -903,6 +1152,7 @@ function escVertical(ch, v, color, txt, abajo) {
   ctx.strokeStyle = color; ctx.lineWidth = 1.2; ctx.setLineDash([4, 4]);
   ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px, bottom); ctx.stroke();
   ctx.setLineDash([]);
+  if (!txt) { ctx.restore(); return; }
   ctx.font = '600 11px Montserrat, sans-serif';
   const w = ctx.measureText(txt).width + 10, y = abajo ? bottom - 22 : top + 4;
   ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.fillRect(px - w / 2, y, w, 18);
@@ -914,7 +1164,7 @@ const escLineasVerticales = {
   id: 'escLineas',
   afterDatasetsDraw(ch, args, opts) {
     if (!opts) return;
-    (opts.cruces || []).forEach(v => escVertical(ch, v, ESC_COLOR_CRUCE, `Cruce u$s ${escF(v)}`, true));
+    (opts.cruces || []).forEach(v => escVertical(ch, v, ESC_COLOR_CRUCE, opts.sinTexto ? '' : `Cruce u$s ${escF(v)}`, true));
     escVertical(ch, opts.escenario, 'rgba(28,33,24,0.6)', opts.label || '', false);
   }
 };
@@ -923,7 +1173,7 @@ function escRenderChart(c, d) {
   const canvas = document.getElementById('esc-chart');
   if (!canvas || typeof Chart === 'undefined') return;
   const p = escPos.cultivos[c], M = escMercado(c);
-  const hay = escLegs(c).length > 0;
+  const series = escSeries(c), elegS = series.find(s => s.eleg);
   const ej = escState.ejes[c] || {};
 
   // Eje X: automático ±40% del mercado de hoy, salvo que se cargue a mano
@@ -931,21 +1181,29 @@ function escRenderChart(c, d) {
   let xMin = ej.xmin != null ? ej.xmin : autoX.xmin, xMax = ej.xmax != null ? ej.xmax : autoX.xmax;
   if (!(xMax > xMin)) { xMin = autoX.xmin; xMax = autoX.xmax; }
 
-  const act = [], prop = [], mkt = [];
-  const N = 160;
-  for (let i = 0; i <= N; i++) {
-    const x = xMin + (xMax - xMin) * i / N, dd = x / M - 1;
-    mkt.push({ x, y: x });
-    act.push({ x, y: escPrecioFinal(c, dd, false) });
-    if (hay) prop.push({ x, y: escPrecioFinal(c, dd, true) });
-  }
+  // Grilla con los quiebres de las patas (strikes) para que las curvas no redondeen los vértices
+  const N = 160, xsSet = new Set();
+  for (let i = 0; i <= N; i++) xsSet.add(xMin + (xMax - xMin) * i / N);
+  series.forEach(s => escLegs(c, s.est).forEach(l => {
+    const F0 = escF0(l.parte || c, l);
+    if (l.tipo !== 'futuro' && F0 > 0) { const x = l.strike / F0 * M; if (x > xMin && x < xMax) xsSet.add(x); }
+  }));
+  const xs = [...xsSet].sort((a, b) => a - b);
+  const mkt = xs.map(x => ({ x, y: x }));
+  const act = xs.map(x => ({ x, y: escPrecioFinal(c, x / M - 1, false) }));
+  const curvas = series.map(s => xs.map(x => ({ x, y: escPrecioFinal(c, x / M - 1, s.est) })));
   const linea = (label, data, color, extra) => Object.assign({ label, data, borderColor: color, borderWidth: 2.5,
     pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: color, tension: 0 }, extra || {});
   const ds = [
     linea('Precio de mercado', mkt, '#b0afa8', { borderWidth: 2, borderDash: [6, 4] }),
     linea('Posición actual', act, ESC_COLOR_ACT)
   ];
-  if (hay) ds.push(linea('Con cobertura propuesta', prop, ESC_COLOR_PROP, { borderWidth: 3 }));
+  // La elegida pinta el área contra la posición actual (dataset 1): verde donde conviene la
+  // estrategia, azul donde conviene no hacer nada. Las demás van como líneas finas.
+  series.forEach((s, i) => ds.push(linea((s.eleg && series.length > 1 ? '★ ' : '') + s.nombre, curvas[i], s.color,
+    s.eleg ? { borderWidth: 3, fill: { target: 1, above: ESC_FILL_GANA, below: ESC_FILL_PIERDE } }
+           : { borderWidth: 1.8, borderDash: [5, 3] })));
+  const prop = curvas.flat();
   const refs = [];
   [['Precio Objetivo', p.objetivo, typeof REF_OBJ_COLOR !== 'undefined' ? REF_OBJ_COLOR : '#7c3aed'],
    ['Precio Dolor', p.dolor, typeof REF_DOL_COLOR !== 'undefined' ? REF_DOL_COLOR : '#c43030']].forEach(([n, v, col]) => {
@@ -970,10 +1228,11 @@ function escRenderChart(c, d) {
     el.classList.toggle('esc-auto', ej[k] == null);
   });
 
-  const cruces = hay ? escCruces(c, xMin, xMax) : [];
+  const cruces = elegS ? escCruces(c, xMin, xMax, elegS.est) : [];
+  const nomE = elegS ? `<b style="color:${elegS.color}">${escHtml(elegS.nombre)}</b>` : '';
   const txt = document.getElementById('esc-cruce-txt');
-  if (txt) txt.innerHTML = cruces.map(k => `Las curvas se cruzan cuando el mercado está en <b>u$s ${escF(k.x)}</b> (${escSig((k.x / M - 1) * 100, 1)}% vs hoy): por debajo queda mejor ${k.abajo === 'cobertura' ? '<b style="color:' + ESC_COLOR_PROP + '">con la cobertura</b>' : '<b style="color:' + ESC_COLOR_ACT + '">la posición actual</b>'}, por arriba ${k.abajo === 'cobertura' ? 'la posición actual' : 'con la cobertura'}.`).join('<br>')
-    || (hay ? 'Las curvas no se cruzan en el rango del gráfico.' : '');
+  if (txt) txt.innerHTML = cruces.map(k => `${nomE} y la posición actual se cruzan con el mercado en <b>u$s ${escF(k.x)}</b> (${escSig((k.x / M - 1) * 100, 1)}% vs hoy): por debajo conviene ${k.abajo === 'cobertura' ? 'la estrategia' : '<b style="color:' + ESC_COLOR_ACT + '">no hacer nada</b>'}, por arriba ${k.abajo === 'cobertura' ? '<b style="color:' + ESC_COLOR_ACT + '">no hacer nada</b>' : 'la estrategia'}.`).join('<br>')
+    || (elegS ? `${nomE} y la posición actual no se cruzan en el rango del gráfico.` : '');
 
   if (escChart) escChart.destroy();
   escChart = new Chart(canvas, {
@@ -1001,6 +1260,122 @@ function escRenderChart(c, d) {
       }
     }
   });
+  escRenderChartDif(c, d, series, xs, xMin, xMax, cruces);
+}
+
+// Franja de diferencia en u$s totales contra la posición actual, mismo eje X que el gráfico.
+// La elegida como área (verde gana / azul pierde); las demás como líneas finas.
+function escRenderChartDif(c, d, series, xs, xMin, xMax, cruces) {
+  const canvas = document.getElementById('esc-chart-dif');
+  if (!canvas) return;
+  if (escChartDif) { escChartDif.destroy(); escChartDif = null; }
+  const wrap = canvas.parentElement, tit = wrap.previousElementSibling;
+  const hay = series.length > 0;
+  wrap.style.display = tit.style.display = hay ? '' : 'none';
+  if (!hay) return;
+  const M = escMercado(c);
+  const ds = series.map(s => ({
+    label: (s.eleg && series.length > 1 ? '★ ' : '') + s.nombre,
+    data: xs.map(x => ({ x, y: escDifUsd(c, x, s.est) })),
+    borderColor: s.color, borderWidth: s.eleg ? 2 : 1.6, borderDash: s.eleg ? [] : [5, 3],
+    pointRadius: 0, pointHoverRadius: 4, tension: 0,
+    fill: s.eleg ? { target: { value: 0 }, above: 'rgba(26,107,60,0.22)', below: 'rgba(37,99,235,0.22)' } : false
+  }));
+  const mill = v => Math.abs(v) >= 1e6 ? escF(v / 1e6, 1) + ' M' : escF(v / 1e3, 0) + ' mil';
+  escChartDif = new Chart(canvas, {
+    type: 'line',
+    data: { datasets: ds },
+    plugins: [escLineasVerticales],
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 0 }, parsing: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        escLineas: { escenario: M * (1 + d), label: '', cruces: cruces.map(k => k.x), sinTexto: true },
+        legend: { display: series.length > 1, labels: { font: { family: 'Montserrat', size: 11 }, usePointStyle: true, pointStyle: 'line' } },
+        tooltip: { callbacks: {
+          title: it => it.length ? `Mercado a vencimiento: u$s ${escF(it[0].parsed.x)} (${escSig((it[0].parsed.x / M - 1) * 100, 0)}%)` : '',
+          label: x => `${x.dataset.label}: ${x.parsed.y < 0 ? '−' : '+'}u$s ${escF(Math.abs(x.parsed.y), 0)} (${escSig(x.parsed.y / escDisp(c))} u$s/tn)`
+        } }
+      },
+      scales: {
+        x: { type: 'linear', min: xMin, max: xMax, grid: { color: 'rgba(0,0,0,.05)' },
+             ticks: { font: { family: 'JetBrains Mono', size: 10 }, color: '#7e8574', callback: v => escF(v, 0) } },
+        y: { grid: { color: ctx => ctx.tick.value === 0 ? 'rgba(0,0,0,.35)' : 'rgba(0,0,0,.05)' },
+             ticks: { font: { family: 'JetBrains Mono', size: 10 }, color: '#7e8574', maxTicksLimit: 6, callback: v => v === 0 ? '0' : (v > 0 ? '+' : '−') + mill(Math.abs(v)) } }
+      }
+    }
+  });
+}
+
+// Balance de la estrategia elegida: equilibrio, qué pasa si baja y qué pasa si sube (u$s totales)
+function escRenderBalance(c) {
+  const el = document.getElementById('esc-balance');
+  if (!el) return;
+  const s = escSeries(c).find(x => x.eleg);
+  if (!s) { el.innerHTML = ''; return; }
+  const b = escBalance(c, s.est), M = b.M, disp = escDisp(c);
+  const col = v => v >= 0 ? ESC_COLOR_PROP : ESC_COLOR_ACT;
+  const usd = v => (v < 0 ? '−' : '+') + 'u$s ' + (Math.abs(v) >= 1e6 ? escF(Math.abs(v) / 1e6, 2) + ' M' : escF(Math.abs(v) / 1e3, 0) + ' mil');
+  const porU = v => `${usd(v)} por cada u$s`;
+  const cr = b.cruces.slice().sort((a, z) => Math.abs(a.x - M) - Math.abs(z.x - M))[0];
+
+  const tEq = cr
+    ? { val: `u$s ${escF(cr.x)}`, color: ESC_COLOR_CRUCE, notas: [`${escSig((cr.x / M - 1) * 100, 1)}% vs hoy (${escF(M)})`,
+        cr.abajo === 'cobertura' ? 'abajo conviene la estrategia, arriba no hacer nada' : 'abajo conviene no hacer nada, arriba la estrategia']
+        .concat(b.cruces.length > 1 ? [`otros cruces: ${b.cruces.filter(k => k !== cr).map(k => escF(k.x)).join(' · ')}`] : []) }
+    : { val: 'sin cruce', color: '#7e8574', notas: [`en ±${ESC_RANGO * 100}% la estrategia queda siempre ${escDifUsd(c, M, s.est) >= 0 ? 'mejor' : 'peor'} que no hacer nada`] };
+  const tBaja = { val: usd(b.baja), color: col(b.baja), notas: [
+    `con el mercado −30% (${escF(M * 0.7)})`,
+    Math.abs(b.pendBaja) < 1 ? 'la diferencia ya quedó fija en la baja' : `${porU(b.pendBaja)} que cae el mercado`,
+    `${escSig(b.baja / disp)} u$s/tn de producción`] };
+  const fija = b.fijaDesde != null;
+  const vSuba = fija ? b.finSuba : b.suba;
+  const tSuba = { val: usd(vSuba), color: col(vSuba), notas: fija
+    ? [`${vSuba < 0 ? 'máximo en contra' : 'a favor'}, fijo desde ${escF(b.fijaDesde)}`, `${escSig(vSuba / disp)} u$s/tn de producción`]
+      .concat(vSuba < 0 ? ['es lo que cuesta la estrategia si el mercado sube'] : [])
+    : [`con el mercado +30% (${escF(M * 1.3)})`, `${b.pendSuba < 0 ? 'sigue cayendo' : 'sigue subiendo'} ${usd(Math.abs(b.pendSuba)).slice(1)} por cada u$s que sube: sin tope`,
+       `${escSig(vSuba / disp)} u$s/tn de producción`] };
+
+  const tarjeta = (lbl, t) => `<div class="esc-bal-t" style="--esc-c:${t.color}">
+      <div class="esc-bal-l">${lbl}</div><div class="esc-bal-v" style="color:${t.color}">${t.val}</div>
+      ${t.notas.map(n => `<div class="esc-bal-n">${n}</div>`).join('')}</div>`;
+  el.innerHTML = `<div class="rs-card">
+      <h3>Balance de <span style="color:${s.color}">${escHtml(s.nombre)}</span> <span class="esc-h3-sub">u$s totales contra no hacer nada</span></h3>
+      <div class="esc-bal">${tarjeta('Punto de equilibrio', tEq)}${tarjeta('Si baja', tBaja)}${tarjeta('Si sube', tSuba)}</div>
+    </div>`;
+}
+
+// Tabla comparativa: posición actual y cada estrategia (clic = editar)
+function escRenderComparar(c, d) {
+  const el = document.getElementById('esc-comp');
+  if (!el) return;
+  const series = escSeries(c), grupo = escEsGrupo(c), disp = escDisp(c);
+  const sub = document.getElementById('esc-comp-sub');
+  if (sub) sub.textContent = `u$s/tn salvo indicación · escenario ${escSig(d * 100, 0)}%${grupo ? '' : ' · ★ = va al consolidado · clic = editar'}`;
+  const pf = (est, dd) => escPrecioFinal(c, dd, est);
+  const fila = (s) => {
+    const est = s ? s.est : false, r = escResumenTn(c, est);
+    const b = s ? escBalance(c, est) : null, costo = s ? escCostoProp(c, est) : 0;
+    const ed = s && !grupo && escEditando(c) && escEditando(c).id === s.id;
+    const cls = [s && s.eleg ? 'rs-hot' : '', ed ? 'esc-comp-ed' : '', s && !grupo ? 'esc-row' : ''].join(' ');
+    const celda = dd => { const v = pf(est, dd), a = pf(false, dd);
+      return `<td>${escF(v)}${s ? `<div class="esc-muted ${escCls(v - a)}">${escSig(v - a)}</div>` : ''}</td>`; };
+    return `<tr class="${cls}" ${s && !grupo ? `onclick="escEditarEstr(${s.id})"` : ''}>
+      <td class="rs-l">${s ? `<span class="esc-chip-dot" style="--esc-c:${s.color}"></span> ${s.eleg && !grupo ? '★ ' : ''}${escHtml(s.nombre)}` : `<span class="esc-chip-dot" style="--esc-c:${ESC_COLOR_ACT}"></span> Posición actual`}</td>
+      <td>${s ? escUsd(costo) + `<div class="esc-muted">${escF(costo / disp, 2)} u$s/tn</div>` : '—'}</td>
+      <td>${b && b.peor < -0.5 ? escUsd(b.peor) + `<div class="esc-muted">${escSig(b.peor / disp)} u$s/tn</div>` : '—'}</td>
+      <td>${b ? (b.cruces.map(k => escF(k.x)).join(' · ') || 'sin cruce') : '—'}</td>
+      ${celda(-0.30)}${celda(d)}${celda(0.30)}
+      <td>${escPct(r.pctBaja)}${r.sobrecob >= 1 ? ' ⚠' : ''}</td><td>${escPct(r.pctSuba)}</td>
+    </tr>`;
+  };
+  el.innerHTML = `<thead><tr>
+      <th class="rs-l">Estrategia</th><th>Costo primas</th>
+      <th title="La peor diferencia contra no hacer nada en ±${ESC_RANGO * 100}% del mercado de hoy">Máx. en contra</th>
+      <th title="Precio de mercado donde la estrategia empata con no hacer nada">Equilibrio</th>
+      <th>Precio final −30%</th><th>Escenario ${escSig(d * 100, 0)}%</th><th>+30%</th><th>% baja</th><th>% suba</th>
+    </tr></thead><tbody>${fila(null)}${series.map(fila).join('')}</tbody>`
+    + (series.length ? '' : `<tbody><tr><td colspan="9" class="rs-empty">${grupo ? 'Sin estrategias elegidas en las partes.' : 'Agregá estrategias con "+ Estrategia…" para compararlas.'}</td></tr></tbody>`);
 }
 
 function escRenderTabla(c, d) {
@@ -1022,7 +1397,7 @@ function escRenderTabla(c, d) {
   }).join('');
   document.getElementById('esc-tabla').innerHTML = `<thead><tr>
       <th class="rs-l">Mercado</th><th>Precio</th><th>Actual</th>
-      ${hay ? '<th>Con cobertura</th><th>Dif. u$s/tn</th><th>Dif. total</th>' : ''}<th>${hay ? 'Con cobertura' : 'Actual'} vs Dolor</th>
+      ${hay ? '<th>Con elegida</th><th>Dif. u$s/tn</th><th>Dif. total</th>' : ''}<th>${hay ? 'Con elegida' : 'Actual'} vs Dolor</th>
     </tr></thead><tbody>${rows}</tbody>`;
 }
 
