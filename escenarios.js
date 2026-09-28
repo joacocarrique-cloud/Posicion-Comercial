@@ -60,9 +60,12 @@ function escUsd(n) { return (n < 0 ? '−' : '') + 'u$s ' + escF(Math.abs(n), 0)
 function escPct(v) { return escF(v * 100, 0) + '%'; }
 function escCls(v) { return v > 0.05 ? 'rs-pos' : v < -0.05 ? 'rs-neg' : ''; }
 function escNorm(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim(); }
-function escNum(v) {
+// miles: el punto separa miles aunque no haya coma ("5.000" tn = 5000). Solo para toneladas:
+// en primas y precios "4.125" sigue siendo decimal.
+function escNum(v, miles) {
   const s0 = String(v == null ? '' : v).trim();
-  const s = s0.includes(',') ? s0.replace(/\./g, '').replace(',', '.') : s0;
+  const conMiles = miles && /^-?\d{1,3}(\.\d{3})+$/.test(s0);
+  const s = s0.includes(',') || conMiles ? s0.replace(/\./g, '').replace(',', '.') : s0;
   const n = parseFloat(s);
   return isFinite(n) ? n : null;
 }
@@ -380,6 +383,19 @@ function escCobBaja(c, conProp) {
   return Math.max(0, disp - escTnSinCob(c, conProp) + escTnSobrecob(c, conProp)) / disp;
 }
 
+// Tn con techo a la suba: fijadas + futuros vendidos + calls vendidos netos (un call comprado
+// devuelve participación). Sobre esas tn el precio final no acompaña una suba del mercado.
+function escTnTecho(c, conProp) {
+  return escSum(c, b => {
+    let tn = escPos.cultivos[b].fij || 0;
+    const suma = l => { if (l.tipo === 'futuro' || l.tipo === 'call') tn += (l.dir === 'sell' ? 1 : -1) * l.tn; };
+    escFyo(b).filter(escFyoIncluido).forEach(suma);
+    if (conProp) escLegs(b).forEach(suma);
+    return Math.max(0, tn);
+  });
+}
+function escCobSuba(c, conProp) { return escTnTecho(c, conProp) / escDisp(c); }
+
 // Prima neta de las coberturas propuestas (u$s; positivo = se paga)
 function escCostoProp(c) {
   return escLegs(c).reduce((s, l) => l.tipo === 'futuro' ? s : s + (l.dir === 'buy' ? 1 : -1) * (l.prima || 0) * (l.tn || 0), 0);
@@ -509,6 +525,18 @@ function escLimpiar(soloCultivo) {
   escRender();
 }
 
+// Tn por defecto de una pata nueva: el saldo sin cobertura a la baja. Si ya está todo cubierto
+// (p.ej. se agrega un call vendido para financiar los puts), las tn de la última pata o, sin
+// patas, las tn sin precio. Nunca 0: una pata en 0 tn no mueve nada.
+function escTnDefault(c, sin) {
+  const saldo = escTnSinCob(c, true);
+  if (saldo >= 1) return Math.round(saldo);
+  const otras = escLegs(c).filter(l => l !== sin && l.tn > 0);
+  if (otras.length) return otras[otras.length - 1].tn;
+  const p = escPos.cultivos[c];
+  return Math.round((p.afijar || 0) + (p.tav || 0)) || Math.round(p.disp || 0);
+}
+
 function escAgregarPata() {
   const c = escState.crop;
   if (escEsGrupo(c)) return;
@@ -516,7 +544,7 @@ function escAgregarPata() {
   const F0 = escFutA3(c, pos) || escMercado(c);
   const strike = escStrikeCercano(c, pos, 'put', F0 * 0.97);
   escLegs(c).push({ id: escState.seq++, dir: 'buy', tipo: 'put', pos, strike,
-    prima: escPrimaA3(c, pos, 'put', strike) || 0, tn: Math.round(escTnSinCob(c, true)), auto: true });
+    prima: escPrimaA3(c, pos, 'put', strike) || 0, tn: escTnDefault(c), auto: true });
   escGuardar();
   escRender();
 }
@@ -538,11 +566,13 @@ function escEditarPata(id, campo, valor) {
     if (v == null) { l.auto = true; l.prima = escPrimaA3(c, l.pos, l.tipo, l.strike) || 0; }
     else { l.auto = false; l.prima = v; }
   } else if (campo === 'tn' || campo === 'strike') {
-    const v = escNum(valor);
+    const v = escNum(valor, campo === 'tn');
     l[campo] = v != null ? v : 0;
   } else {
     l[campo] = valor;
   }
+  // Una pata en 0 tn (p.ej. agregada con todo ya cubierto) toma tn al cambiarle operación o instrumento
+  if ((campo === 'dir' || campo === 'tipo') && !(l.tn > 0)) l.tn = escTnDefault(c, l);
   // Al cambiar instrumento o posición, el strike se reubica en la cadena
   if (campo === 'tipo' || campo === 'pos') {
     const F0 = escFutA3(c, l.pos) || escMercado(c);
@@ -778,7 +808,7 @@ function escHtmlPropuesta() {
       <td>${posCtl}</td>
       <td>${strikeCtl}<div class="esc-muted">${dist != null ? escSig(dist) + '% vs ' + escF(F0) : ''}</div></td>
       <td>${l.tipo === 'futuro' ? '—' : `<input class="esc-in esc-in-s${sinPrima ? ' is-estimada' : ''}" type="text" inputmode="decimal" value="${l.prima}" title="${l.auto ? 'Prima de A3. Editala para fijar otra; vacía vuelve a A3.' : 'Prima manual. Vaciala para volver a A3.'}" onchange="escEditarPata(${l.id}, 'prima', this.value)"><div class="esc-muted">${l.auto ? 'A3' : 'manual'}</div>`}</td>
-      <td><input class="esc-in esc-in-m" type="text" inputmode="decimal" value="${escF(l.tn, 0)}" onchange="escEditarPata(${l.id}, 'tn', this.value)"></td>
+      <td><input class="esc-in esc-in-m${l.tn > 0 ? '' : ' is-estimada'}" type="text" inputmode="decimal" value="${escF(l.tn, 0)}" title="${l.tn > 0 ? 'Toneladas' : 'Con 0 tn la pata no impacta en nada'}" onchange="escEditarPata(${l.id}, 'tn', this.value)"></td>
       <td><button class="btn btn-sm btn-outline" onclick="escBorrarPata(${l.id})" title="Borrar pata">✕</button></td>
     </tr>`;
   }).join('');
@@ -823,6 +853,7 @@ function escRenderConsolidado(d) {
       <td class="rs-l">${grupo ? escLbl(x) : `<b>${escLbl(x)}</b>`}</td>
       <td>${escF(disp, 0)}</td><td>${escF(sinA, 0)}${hay ? ` → <b>${escF(sinP, 0)}</b>` : ''}</td>
       <td>${escPct(escCobBaja(x, false))}${hay ? ` → <b class="${sobre ? 'rs-neg' : ''}" title="${sobre ? 'Sobrecubierto' : ''}">${escPct(escCobBaja(x, true))}${sobre ? ' ⚠' : ''}</b>` : ''}</td>
+      <td>${escPct(escCobSuba(x, false))}${hay ? ` → <b>${escPct(escCobSuba(x, true))}</b>` : ''}</td>
       <td>${escF(pfA)}</td>
       <td>${hay ? `<b>${escF(pfP)}</b>` : '—'}</td>
       <td class="${hay ? escCls(pfP - pfA) : ''}">${hay ? escSig(pfP - pfA) : ''}</td>
@@ -833,9 +864,10 @@ function escRenderConsolidado(d) {
   document.getElementById('esc-cons-sub').textContent = `escenario ${escSig(d * 100, 0)}% · u$s/tn salvo indicación · el total no suma dos veces el maíz`;
   document.getElementById('esc-cons').innerHTML = `<thead><tr>
       <th class="rs-l">Cultivo</th><th>Prod. disp. (tn)</th><th>Sin cob. a la baja (tn)</th><th>Cob. a la baja</th>
+      <th title="Producción con precio tope: fijadas + futuros vendidos + calls vendidos − calls comprados">Techo a la suba</th>
       <th>Precio final actual</th><th>Con cobertura</th><th>Diferencia</th><th>Costo primas</th><th>Resultado total</th>
     </tr></thead><tbody>${rows}
-    <tr class="esc-tot"><td class="rs-l">Total</td><td>${escF(tDisp, 0)}</td><td>${escF(tSinA, 0)}${Math.abs(tSinP - tSinA) >= 1 ? ' → ' + escF(tSinP, 0) : ''}</td><td></td>
+    <tr class="esc-tot"><td class="rs-l">Total</td><td>${escF(tDisp, 0)}</td><td>${escF(tSinA, 0)}${Math.abs(tSinP - tSinA) >= 1 ? ' → ' + escF(tSinP, 0) : ''}</td><td></td><td></td>
       <td colspan="2" class="esc-muted">Ingreso: ${escUsd(tAct)} → ${escUsd(tProp)}</td><td></td>
       <td>${escUsd(tCosto)}</td><td class="${escCls(tProp - tAct)}">${escUsd(tProp - tAct)}</td></tr></tbody>`;
 }
@@ -856,7 +888,10 @@ function escRenderKpis(c, d) {
     + kpi('Cobertura a la baja', escPct(escCobBaja(c, false)), escPct(escCobBaja(c, true)),
           hay && sobre >= 1 ? `<span class="red-txt">⚠ sobrecubierto en ${escF(sobre, 0)} tn</span>`
                             : `sin cubrir: ${escF(sinA, 0)}${hay ? ' → ' + escF(sinP, 0) : ''} tn`)
-    + kpi('Costo de la cobertura', hay ? escUsd(costo) : '—', null, hay ? `${escF(costo / escDisp(c), 2)} u$s/tn de producción` : 'sin propuesta');
+    + kpi('Techo a la suba', escPct(escCobSuba(c, false)), escPct(escCobSuba(c, true)),
+          `con precio tope: ${escF(escTnTecho(c, false), 0)}${hay ? ' → ' + escF(escTnTecho(c, true), 0) : ''} tn`)
+    + kpi('Costo de la cobertura', hay ? escUsd(costo) : '—', null,
+          hay ? `${escF(costo / escDisp(c), 2)} u$s/tn de producción${costo < -0.5 ? ' · cobro neto de primas' : ''}` : 'sin propuesta');
 }
 
 // Líneas verticales: escenario elegido (gris) y cruces entre las dos curvas (dorado)
