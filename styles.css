@@ -2549,6 +2549,56 @@ td.esc-muted { font-size: 11px; }
 .esc-comp td { vertical-align: top; }
 .esc-comp td .esc-muted { font-family: var(--mono); }
 .esc-comp tr.esc-comp-ed td:first-child { box-shadow: inset 3px 0 0 var(--es-green); }
+/* PDF para compartir: se arma fuera de pantalla, con colores fijos (siempre claro), y se pasa a imagen */
+.escpdf { position: fixed; left: -10000px; top: 0; width: 560px; background: #fff; color: #1c2118; font-family: 'Montserrat', sans-serif; z-index: -1; }
+.escpdf-blk { padding: 0 20px 14px; background: #fff; }
+.escpdf-head { padding: 0 0 16px; }
+.escpdf-band { position: relative; background: #1A6B3C; color: #fff; padding: 22px 20px 18px; }
+.escpdf-band::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: linear-gradient(90deg, #C8A44A, #f9f3e3, #C8A44A); }
+.escpdf-brand { font-size: 9.5px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: rgba(255,255,255,.75); }
+.escpdf-tit { font-size: 23px; font-weight: 700; margin: 5px 0 4px; }
+.escpdf-sub { font-size: 11px; line-height: 1.45; color: rgba(255,255,255,.88); }
+.escpdf-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.escpdf-chips span { font-size: 9.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.28); }
+.escpdf-ley { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 12px 20px 0; font-size: 10px; font-weight: 600; color: #505845; }
+.escpdf-ley i { display: inline-block; width: 16px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.escpdf-sec { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; border-bottom: 2px solid #1A6B3C; padding: 8px 0 5px; margin-bottom: 10px; }
+.escpdf-sec-t { font-size: 18px; font-weight: 700; color: #1A6B3C; }
+.escpdf-sec-e { font-size: 10.5px; color: #505845; text-align: right; }
+.escpdf-sec-e b { color: #1c2118; }
+.escpdf-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
+.escpdf-kpi { border: 1px solid #e3e5dc; border-radius: 8px; padding: 8px 8px 7px; background: #fafaf7; }
+.escpdf-kpi-l { display: block; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #7e8574; line-height: 1.25; }
+.escpdf-kpi-v { font: 700 13px 'JetBrains Mono', monospace; margin-top: 5px; white-space: nowrap; }
+.escpdf-kpi-n { font-size: 9px; color: #505845; margin-top: 3px; line-height: 1.3; }
+.escpdf-fl { color: #7e8574; font-weight: 400; margin: 0 3px; }
+.escpdf-act { color: #2563eb; }
+.escpdf-prop { color: #1A6B3C; }
+.escpdf-pos { color: #1a854a; font-weight: 600; }
+.escpdf-neg { color: #c43030; font-weight: 600; }
+.escpdf-chart { display: block; width: 520px; height: 300px; }
+.escpdf-linea { font-size: 10.5px; color: #505845; line-height: 1.55; }
+.escpdf-linea b { color: #1c2118; }
+.escpdf-cruce { margin-top: 6px; padding: 6px 10px; border-left: 3px solid #b7791f; background: #fbf6ea; border-radius: 0 6px 6px 0; }
+.escpdf-cruce b { color: #b7791f; }
+.escpdf-h { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #1A6B3C; margin: 10px 0 6px; }
+.escpdf-h span { text-transform: none; letter-spacing: 0; font-weight: 400; color: #7e8574; margin-left: 4px; }
+.escpdf-t { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+.escpdf-t th { font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: #7e8574; text-align: right; padding: 5px; border-bottom: 1.5px solid #cfd3c6; vertical-align: bottom; }
+.escpdf-t td { text-align: right; padding: 5px; border-bottom: 1px solid #eceee6; font-family: 'JetBrains Mono', monospace; white-space: nowrap; vertical-align: top; }
+.escpdf-t .l { text-align: left; font-family: 'Montserrat', sans-serif; }
+.escpdf-t tr.hot td { background: #eef6f0; font-weight: 700; }
+.escpdf-t tr.tot td { font-weight: 700; border-top: 1.5px solid #cfd3c6; background: #f5f6f1; }
+.escpdf-t tr.sub td.l { padding-left: 14px; }
+.escpdf-t tr.sub td.l b { font-weight: 600; color: #505845; }
+.escpdf-t tr.grupo td { background: #f5f6f1; }
+.escpdf-cons { font-size: 9.5px; }
+.escpdf-mini { font-size: 8.5px; font-weight: 500; color: #7e8574; font-family: 'Montserrat', sans-serif; white-space: normal; }
+.escpdf-bal { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.escpdf-bal > div { border: 1px solid #e3e5dc; border-left: 3px solid var(--c); border-radius: 6px; padding: 7px 8px; font-size: 9px; color: #505845; line-height: 1.35; background: #fafaf7; }
+.escpdf-bal b { display: block; font: 700 13px 'JetBrains Mono', monospace; color: var(--c); margin: 3px 0 2px; }
+.escpdf-nota { font-size: 8.5px; color: #7e8574; line-height: 1.5; margin-top: 8px; }
+.escpdf-nota b { color: #505845; }
 @media print {
   #esc-space .esc-ctrl, #esc-space .esc-tabs, #esc-space .esc-legs-foot, #esc-space .rs-actions,
   #esc-space .esc-nueva, #esc-space .esc-chip-btn { display: none !important; }

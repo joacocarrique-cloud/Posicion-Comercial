@@ -40,10 +40,10 @@ const ESC_CULTIVOS = {
   maiz_temp: { lbl: 'Maíz temprano', col: 'MAIZ TEMP.',  a3: 'maiz', mes: 'ABR' },
   maiz_tard: { lbl: 'Maíz tardío',   col: 'MAIZ TARDIO', a3: 'maiz', mes: 'JUL' },
   maiz:      { lbl: 'Maíz total',    col: 'MAIZ TOTAL',  a3: 'maiz', partes: ['maiz_temp', 'maiz_tard'] },
-  soja:      { lbl: 'Soja',          col: 'SOJA',        a3: 'soja' },
-  girasol:   { lbl: 'Girasol',       col: 'GIRASOL',     a3: 'girasol' }
+  soja:      { lbl: 'Soja',          col: 'SOJA',        a3: 'soja' }
 };
-const ESC_ORDEN = ['trigo', 'maiz_temp', 'maiz_tard', 'maiz', 'soja', 'girasol'];
+// Girasol no entra: no tiene futuros ni opciones, solo se cubre vendiendo forwards
+const ESC_ORDEN = ['trigo', 'maiz_temp', 'maiz_tard', 'maiz', 'soja'];
 // Meses de posición de los FyO de maíz que se asignan al tardío (el resto va al temprano)
 const ESC_MAIZ_TARDIO = ['JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
 const ESC_FILAS = {
@@ -77,6 +77,8 @@ function escF(n, d = 1) {
 }
 function escSig(n, d = 1) { return (n > 0.0001 ? '+' : n < -0.0001 ? '−' : '') + escF(Math.abs(n), d); }
 function escUsd(n) { return (n < 0 ? '−' : '') + 'u$s ' + escF(Math.abs(n), 0); }
+// Con signo y abreviado: +u$s 350 mil · −u$s 1,25 M
+function escUsdM(v) { return (v < 0 ? '−' : '+') + 'u$s ' + (Math.abs(v) >= 1e6 ? escF(Math.abs(v) / 1e6, 2) + ' M' : escF(Math.abs(v) / 1e3, 0) + ' mil'); }
 function escPct(v) { return escF(v * 100, 0) + '%'; }
 function escCls(v) { return v > 0.05 ? 'rs-pos' : v < -0.05 ? 'rs-neg' : ''; }
 function escNorm(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim(); }
@@ -198,7 +200,7 @@ function escCompactar(d) {
     Object.entries(ESC_FILAS).forEach(([k, lbl]) => { const f = fila(lbl); o[k] = f ? f.vals[i] : null; });
     if (o.disp > 0) cultivos[c] = o;
   });
-  if (!Object.keys(cultivos).length) throw new Error('No encontré Trigo, Maíz, Soja ni Girasol en el tablero.');
+  if (!Object.keys(cultivos).length) throw new Error('No encontré Trigo, Maíz ni Soja en el tablero.');
   // Maíz total pasa a ser la suma de temprano + tardío si el tablero trae las dos columnas
   const maizSeparado = cultivos.maiz && cultivos.maiz_temp && cultivos.maiz_tard;
   if (maizSeparado) cultivos.maiz.partes = ESC_CULTIVOS.maiz.partes.slice();
@@ -232,7 +234,7 @@ function escAplicarTexto(texto, file) {
   escPosVieja = false;
   try { localStorage.setItem(ESC_POS_KEY, JSON.stringify(escPos)); } catch (e) {}
   escMigrarMaiz();
-  if (!escPos.cultivos[escState.crop]) escState.crop = escCrops()[0];
+  if (!escCrops().includes(escState.crop)) escState.crop = escCrops()[0];
   escGuardar();
 }
 
@@ -660,7 +662,7 @@ async function escProponerPuts() {
   const otm = escNum(document.getElementById('esc-otm').value);
   escState.otm = otm != null ? otm : 3;
   const sinPrima = [];
-  escState.presetCrops.filter(c => escPos.cultivos[c] && !escEsGrupo(c)).forEach(c => {
+  escState.presetCrops.filter(c => escBaseCrops().includes(c)).forEach(c => {
     const pos = escPosDefault(c);
     const F0 = escFutA3(c, pos) || escMercado(c);
     const strike = escStrikeCercano(c, pos, 'put', F0 * (1 - escState.otm / 100));
@@ -830,7 +832,7 @@ function escRender() {
   const body = document.getElementById('esc-body');
   if (!body) return;
   if (!escPos) { body.innerHTML = escHtmlVacio(); return; }
-  if (!escPos.cultivos[escState.crop]) escState.crop = escCrops()[0];
+  if (!escCrops().includes(escState.crop)) escState.crop = escCrops()[0];
 
   const m = escPos.meta || {};
   const vin = escHtmlVinculo();
@@ -843,7 +845,10 @@ function escRender() {
         <div class="rs-title">🎯 Escenarios de posición</div>
         <div class="rs-subt">Posición comercial + coberturas propuestas: qué precio final le queda a cada cultivo según hacia dónde vaya el mercado.</div>
       </div>
-      <div class="rs-actions">${vin.botones}</div>
+      <div class="rs-actions">
+        <button class="btn btn-sm" id="esc-btn-pdf" onclick="escPdf()" title="Informe en PDF para compartir (por cultivo: gráfico, estrategia elegida y escenarios; consolidado al final)">📄 PDF para compartir</button>
+        ${vin.botones}
+      </div>
     </div>
     <div class="rs-meta">Posición: ${escHtml(m.archivo || 'tablero')} · Excel modificado ${escHtml(m.modificado || '—')} · generado ${escHtml(m.generado || '—')}${vin.meta}${sheetData ? ` · A3 ${escHtml(sheetData.fechaDatos || '')}` : ' · sin datos A3 (strikes y primas a mano)'}</div>
 
@@ -866,11 +871,6 @@ function escRender() {
           <button class="btn btn-outline btn-sm" onclick="escLimpiar(false)">Borrar estrategias</button>
         </div>
       </div>
-    </div>
-
-    <div class="rs-card">
-      <h3>Consolidado <span class="esc-h3-sub" id="esc-cons-sub"></span></h3>
-      <div class="rs-tw"><table class="rs-table" id="esc-cons"></table></div>
     </div>
 
     <div class="esc-tabs">${escCrops().map(c => `<button class="esc-tab ${c === escState.crop ? 'active' : ''}${escEsGrupo(c) ? ' esc-tab-grupo' : ''}" onclick="escSetCrop('${c}')">${escLbl(c)}</button>`).join('')}</div>
@@ -904,6 +904,11 @@ function escRender() {
           <div class="rs-tw"><table class="rs-table" id="esc-tabla"></table></div>
         </div>
       </div>
+    </div>
+
+    <div class="rs-card">
+      <h3>Consolidado <span class="esc-h3-sub" id="esc-cons-sub"></span></h3>
+      <div class="rs-tw"><table class="rs-table" id="esc-cons"></table></div>
     </div>`;
   escRenderResultados();
 }
@@ -1195,26 +1200,41 @@ const escLineasVerticales = {
   }
 };
 
+// Eje X: automático ±40% del mercado de hoy, salvo que se cargue a mano
+function escEjeX(c) {
+  const M = escMercado(c), ej = escState.ejes[c] || {};
+  const auto = { xmin: Math.floor(M * (1 - ESC_RANGO) / 5) * 5, xmax: Math.ceil(M * (1 + ESC_RANGO) / 5) * 5 };
+  let xMin = ej.xmin != null ? ej.xmin : auto.xmin, xMax = ej.xmax != null ? ej.xmax : auto.xmax;
+  if (!(xMax > xMin)) { xMin = auto.xmin; xMax = auto.xmax; }
+  return { xMin, xMax };
+}
+// Eje Y: automático para que entren las curvas (ys), las referencias y la diagonal de mercado
+function escEjeY(c, ys, xMin, xMax) {
+  const ej = escState.ejes[c] || {};
+  const auto = { ymin: Math.floor(Math.min(...ys, xMin) / 10) * 10, ymax: Math.ceil(Math.max(...ys, xMax) / 10) * 10 };
+  let yMin = ej.ymin != null ? ej.ymin : auto.ymin, yMax = ej.ymax != null ? ej.ymax : auto.ymax;
+  if (!(yMax > yMin)) { yMin = auto.ymin; yMax = auto.ymax; }
+  return { yMin, yMax };
+}
+// Grilla con los quiebres de las patas (strikes) para que las curvas no redondeen los vértices
+function escGrillaX(c, series, xMin, xMax) {
+  const M = escMercado(c), N = 160, xsSet = new Set();
+  for (let i = 0; i <= N; i++) xsSet.add(xMin + (xMax - xMin) * i / N);
+  series.forEach(s => escLegs(c, s.est).forEach(l => {
+    const F0 = escF0(l.parte || c, l);
+    if (l.tipo !== 'futuro' && F0 > 0) { const x = l.strike / F0 * M; if (x > xMin && x < xMax) xsSet.add(x); }
+  }));
+  return [...xsSet].sort((a, b) => a - b);
+}
+
 function escRenderChart(c, d) {
   const canvas = document.getElementById('esc-chart');
   if (!canvas || typeof Chart === 'undefined') return;
   const p = escPos.cultivos[c], M = escMercado(c);
   const series = escSeries(c), elegS = series.find(s => s.eleg);
   const ej = escState.ejes[c] || {};
-
-  // Eje X: automático ±40% del mercado de hoy, salvo que se cargue a mano
-  const autoX = { xmin: Math.floor(M * (1 - ESC_RANGO) / 5) * 5, xmax: Math.ceil(M * (1 + ESC_RANGO) / 5) * 5 };
-  let xMin = ej.xmin != null ? ej.xmin : autoX.xmin, xMax = ej.xmax != null ? ej.xmax : autoX.xmax;
-  if (!(xMax > xMin)) { xMin = autoX.xmin; xMax = autoX.xmax; }
-
-  // Grilla con los quiebres de las patas (strikes) para que las curvas no redondeen los vértices
-  const N = 160, xsSet = new Set();
-  for (let i = 0; i <= N; i++) xsSet.add(xMin + (xMax - xMin) * i / N);
-  series.forEach(s => escLegs(c, s.est).forEach(l => {
-    const F0 = escF0(l.parte || c, l);
-    if (l.tipo !== 'futuro' && F0 > 0) { const x = l.strike / F0 * M; if (x > xMin && x < xMax) xsSet.add(x); }
-  }));
-  const xs = [...xsSet].sort((a, b) => a - b);
+  const { xMin, xMax } = escEjeX(c);
+  const xs = escGrillaX(c, series, xMin, xMax);
   const mkt = xs.map(x => ({ x, y: x }));
   const act = xs.map(x => ({ x, y: escPrecioFinal(c, x / M - 1, false) }));
   const curvas = series.map(s => xs.map(x => ({ x, y: escPrecioFinal(c, x / M - 1, s.est) })));
@@ -1239,11 +1259,7 @@ function escRenderChart(c, d) {
       { borderWidth: 1.6, borderDash: [10, 5], pointHoverRadius: 0, order: 20 }));
   });
 
-  // Eje Y: automático para que entren las curvas, las referencias y la diagonal de mercado
-  const ys = act.concat(prop).map(o => o.y).concat(refs);
-  const autoY = { ymin: Math.floor(Math.min(...ys, xMin) / 10) * 10, ymax: Math.ceil(Math.max(...ys, xMax) / 10) * 10 };
-  let yMin = ej.ymin != null ? ej.ymin : autoY.ymin, yMax = ej.ymax != null ? ej.ymax : autoY.ymax;
-  if (!(yMax > yMin)) { yMin = autoY.ymin; yMax = autoY.ymax; }
+  const { yMin, yMax } = escEjeY(c, act.concat(prop).map(o => o.y).concat(refs), xMin, xMax);
 
   // Los campos de ejes muestran el valor en uso; en gris cuando es el automático
   const vals = { xmin: xMin, xmax: xMax, ymin: yMin, ymax: yMax };
@@ -1341,7 +1357,7 @@ function escRenderBalance(c) {
   if (!s) { el.innerHTML = ''; return; }
   const b = escBalance(c, s.est), M = b.M, disp = escDisp(c);
   const col = v => v >= 0 ? ESC_COLOR_PROP : ESC_COLOR_ACT;
-  const usd = v => (v < 0 ? '−' : '+') + 'u$s ' + (Math.abs(v) >= 1e6 ? escF(Math.abs(v) / 1e6, 2) + ' M' : escF(Math.abs(v) / 1e3, 0) + ' mil');
+  const usd = escUsdM;
   const porU = v => `${usd(v)} por cada u$s`;
   const cr = b.cruces.slice().sort((a, z) => Math.abs(a.x - M) - Math.abs(z.x - M))[0];
 
@@ -1425,6 +1441,277 @@ function escRenderTabla(c, d) {
       <th class="rs-l">Mercado</th><th>Precio</th><th>Actual</th>
       ${hay ? '<th>Con elegida</th><th>Dif. u$s/tn</th><th>Dif. total</th>' : ''}<th>${hay ? 'Con elegida' : 'Actual'} vs Dolor</th>
     </tr></thead><tbody>${rows}</tbody>`;
+}
+
+// ═══════════════════════════════════════════════════
+// PDF PARA COMPARTIR (WhatsApp)
+// Informe aparte en hojas A5 verticales, que se leen bien en el celular: portada, una sección
+// por cultivo (gráfico, estrategia elegida, balance y escenarios) y el consolidado al final.
+// Cada bloque se pasa a imagen con html2canvas y se acomoda en las hojas con jsPDF sin cortarlo.
+// Las dos librerías se bajan de cdnjs recién al primer clic.
+// ═══════════════════════════════════════════════════
+const ESC_PDF_W = 560, ESC_PDF_H = 794;   // hoja A5 en px CSS (420 × 595 pt)
+const ESC_PDF_MARG = 24, ESC_PDF_PIE = 30;
+
+function escCargarScript(url) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = url;
+    s.onload = res;
+    s.onerror = () => { s.remove(); rej(new Error('no pude descargar ' + url.split('/').pop() + ' (¿sin internet?)')); };
+    document.head.appendChild(s);
+  });
+}
+async function escPdfLibs() {
+  if (!window.html2canvas) await escCargarScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+  if (!(window.jspdf && window.jspdf.jsPDF)) await escCargarScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+}
+
+function escPdfFecha() { return new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
+function escPdfEsc(d) { return Math.abs(d) < 1e-9 ? 'Mercado sin cambios' : `Mercado ${escSig(d * 100, 0)}%`; }
+function escPdfCls(v) { return v > 0.05 ? 'escpdf-pos' : v < -0.05 ? 'escpdf-neg' : ''; }
+
+// Gráfico de precio final (posición actual vs estrategia elegida) como imagen PNG
+function escPdfGrafico(c, d, host) {
+  const p = escPos.cultivos[c], M = escMercado(c);
+  const s = escSeries(c).find(x => x.eleg);
+  const { xMin, xMax } = escEjeX(c);
+  const xs = escGrillaX(c, s ? [s] : [], xMin, xMax);
+  const curva = est => xs.map(x => ({ x, y: escPrecioFinal(c, x / M - 1, est) }));
+  const linea = (label, data, color, extra) => Object.assign({ label, data, borderColor: color, borderWidth: 2.2, pointRadius: 0, tension: 0 }, extra || {});
+  const act = curva(false), prop = s ? curva(s.est) : [];
+  const ds = [linea('Precio de mercado', xs.map(x => ({ x, y: x })), '#b0afa8', { borderWidth: 1.5, borderDash: [5, 4] }),
+              linea('Posición actual', act, ESC_COLOR_ACT)];
+  if (s) ds.push(linea(s.nombre, prop, ESC_COLOR_PROP, { borderWidth: 2.8, fill: { target: 1, above: ESC_FILL_GANA, below: ESC_FILL_PIERDE } }));
+  const refs = [];
+  [['Objetivo', p.objetivo, typeof REF_OBJ_COLOR !== 'undefined' ? REF_OBJ_COLOR : '#7c3aed'],
+   ['Dolor', p.dolor, typeof REF_DOL_COLOR !== 'undefined' ? REF_DOL_COLOR : '#c43030']].forEach(([n, v, col]) => {
+    if (!(v > 0)) return;
+    refs.push(v);
+    ds.push(linea(`${n} ${escF(v)}`, [{ x: xMin, y: v }, { x: xMax, y: v }], col, { borderWidth: 1.3, borderDash: [8, 4] }));
+  });
+  const { yMin, yMax } = escEjeY(c, act.concat(prop).map(o => o.y).concat(refs), xMin, xMax);
+  const cruces = s ? escCruces(c, xMin, xMax, s.est) : [];
+  const tick = { font: { family: 'JetBrains Mono', size: 9 }, color: '#7e8574' };
+  const titulo = text => ({ display: true, text, font: { family: 'Montserrat', size: 10, weight: '600' }, color: '#505845' });
+
+  const cv = document.createElement('canvas');
+  cv.width = 520; cv.height = 300;
+  cv.style.width = '520px'; cv.style.height = '300px';
+  host.appendChild(cv);
+  const ch = new Chart(cv, {
+    type: 'line', data: { datasets: ds }, plugins: [escLineasVerticales],
+    options: {
+      responsive: false, animation: false, devicePixelRatio: 2, parsing: false, events: [],
+      plugins: {
+        escLineas: { escenario: M * (1 + d), label: Math.abs(d) < 1e-9 ? `Hoy ${escF(M)}` : `Escenario ${escSig(d * 100, 0)}%`, cruces: cruces.map(k => k.x) },
+        legend: { position: 'bottom', labels: { font: { family: 'Montserrat', size: 10 }, color: '#505845', usePointStyle: true, pointStyle: 'line', boxWidth: 22, padding: 10 } },
+        tooltip: { enabled: false }
+      },
+      scales: {
+        x: { type: 'linear', min: xMin, max: xMax, title: titulo('Mercado a vencimiento (u$s/tn)'), grid: { color: 'rgba(0,0,0,.05)' }, ticks: Object.assign({ callback: v => escF(v, 0) }, tick) },
+        y: { min: yMin, max: yMax, title: titulo('Precio final (u$s/tn)'), grid: { color: 'rgba(0,0,0,.05)' }, ticks: tick }
+      }
+    }
+  });
+  const url = cv.toDataURL('image/png');
+  ch.destroy();
+  cv.remove();
+  return { url, cruces };
+}
+
+function escPdfCabecera(d) {
+  const m = escPos.meta || {};
+  const chips = [escPdfFecha(), escPdfEsc(d), m.modificado ? 'Posición: Excel ' + m.modificado : null,
+                 sheetData && sheetData.fechaDatos ? 'Primas A3 ' + sheetData.fechaDatos : null];
+  return `<div class="escpdf-blk escpdf-head">
+    <div class="escpdf-band">
+      <div class="escpdf-brand">Espartina S.A. · Comercial</div>
+      <div class="escpdf-tit">Escenarios de posición</div>
+      <div class="escpdf-sub">Qué precio final le queda a cada cultivo según hacia dónde vaya el mercado: la posición actual y con la estrategia de cobertura elegida.</div>
+      <div class="escpdf-chips">${chips.filter(Boolean).map(x => `<span>${escHtml(x)}</span>`).join('')}</div>
+    </div>
+    <div class="escpdf-ley">
+      <span><i style="background:${ESC_COLOR_ACT}"></i>Posición actual (sin coberturas nuevas)</span>
+      <span><i style="background:${ESC_COLOR_PROP}"></i>Con la estrategia elegida</span>
+    </div>
+  </div>`;
+}
+
+// Tres bloques por cultivo: resumen + gráfico · posición, estrategia y balance · escenarios
+function escPdfCultivo(c, d, graf) {
+  const s = escSeries(c).find(x => x.eleg), hay = !!s, est = hay ? s.est : false;
+  const disp = escDisp(c), M = escMercado(c), lbl = escLbl(c);
+  const pfA = escPrecioFinal(c, d, false), pfP = escPrecioFinal(c, d, est);
+  const cA = escPrecioFinal(c, -0.30, false), cP = escPrecioFinal(c, -0.30, est);
+  const rA = escResumenTn(c, false), rP = escResumenTn(c, est);
+  const costo = hay ? escCostoProp(c, est) : 0;
+  const par = (a, b) => `<span class="escpdf-act">${a}</span>${hay ? `<span class="escpdf-fl">→</span><span class="escpdf-prop">${b}</span>` : ''}`;
+  const kpi = (l, v, n) => `<div class="escpdf-kpi"><div class="escpdf-kpi-l">${l}</div><div class="escpdf-kpi-v">${v}</div><div class="escpdf-kpi-n">${n || '&nbsp;'}</div></div>`;
+  const dif = (a, b) => hay ? `<span class="${escPdfCls(b - a)}">${escSig(b - a)} u$s/tn</span>` : 'sin estrategia';
+
+  const cruceTxt = graf.cruces.length
+    ? graf.cruces.map(k => `Se cruzan con el mercado en <b>u$s ${escF(k.x)}</b> (${escSig((k.x / M - 1) * 100, 1)}% vs hoy): por debajo conviene ${k.abajo === 'cobertura' ? 'la estrategia' : 'no hacer nada'}, por arriba ${k.abajo === 'cobertura' ? 'no hacer nada' : 'la estrategia'}.`).join('<br>')
+    : '';
+  const b1 = `<div class="escpdf-blk" data-hoja="nueva">
+    <div class="escpdf-sec"><span class="escpdf-sec-t">${lbl}</span>
+      <span class="escpdf-sec-e">${hay ? `Estrategia: <b>${escHtml(s.nombre)}</b>` : 'Sin estrategia elegida'}</span></div>
+    <div class="escpdf-kpis">
+      ${kpi(Math.abs(d) < 1e-9 ? 'Precio final hoy' : `Precio final con mercado ${escSig(d * 100, 0)}%`, par(escF(pfA), escF(pfP)), dif(pfA, pfP))}
+      ${kpi('Si el mercado cae 30%', par(escF(cA), escF(cP)), dif(cA, cP))}
+      ${kpi('Cobertura a la baja', par(escPct(rA.pctBaja), escPct(rP.pctBaja)), rP.sobrecob >= 1 && hay ? `<span class="escpdf-neg">sobrecubierto ${escF(rP.sobrecob, 0)} tn</span>` : `% a la suba: ${escPct(rA.pctSuba)}${hay ? ' → ' + escPct(rP.pctSuba) : ''}`)}
+      ${kpi('Costo de primas', hay ? `<span class="escpdf-prop">${escF(costo / disp, 2)}</span>` : '—', hay ? `u$s/tn · total ${escUsd(costo)}` : '')}
+    </div>
+    <img class="escpdf-chart" src="${graf.url}">
+    ${cruceTxt ? `<div class="escpdf-linea escpdf-cruce">${cruceTxt}</div>` : ''}
+  </div>`;
+
+  // Posición, patas de la estrategia y balance contra no hacer nada
+  const legs = escLegs(c, est), grupo = escEsGrupo(c);
+  const legRows = legs.map(l => `<tr>
+      ${grupo ? `<td class="l">${escLbl(l.parte).replace('Maíz ', '')}</td>` : ''}
+      <td class="l">${l.dir === 'buy' ? 'Compra' : 'Venta'} ${l.tipo === 'futuro' ? 'futuro' : l.tipo}</td><td class="l">${escHtml(l.pos || '')}</td>
+      <td>${escF(l.strike, l.tipo === 'futuro' ? 1 : 0)}</td><td>${l.tipo === 'futuro' ? '—' : escF(l.prima, 2)}</td><td>${escF(l.tn, 0)}</td></tr>`).join('');
+  let bal = '';
+  if (hay) {
+    const b = escBalance(c, est);
+    const cr = b.cruces.slice().sort((a, z) => Math.abs(a.x - M) - Math.abs(z.x - M))[0];
+    const vSuba = b.fijaDesde != null ? b.finSuba : b.suba;
+    const col = v => v >= 0 ? ESC_COLOR_PROP : ESC_COLOR_ACT;
+    const t = (l, v, color, n) => `<div style="--c:${color}"><span class="escpdf-kpi-l">${l}</span><b>${v}</b>${n}</div>`;
+    bal = `<div class="escpdf-h">Balance contra no hacer nada <span>u$s totales</span></div>
+      <div class="escpdf-bal">
+        ${t('Punto de equilibrio', cr ? `u$s ${escF(cr.x)}` : 'sin cruce', cr ? ESC_COLOR_CRUCE : '#7e8574',
+            cr ? `${escSig((cr.x / M - 1) * 100, 1)}% vs hoy (${escF(M)})` : `en ±${ESC_RANGO * 100}% queda siempre ${escDifUsd(c, M, est) >= 0 ? 'mejor' : 'peor'}`)}
+        ${t('Si baja 30%', escUsdM(b.baja), col(b.baja), `${escSig(b.baja / disp)} u$s/tn`)}
+        ${t('Si sube', escUsdM(vSuba), col(vSuba), b.fijaDesde != null ? `fijo desde ${escF(b.fijaDesde)} · ${escSig(vSuba / disp)} u$s/tn` : `con +30% · ${escSig(vSuba / disp)} u$s/tn`)}
+      </div>`;
+  }
+  const b2 = `<div class="escpdf-blk">
+    <div class="escpdf-h">${lbl} · posición</div>
+    <div class="escpdf-linea">Producción disponible <b>${escF(disp, 0)} tn</b> · vendidas (forwards + futuros) <b>${escF(rA.vendidas, 0)} tn</b>
+      · sin cobertura a la baja <b>${escF(escTnSinCob(c, false), 0)} tn</b>${hay ? ` → <b>${escF(escTnSinCob(c, est), 0)} tn</b> con la estrategia` : ''}
+      · mercado hoy <b>u$s ${escF(M)}</b></div>
+    ${hay ? `<div class="escpdf-h">Estrategia elegida · ${escHtml(s.nombre)}</div>
+      <table class="escpdf-t"><thead><tr>${grupo ? '<th class="l">Parte</th>' : ''}<th class="l">Operación</th><th class="l">Posición</th><th>Strike / precio</th><th>Prima</th><th>Tn</th></tr></thead>
+      <tbody>${legRows}</tbody></table>` : ''}
+    ${bal}`;
+
+  // Precio final por escenario (va en el mismo bloque que la posición: hoja 2 del cultivo)
+  const deltas = ESC_TABLA.slice();
+  if (!deltas.some(x => Math.abs(x - d) < 1e-9)) deltas.push(d);
+  deltas.sort((a, z) => a - z);
+  const filas = deltas.map(dd => {
+    const a = escPrecioFinal(c, dd, false), pr = escPrecioFinal(c, dd, est);
+    return `<tr class="${Math.abs(dd - d) < 1e-9 ? 'hot' : ''}">
+      <td class="l">${Math.abs(dd) < 1e-9 ? 'Sin cambios' : escSig(dd * 100, 0) + '%'}</td><td>${escF(M * (1 + dd))}</td><td>${escF(a)}</td>
+      ${hay ? `<td><b>${escF(pr)}</b></td><td class="${escPdfCls(pr - a)}">${escSig(pr - a)}</td><td class="${escPdfCls(pr - a)}">${escUsdM((pr - a) * disp)}</td>` : ''}
+    </tr>`;
+  }).join('');
+  const b3 = `<div class="escpdf-h">${lbl} · precio final por escenario <span>u$s/tn</span></div>
+    <table class="escpdf-t"><thead><tr><th class="l">Mercado</th><th>Precio</th><th>Actual</th>
+      ${hay ? '<th>Con estrategia</th><th>Dif. u$s/tn</th><th>Dif. total</th>' : ''}</tr></thead><tbody>${filas}</tbody></table>
+  </div>`;
+  return [b1, b2 + b3];
+}
+
+function escPdfConsolidado(d) {
+  let tAct = 0, tProp = 0, tCosto = 0, tDisp = 0;
+  const partes = new Set(escCrops().filter(escEsGrupo).flatMap(escBase));
+  const rows = escCrops().map(x => {
+    const grupo = escEsGrupo(x), disp = escDisp(x), hay = escLegs(x).length > 0;
+    const iA = escIngreso(x, d, false), iP = escIngreso(x, d, true), costo = escCostoProp(x);
+    const rA = escResumenTn(x, false), rP = escResumenTn(x, true), eleg = grupo ? null : escElegida(x);
+    if (!grupo) { tAct += iA; tProp += iP; tCosto += costo; tDisp += disp; }
+    return `<tr class="${grupo ? 'grupo' : ''}${partes.has(x) ? ' sub' : ''}">
+      <td class="l"><b>${escLbl(x)}</b>${hay && eleg ? `<div class="escpdf-mini">${escHtml(eleg.nombre)}</div>` : ''}</td>
+      <td>${escF(disp, 0)}</td>
+      <td>${escPct(rA.pctBaja)}${hay ? `<div class="escpdf-mini escpdf-prop">→ ${escPct(rP.pctBaja)}</div>` : ''}</td>
+      <td>${escF(iA / disp)}</td><td>${hay ? `<b>${escF(iP / disp)}</b>` : '—'}</td>
+      <td class="${hay ? escPdfCls((iP - iA) / disp) : ''}">${hay ? escSig((iP - iA) / disp) : ''}</td>
+      <td>${hay ? escF(costo / disp, 2) : '—'}</td>
+      <td class="${hay ? escPdfCls(iP - iA) : ''}">${hay ? escUsdM(iP - iA) : ''}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="escpdf-blk" data-hoja="nueva">
+    <div class="escpdf-sec"><span class="escpdf-sec-t">Consolidado</span><span class="escpdf-sec-e">${escPdfEsc(d)} · u$s/tn salvo indicación</span></div>
+    <table class="escpdf-t escpdf-cons"><thead><tr>
+      <th class="l">Cultivo</th><th>Prod. tn</th><th>Cob. baja</th><th>Precio final actual</th><th>Con estrategia</th><th>Dif.</th><th>Primas</th><th>Resultado</th>
+    </tr></thead><tbody>${rows}
+      <tr class="tot"><td class="l">Total</td><td>${escF(tDisp, 0)}</td><td></td><td colspan="2" class="l">ingreso ${escUsdM(tAct).slice(1)} → ${escUsdM(tProp).slice(1)}</td><td></td>
+        <td>${tDisp ? escF(tCosto / tDisp, 2) : '—'}</td><td class="${escPdfCls(tProp - tAct)}">${escUsdM(tProp - tAct)}</td></tr>
+    </tbody></table>
+    <div class="escpdf-nota">El total no suma dos veces el maíz (Maíz total = temprano + tardío). Resultado = ingreso con la estrategia − ingreso actual, en u$s totales.</div>
+  </div>`;
+}
+
+function escPdfNotas() {
+  return `<div class="escpdf-blk"><div class="escpdf-nota">
+    <b>Cómo se calcula.</b> Precio final = (tn fijadas × precio fijado + tn a fijar y sin vender × mercado del escenario
+    + resultado a vencimiento de los futuros y opciones abiertos + resultado de la estrategia) ÷ producción disponible.
+    Primas de A3; otras plazas (Kansas) = MATBA + basis fijo. Precios indicativos.
+  </div></div>`;
+}
+
+// Pasa cada bloque a imagen y los acomoda en hojas A5; un bloque que no entra en lo que
+// queda de la hoja pasa a la siguiente (solo se corta si es más alto que una hoja entera).
+// data-hoja="nueva": el bloque arranca hoja (cada cultivo y el consolidado).
+async function escPdfArmar(host) {
+  const pdf = new window.jspdf.jsPDF({ unit: 'pt', format: 'a5', orientation: 'portrait' });
+  const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight(), k = pw / ESC_PDF_W;
+  const util = ESC_PDF_H - ESC_PDF_PIE;
+  let y = 0;   // la portada arranca pegada arriba
+  for (const blk of [...host.children]) {
+    const cv = await html2canvas(blk, { scale: 2, backgroundColor: '#ffffff', logging: false });
+    const h = blk.offsetHeight, r = cv.height / h;
+    const nueva = blk.dataset.hoja === 'nueva' && y > ESC_PDF_H / 3;   // en la portada el primer cultivo sigue abajo
+    if (y > ESC_PDF_MARG && (nueva || y + Math.min(h, util - ESC_PDF_MARG) > util)) { pdf.addPage(); y = ESC_PDF_MARG; }
+    for (let desde = 0; desde < h;) {
+      const alto = Math.min(h - desde, util - y);
+      const trozo = document.createElement('canvas');
+      trozo.width = cv.width; trozo.height = Math.max(1, Math.round(alto * r));
+      trozo.getContext('2d').drawImage(cv, 0, Math.round(desde * r), cv.width, trozo.height, 0, 0, cv.width, trozo.height);
+      pdf.addImage(trozo.toDataURL('image/jpeg', 0.92), 'JPEG', 0, y * k, pw, alto * k);
+      desde += alto; y += alto;
+      if (desde < h) { pdf.addPage(); y = ESC_PDF_MARG; }
+    }
+  }
+  // Franja arriba (desde la hoja 2) y pie con número de hoja
+  const n = pdf.getNumberOfPages(), fecha = escPdfFecha();
+  for (let i = 1; i <= n; i++) {
+    pdf.setPage(i);
+    if (i > 1) { pdf.setFillColor(26, 107, 60); pdf.rect(0, 0, pw, 5, 'F'); }
+    pdf.setDrawColor(200, 164, 74); pdf.setLineWidth(0.6); pdf.line(18, ph - 20, pw - 18, ph - 20);
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(126, 133, 116);
+    pdf.text(`Espartina S.A. · Escenarios de posición · ${fecha} · precios indicativos`, 18, ph - 10);
+    pdf.text(`${i} / ${n}`, pw - 18, ph - 10, { align: 'right' });
+  }
+  const f = new Date(), dos = v => String(v).padStart(2, '0');
+  pdf.save(`Escenarios posicion ${f.getFullYear()}-${dos(f.getMonth() + 1)}-${dos(f.getDate())}.pdf`);
+}
+
+async function escPdf() {
+  if (!escPos) return;
+  const btn = document.getElementById('esc-btn-pdf'), txt = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Generando PDF…'; }
+  const host = document.createElement('div');
+  host.className = 'escpdf';
+  document.body.appendChild(host);
+  try {
+    await escPdfLibs();
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    const d = escState.delta, bloques = [escPdfCabecera(d)];
+    escCrops().forEach(c => bloques.push(...escPdfCultivo(c, d, escPdfGrafico(c, d, host))));
+    bloques.push(escPdfConsolidado(d), escPdfNotas());
+    host.innerHTML = bloques.join('');
+    await Promise.all([...host.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
+    await escPdfArmar(host);
+  } catch (e) {
+    alert('No pude generar el PDF: ' + e.message);
+  } finally {
+    host.remove();
+    if (btn) { btn.disabled = false; btn.innerHTML = txt; }
+  }
 }
 
 // ═══════════════════════════════════════════════════
