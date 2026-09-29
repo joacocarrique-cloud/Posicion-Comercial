@@ -1918,7 +1918,10 @@ body {
 }
 .dv-chart-canvas-wrap {
   position: relative;
-  height: 320px;
+  height: 560px;
+}
+@media (max-width: 768px) {
+  .dv-chart-canvas-wrap { height: 380px; }
 }
 
 /* Table */

@@ -614,7 +614,6 @@ function dvRenderOverlayChart(campaigns){
   // Campañas alineadas por DÍAS AL VENCIMIENTO (no por número de rueda): cada contrato
   // empieza a cotizar en una fecha distinta, así se comparan momentos equivalentes.
   const ptsOf=k=>campaigns[k].filter(p=>p.dte!=null&&p.dte>=0).map(p=>({x:p.dte,y:p.precio}));
-  let xMax=0;visible.forEach(k=>ptsOf(k).forEach(p=>{if(p.x>xMax)xMax=p.x;}));
   const datasets=[];
   visible.forEach(k=>{
     const ci=campKeys.indexOf(k);
@@ -627,7 +626,7 @@ function dvRenderOverlayChart(campaigns){
     const m=dvCalcMetrics(campaigns[k]);const pts=ptsOf(k);
     if(m&&pts.length)datasets.push({label:'Prom '+dvGetCampLabel(parseInt(k)),data:[{x:Math.max(...pts.map(p=>p.x)),y:m.avg},{x:Math.min(...pts.map(p=>p.x)),y:m.avg}],borderColor:color+'55',borderWidth:1,borderDash:[6,6],pointRadius:0,tension:0});
   });
-  dvRefDatasets(2).forEach(d=>{d.data=[{x:xMax,y:d.data[0]},{x:0,y:d.data[0]}];datasets.push(d);});
+  // Sin líneas de Precio Objetivo / Dolor al comparar campañas: sólo se muestran en "Detalle campaña"
   const ctx=document.getElementById('dv-chart-overlay').getContext('2d');
   dvOverlayChart=new Chart(ctx,{type:'line',data:{datasets},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'nearest',axis:'x',intersect:false},
     plugins:{legend:{display:true,position:'top',labels:{filter:item=>!item.text.startsWith('Prom'),font:{family:'JetBrains Mono',size:11},boxWidth:16,boxHeight:2,padding:12}},
