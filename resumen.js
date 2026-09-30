@@ -626,17 +626,32 @@ function rsLineUp() {
   const R = RS_REGLAS.lineup;
   const sec = { id: 'lineup', titulo: 'Line-Up y demanda', hallazgos: [], html: '' };
   if (typeof luData === 'undefined' || !luData) { sec.hallazgos.push(rsHall('info', 5, 'Sin datos de Line-Up', 'Todavía no se cargaron compras y DJVE (se cargan al abrir la pestaña Line-Up).', '', '')); return sec; }
+  const hasta = luMesTxt(luMesesRef().m1);
   R.productos.forEach(p => {
     const camp = luCampDefault(p);
-    const co = camp ? luCompras(p, camp) : null;
-    if (!co || !(co.djve > 0)) return;
-    const cob = co.total / co.djve;
-    const falta = co.djve - co.total;
-    const nom = `${LU_PRODS[p].nombre} ${camp}`;
-    const txt = `La exportación compró ${luMilT(co.total)} contra ${luMilT(co.djve)} de DJVE (${rsF(cob * 100, 0)}% cubierto).`;
-    if (cob < R.coberturaAlta) sec.hallazgos.push(rsHall('oportunidad', 50, `${nom}: presión compradora alta`, `${txt} Le faltan ${luMilT(falta)} por originar.`, `Compras / DJVE < ${R.coberturaAlta * 100}%`, 'Buen momento para ofrecer mercadería y negociar precio / condiciones.'));
-    else if (cob > R.coberturaBaja) sec.hallazgos.push(rsHall('info', 25, `${nom}: exportación cubierta`, `${txt} Compró ${luMilT(-falta)} más de lo declarado.`, `Compras / DJVE > ${R.coberturaBaja * 100}%`, 'Menos apuro comprador: no esperar mejoras por demanda de corto plazo.'));
-    else sec.hallazgos.push(rsHall('info', 15, `${nom}: demanda equilibrada`, txt, 'Compras / DJVE entre 95% y 105%', ''));
+    luNecesidad(p, camp).forEach(n => {
+      const nom = `${LU_PRODS[p].nombre} ${camp}` + (LU_PRODS[p].nec.length > 1 ? ` · ${n.def.lbl.replace(/\s*\(.*\)/, '').toLowerCase()}` : '');
+      const txt = n.def.sec === 'ind'
+        ? `Sus DJVE de harina a embarcar hasta fin de ${hasta} equivalen a ${luT(n.compromisos)} de poroto${n.usaLU ? ' (según line-up)' : ''} y compró ${luT(n.comprado)} de la campaña (sin contar la molienda para el mercado interno).`
+        : `Tiene que embarcar ${luT(n.compromisos)} hasta fin de ${hasta}${n.usaLU ? ' (según line-up)' : ''} y compró ${luT(n.comprado)} de la campaña.`;
+      const ritmo = n.ritmo > 0 ? ` Compra ${luT(n.semanal)}/sem y embarca ≈ ${luT(n.ritmo)}/sem.` : '';
+      const regla = `Necesidad = DJVE a embarcar hasta fin de ${hasta} − compras`;
+      if (n.nivel === 'alta') sec.hallazgos.push(rsHall('oportunidad', 50, `${nom}: presión compradora alta`, `${txt} Le faltan ${luT(n.falta)} en disponible.${ritmo}`, regla, 'Buen momento para ofrecer disponible y negociar precio / condiciones.'));
+      else if (n.nivel === 'media') sec.hallazgos.push(rsHall('info', 30, `${nom}: presión compradora media`, `${txt} Tiene comprado ≈ ${luSemTxt(n.semanas)} semanas de embarque por delante.${ritmo}`, `${regla}; menos de ${R.semanasCobertura} semanas de cobertura`, n.semanal < n.ritmo ? 'Compra menos de lo que embarca: la presión puede subir en las próximas semanas.' : ''));
+      else sec.hallazgos.push(rsHall('info', 20, `${nom}: exportación cubierta en el corto plazo`, `${txt}${n.semanas != null ? ` Tiene comprado ≈ ${luSemTxt(n.semanas)} semanas de embarque por delante.` : ''}${ritmo}`, `${regla}; más de ${R.semanasCobertura} semanas de cobertura`, 'Menos apuro comprador en disponible: no esperar mejoras por demanda de corto plazo.'));
+    });
+    // Cosecha nueva: compras anticipadas vs misma fecha del año anterior
+    const nueva = luCampNueva(p, camp);
+    const cn = nueva ? luCompras(p, nueva) : null;
+    const t = cn && (cn.sect.tot.hay ? cn.sect.tot : cn.sect.exp);
+    if (t && t.hayPrev && t.prevTotal > 0) {
+      const v = t.total / t.prevTotal - 1;
+      if (Math.abs(v) >= R.cosechaNuevaVar) sec.hallazgos.push(rsHall(v > 0 ? 'oportunidad' : 'info', v > 0 ? 35 : 20,
+        `${LU_PRODS[p].nombre} ${nueva}: compras anticipadas ${v > 0 ? '+' : ''}${rsF(v * 100, 0)}% vs año anterior`,
+        `Exportación e industria llevan compradas ${luMilT(t.total)} de cosecha nueva contra ${luMilT(t.prevTotal)} a la misma fecha del año pasado.`,
+        `Var. compras cosecha nueva ≥ ±${R.cosechaNuevaVar * 100}%`,
+        v > 0 ? 'Hay demanda para preventa: evaluar fijar parte de la cosecha nueva.' : 'Demanda de cosecha nueva floja: sin apuro por fijar anticipado.'));
+    }
   });
   return sec;
 }

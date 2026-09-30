@@ -22,6 +22,22 @@ const LU_PRODS = {
   cebada:  { nombre: 'Cebada',  unidad: 't',            peso: { cebada: 1 }, incluir: ['cebada'], compras: ['cebada_forr', 'cebada_cerv'], djve: { 'CEBADA FORRAJERA': 1, 'CEBADA CERVECERA': 1 } },
   sorgo:   { nombre: 'Sorgo',   unidad: 't',            peso: { sorgo: 1 }, incluir: ['sorgo'], compras: ['sorgo'], djve: { 'SORGO': 1 } }
 };
+// Necesidad inmediata: por sector comprador, qué DJVE (t de producto → t de grano) y qué cargas del line-up
+// representan lo que tiene que embarcar. La exportación se mide en grano; en soja se suma la industria
+// (harina en poroto eq.), que es la que más compra.
+LU_PRODS.maiz.nec    = [{ sec: 'exp', lbl: 'Exportación', djve: { 'MAIZ': 1 }, lu: { maiz: 1 } }];
+LU_PRODS.soja.nec    = [{ sec: 'exp', lbl: 'Exportación (poroto)', djve: { 'SOJA': 1 }, lu: { soja_poroto: 1 } },
+                        { sec: 'ind', lbl: 'Industria (harina en poroto eq.)', djve: { 'SUBP. DE SOJA': 1 / LU_SOJA_COEF }, lu: { soja_harina: 1 / LU_SOJA_COEF } }];
+LU_PRODS.trigo.nec   = [{ sec: 'exp', lbl: 'Exportación', djve: { 'TRIGO PAN': 1 }, lu: { trigo: 1 } }];
+LU_PRODS.girasol.nec = [{ sec: 'exp', lbl: 'Exportación (grano)', djve: { 'GIRASOL': 1 }, lu: { gira_grano: 1 } }];
+LU_PRODS.cebada.nec  = [{ sec: 'exp', lbl: 'Exportación', djve: { 'CEBADA FORRAJERA': 1, 'CEBADA CERVECERA': 1 }, lu: { cebada: 1 } }];
+LU_PRODS.sorgo.nec   = [{ sec: 'exp', lbl: 'Exportación', djve: { 'SORGO': 1 }, lu: { sorgo: 1 } }];
+
+// Semanas de embarque ya compradas por delante: por debajo de este número la presión es media.
+function luSemanasMedia() {
+  return (typeof RS_REGLAS !== 'undefined' && RS_REGLAS.lineup && RS_REGLAS.lineup.semanasCobertura) || 4;
+}
+
 const LU_GRUPO_LBL = { soja_poroto: 'poroto', soja_harina: 'harina', soja_aceite: 'aceite', gira_grano: 'grano', gira_aceite: 'aceite', gira_harina: 'harina' };
 
 const LU_ZONAS = [
@@ -116,6 +132,22 @@ function luZona(p) {
 .lu-setup{background:var(--es-gold-light);border:1px solid var(--es-gold);border-radius:var(--radius);padding:16px 18px;font-size:12.5px;color:#6d4f08;line-height:1.6}
 .lu-setup code{font-family:var(--mono);background:#fff;padding:1px 5px;border-radius:4px}
 .lu-loading{font-size:12px;color:var(--text-3)}
+.lu-nec-grid{display:grid;gap:14px}
+.lu-nec-grid.multi{grid-template-columns:1fr 1fr}
+.lu-nec-grid.multi .lu-big{font-size:28px}
+@media (max-width:640px){.lu-nec-grid.multi{grid-template-columns:1fr}}
+.lu-nec-t{font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+.lu-nec .lu-need-top{gap:18px}
+.lu-nec-tab td:first-child{white-space:normal}
+.lu-nec-tab td:first-child .t{display:block}
+.lu-g2>.lu-kpis{align-self:start}
+.lu-nueva td:first-child,.lu-nueva td:last-child{white-space:normal}
+.lu-nueva td:last-child .t{display:block}
+.lu-mini{position:relative;display:flex;align-items:flex-end;gap:6px;height:70px;border-bottom:1px solid var(--border)}
+.lu-mini>i{flex:1;border-radius:3px 3px 0 0}
+.lu-mini>b{position:absolute;left:0;right:0;height:0;border-top:2px dashed var(--text)}
+.lu-mini-lbl{display:flex;gap:6px;margin-top:4px}
+.lu-mini-lbl span{flex:1;text-align:center;font:10px var(--mono);color:var(--text-3)}
 `;
   const st = document.createElement('style');
   st.id = 'lu-styles';
@@ -256,7 +288,7 @@ function luCompras(prodKey, camp) {
   const P = LU_PRODS[prodKey], co = luData && luData.compras && luData.compras.productos;
   if (!co) return null;
   const CAMPOS = ['semanal', 'total', 'hecho', 'afijar', 'fijado', 'saldo', 'djve'];
-  const vacio = () => ({ semanal: 0, total: 0, hecho: 0, afijar: 0, fijado: 0, saldo: 0, djve: 0, prevTotal: 0, hayPrev: false, fecha: null, hay: false });
+  const vacio = () => ({ semanal: 0, total: 0, hecho: 0, afijar: 0, fijado: 0, saldo: 0, djve: 0, prevTotal: 0, prevSemanal: 0, hayPrev: false, fecha: null, hay: false });
   const S = { exp: vacio(), ind: vacio(), tot: vacio() };
   P.compras.forEach(k => {
     const c = co[k] && co[k][camp];
@@ -266,7 +298,7 @@ function luCompras(prodKey, camp) {
       if (!e) return;
       const a = S[sec]; a.hay = true;
       CAMPOS.forEach(f => a[f] += e[f] || 0);
-      if (e.prev && e.prev.total != null) { a.prevTotal += e.prev.total; a.hayPrev = true; }
+      if (e.prev && e.prev.total != null) { a.prevTotal += e.prev.total; a.prevSemanal += e.prev.semanal || 0; a.hayPrev = true; }
       if (e.fecha) a.fecha = e.fecha;
     });
   });
@@ -299,28 +331,105 @@ function luCampanas(prodKey) {
   return [...set].sort();
 }
 
+// Campaña que se está embarcando: la que tiene más DJVE con embarque en el mes en curso y el siguiente.
+// Si ninguna tiene DJVE en esa ventana, la última campaña con DJVE relevantes.
 function luCampDefault(prodKey) {
   const cs = luCampanas(prodKey);
   if (!cs.length) return null;
+  const pesos = LU_PRODS[prodKey].nec[0].djve;
+  let best = null, bestV = 0;
+  cs.forEach(c => { const t = luDjveTramos(c, pesos); const v = t ? t.mes + t.sig : 0; if (v > bestV) { bestV = v; best = c; } });
+  if (best) return best;
   const dj = cs.map(c => (luCompras(prodKey, c) || {}).djve || 0);
   const mx = Math.max(...dj);
   for (let i = cs.length - 1; i >= 0; i--) if (dj[i] >= 0.3 * mx && mx > 0) return cs[i];
   return cs[cs.length - 1];
 }
 
-function luDjveMes(prodKey, offset) {
-  const dj = luData && luData.djve && luData.djve.campanas;
-  if (!dj) return null;
-  const hoy = new Date(); const d = new Date(hoy.getFullYear(), hoy.getMonth() + offset, 1);
-  const lbl = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][d.getMonth()] + '-' + d.getFullYear();
-  const pesos = LU_PRODS[prodKey].djve;
-  let tot = 0, hay = false;
-  Object.values(dj).forEach(c => {
-    const i = (c.meses || []).indexOf(lbl);
-    if (i < 0) return;
-    Object.keys(pesos).forEach(n => { const f = c.filas && c.filas[n]; if (f) { tot += (f.meses[i] || 0) * pesos[n]; hay = true; } });
+// Cosecha nueva: la campaña siguiente a la que se está embarcando (si SAGyP ya la informa).
+function luCampNueva(prodKey, vigente) {
+  const cs = luCampanas(prodKey), i = cs.indexOf(vigente);
+  return i >= 0 && i < cs.length - 1 ? cs[i + 1] : null;
+}
+
+const LU_MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+function luMesLbl(lbl) {            // "sep-2026" → 1° de septiembre de 2026
+  const m = String(lbl || '').toLowerCase().match(/^([a-z]{3})-(\d{4})$/);
+  const i = m ? LU_MES.indexOf(m[1]) : -1;
+  return i < 0 ? null : new Date(+m[2], i, 1);
+}
+function luMesTxt(d) { return LU_MES[d.getMonth()] + '-' + String(d.getFullYear()).slice(2); }
+function luMesesRef() {             // mes anterior, en curso y siguiente
+  const h = new Date();
+  return { ant: new Date(h.getFullYear(), h.getMonth() - 1, 1), m0: new Date(h.getFullYear(), h.getMonth(), 1), m1: new Date(h.getFullYear(), h.getMonth() + 1, 1) };
+}
+
+// DJVE de una campaña (t de grano) según mes de embarque: ya vencidas, mes en curso, mes siguiente y posteriores.
+function luDjveTramos(camp, pesos) {
+  const c = luData && luData.djve && luData.djve.campanas && luData.djve.campanas[camp];
+  if (!c || !c.meses || !c.filas) return null;
+  const { m0, m1 } = luMesesRef();
+  const r = { vencido: 0, mes: 0, sig: 0, despues: 0, hay: false };
+  c.meses.forEach((lbl, i) => {
+    const d = luMesLbl(lbl);
+    if (!d) return;
+    let v = 0;
+    Object.keys(pesos).forEach(n => { const f = c.filas[n]; if (f) { v += (f.meses[i] || 0) * pesos[n]; r.hay = true; } });
+    if (d < m0) r.vencido += v; else if (+d === +m0) r.mes += v; else if (+d === +m1) r.sig += v; else r.despues += v;
   });
-  return hay ? { t: tot, lbl } : null;
+  return r.hay ? r : null;
+}
+
+// Line-up (sin Uruguay) por semana de zarpada, ponderado por grupo de carga.
+function luFotoF0() { const iso = luData && luData.lineup && luData.lineup.fecha; return iso ? new Date(iso + 'T12:00:00') : new Date(); }
+function luSemDe(r, f0) {
+  if (!r.ets) return 0;
+  const d = Math.round((new Date(r.ets + 'T12:00:00') - f0) / 86400000);
+  return d < 7 ? 0 : d < 14 ? 1 : d < 21 ? 2 : 3;
+}
+function luSemanas(pesos) {
+  const f0 = luFotoF0(), sem = [0, 0, 0, 0];
+  luFilas().forEach(r => { const p = pesos[r.grupo]; if (p && !r.uy) sem[luSemDe(r, f0)] += r.t * p; });
+  return sem;
+}
+
+// Necesidad de compra inmediata, por sector comprador.
+// Compromisos = DJVE con embarque hasta fin del mes siguiente; si el line-up de las próximas 4 semanas
+// es mayor que lo declarado para este mes y el siguiente, se toma el line-up (hay DJVE por registrar).
+// Falta = compromisos − todo lo comprado de la campaña. Positivo: tiene que salir a comprar disponible.
+function luNecesidad(prodKey, camp) {
+  const co = camp ? luCompras(prodKey, camp) : null;
+  if (!co) return [];
+  return LU_PRODS[prodKey].nec.map(def => {
+    const s = co.sect[def.sec], dj = luDjveTramos(camp, def.djve);
+    if (!s || !s.hay || !dj) return null;
+    const sem = luSemanas(def.lu);
+    const lu4 = sem.reduce((a, b) => a + b, 0);
+    const ritmo = (sem[0] + sem[1]) / 2;            // embarque semanal: las 2 semanas más completas del line-up
+    const usaLU = lu4 > dj.mes + dj.sig;
+    const compromisos = dj.vencido + (usaLU ? lu4 : dj.mes + dj.sig);
+    const comprado = s.total * 1000;
+    const falta = compromisos - comprado;
+    const semanas = ritmo > 0 ? -falta / ritmo : null;  // + semanas de embarque ya compradas / − semanas sin comprar
+    const nivel = falta > 0 ? 'alta' : (semanas != null && semanas < luSemanasMedia() ? 'media' : 'baja');
+    return {
+      def, dj, sem, lu4, ritmo, usaLU, compromisos, comprado, falta, semanas, nivel, fecha: s.fecha,
+      semanal: s.semanal * 1000, prevSemanal: s.hayPrev ? s.prevSemanal * 1000 : null
+    };
+  }).filter(Boolean);
+}
+
+// Compra semanal de las últimas publicaciones de SAGyP (hoja "compras_hist" del Apps Script), en t.
+function luHistSemanal(prodKey, camp, sec) {
+  const h = luData && luData.comprasHist;
+  if (!h || !h.cols || !h.filas) return [];
+  const ix = {}; h.cols.forEach((k, i) => ix[k] = i);
+  const keys = LU_PRODS[prodKey].compras, porFecha = {};
+  h.filas.forEach(f => {
+    if (!keys.includes(f[ix.prod]) || f[ix.camp] !== camp || f[ix.sector] !== sec) return;
+    porFecha[f[ix.fecha]] = (porFecha[f[ix.fecha]] || 0) + (+f[ix.semanal] || 0);
+  });
+  return Object.keys(porFecha).sort().map(k => ({ fecha: k, t: porFecha[k] * 1000 }));
 }
 
 // ─── Render ───
@@ -350,8 +459,7 @@ function luRender() {
   const nBuques = new Set(mias.map(r => r.buque)).size;
 
   // semanas por ETS
-  const semOf = r => { if (!r.ets) return 0; const d = Math.round((new Date(r.ets + 'T12:00:00') - f0) / 86400000); return d < 7 ? 0 : d < 14 ? 1 : d < 21 ? 2 : 3; };
-  const sem = [0, 0, 0, 0]; mias.forEach(r => sem[semOf(r)] += w(r));
+  const sem = luSemanas(P.peso);
   let prev = null, prevTot = null;
   const aa = luData.anioAnterior;
   if (aa && aa.filas) {
@@ -373,7 +481,7 @@ function luRender() {
     .sort((a, b) => a.etb.localeCompare(b.etb) || b.t - a.t).slice(0, 14);
 
   const co = luCamp ? luCompras(luProd, luCamp) : null;
-  const djm = luDjveMes(luProd, 0), djm1 = luDjveMes(luProd, 1);
+  const nec = luNecesidad(luProd, luCamp), n0 = nec[0];
 
   body.innerHTML = `
     <div class="lu-bar">
@@ -385,13 +493,17 @@ function luRender() {
     </div>
     ${luError ? `<div class="lu-setup" style="margin-bottom:14px;">⚠️ No se pudo actualizar: ${luEsc(luError)}. Se muestran los últimos datos recibidos.</div>` : ''}
     <div class="lu-grid lu-g2">
-      ${luPanelCompras(P, co)}
+      ${luPanelNecesidad(P, nec)}
       <div class="lu-kpis">
         <div class="lu-kpi"><div class="k">Line-up nominado · ${luEsc(P.nombre)}</div><div class="v">${luT(totLU)}</div><div class="d">${P.unidad} · ${nBuques} buques · foto ${luFechaCorta(fotoIso)}</div></div>
         <div class="lu-kpi"><div class="k">vs misma fecha año anterior</div>${prevTot ? `<div class="v ${totLU >= prevTot ? 'lu-dn' : 'lu-up'}">${totLU >= prevTot ? '+' : ''}${Math.round((totLU / prevTot - 1) * 100)}%</div><div class="d">${luT(prevTot)} el ${luFechaCorta(aa.fecha)}-${aa.fecha.slice(2, 4)}</div>` : `<div class="v" style="font-size:15px;color:var(--text-3)">Sin histórico</div><div class="d">se completa con cargarHistorico() en el Apps Script</div>`}</div>
         <div class="lu-kpi"><div class="k">Saldo a fijar · exportación + industria</div><div class="v">${co ? luMilT(co.sect.tot.hay ? co.sect.tot.saldo : co.saldo) : '–'}</div><div class="d">${co ? 'exportación ' + luMilT(co.sect.exp.saldo) + (co.sect.ind.hay ? ' · industria ' + luMilT(co.sect.ind.saldo) : '') : ''}</div></div>
-        <div class="lu-kpi"><div class="k">DJVE con embarque en ${djm ? djm.lbl : 'el mes'}</div><div class="v">${djm ? luT(djm.t) : '–'}</div><div class="d">${djm1 ? djm1.lbl + ': ' + luT(djm1.t) : ''}</div></div>
+        <div class="lu-kpi"><div class="k">Compra semanal · ${n0 ? luEsc(n0.def.lbl.toLowerCase()) : 'exportación'}</div>${n0 ? `<div class="v ${n0.semanal >= n0.ritmo ? 'lu-dn' : 'lu-up'}">${luT(n0.semanal)}</div><div class="d">embarca ≈ ${luT(n0.ritmo)}/sem → el colchón ${n0.semanal >= n0.ritmo ? 'crece' : 'se achica'} ${luT(Math.abs(n0.semanal - n0.ritmo))}${n0.prevSemanal != null ? ` · año ant. ${luT(n0.prevSemanal)}` : ''}</div>` : '<div class="v">–</div>'}</div>
       </div>
+    </div>
+    <div class="lu-grid lu-g2">
+      ${luPanelCompras(P, co)}
+      ${luPanelNueva()}
     </div>
     <div class="lu-grid lu-g2">
       <div class="lu-card">
@@ -423,14 +535,13 @@ function luRender() {
     <div class="lu-note sep">
       <b>Fuentes:</b> line-up de ISA Agents (foto ${luFechaCorta(fotoIso)}); compras y DJVE de la SAGyP (${luEsc(luData.compras ? luData.compras.fecha : '–')}); DJVE por mes de embarque (${luEsc(luData.djve ? luData.djve.fecha : '–')}).
       Line-up: toneladas nominadas por buque (carga, no descarga), sin puertos de Uruguay. Soja en poroto equivalente: poroto + (harina + cascarilla) ÷ ${String(LU_SOJA_COEF).replace('.', ',')}; el aceite se lista en los buques pero no se suma, para no contar dos veces el mismo poroto.
-      Cobertura = compras de la exportación ÷ DJVE registradas; presión alta por debajo de 95%, media entre 95% y 105%, baja por encima.
+      Necesidad inmediata = DJVE con embarque hasta fin del mes siguiente (o el line-up de 4 semanas si es mayor) − todo lo comprado de la campaña. Presión alta si falta comprar; media si lo comprado de más cubre menos de ${luSemanasMedia()} semanas de embarque; baja por encima.
     </div>`;
 }
 
 function luPanelCompras(P, co) {
   if (!co) return `<div class="lu-card"><div class="lu-ch"><h3>Compras vs DJVE</h3></div><div class="lu-empty">Sin datos de compras para ${luEsc(P.nombre)}.</div></div>`;
   const diff = co.total - co.djve, cob = co.djve > 0 ? co.total / co.djve : null;
-  const lvl = cob == null ? 'baja' : cob < 0.95 ? 'alta' : cob < 1.05 ? 'media' : 'baja';
   const sc = Math.max(co.total, co.djve) || 1;
   const pct = v => (v / sc * 100).toFixed(2) + '%';
   const dAbs = Math.abs(diff);
@@ -440,11 +551,10 @@ function luPanelCompras(P, co) {
   if (LU_PRODS[luProd].compras.length > 1) extra += 'Suma cebada forrajera y cervecera. ';
   return `
     <div class="lu-card">
-      <div class="lu-ch"><h3>Compras vs DJVE · exportación ${luEsc(luCamp)}</h3><span>SAGyP al ${luEsc(luData.compras.fecha)}</span></div>
+      <div class="lu-ch"><h3>Cobertura de la campaña · exportación ${luEsc(luCamp)}</h3><span>SAGyP al ${luEsc(luData.compras.fecha)}</span></div>
       <div class="lu-need-top">
         <div><div class="lu-big" style="color:${diff >= 0 ? 'var(--es-green)' : '#a54132'}">${bigTxt}</div><div class="lu-lbl">${diff >= 0 ? 'Compras por encima de DJVE' : 'Falta comprar para cubrir DJVE'}</div></div>
         <div><div class="lu-big" style="font-size:26px">${cob == null ? '–' : Math.round(cob * 100) + '%'}</div><div class="lu-lbl">DJVE cubiertas con compras</div></div>
-        <div><span class="lu-pres ${lvl}">${lvl.toUpperCase()}</span><div class="lu-lbl">Presión compradora</div></div>
         <div><div class="lu-big" style="font-size:20px">${yoy == null ? '–' : `<span class="${yoy >= 0 ? 'lu-dn' : 'lu-up'}">${yoy >= 0 ? '+' : ''}${Math.round(yoy * 100)}%</span>`}</div><div class="lu-lbl">Compras export. vs año anterior</div></div>
       </div>
       <div class="lu-stack" title="Compras de la exportación frente a DJVE registradas">
@@ -458,9 +568,99 @@ function luPanelCompras(P, co) {
         <div><span class="lu-sw" style="background:#7fb3a6"></span>A fijar<b>${luMilT(co.afijar)}</b></div>
         <div><span class="lu-sw" style="background:${diff >= 0 ? 'var(--text)' : '#a54132'}"></span>${diff >= 0 ? 'Excedente sobre DJVE' : 'Falta comprar'}<b>${luMilT(dAbs)}</b></div>
       </div>
-      <div class="lu-note sep">La línea negra marca las DJVE registradas (${luMilT(co.djve)}). Por encima del 100% la exportación ya compró más de lo que declaró vender (está larga de físico); por debajo, tiene que salir a comprar. ${extra}</div>
+      <div class="lu-note sep">La línea negra marca las DJVE registradas (${luMilT(co.djve)}) de toda la campaña, embarquen cuando embarquen. Es la foto acumulada: la urgencia de corto plazo está en "Necesidad de compra inmediata". ${extra}</div>
       ${luTablaSectores(co)}
     </div>`;
+}
+
+// Semanas de embarque en texto (con ritmo casi nulo el número pierde sentido: se corta en 12).
+function luSemTxt(s) { const a = Math.abs(s); return a > 12 ? 'más de 12' : luF1(a); }
+
+function luTBig(t) { const [n, ...u] = luT(t).split(' '); return n + '<small>' + u.join(' ') + '</small>'; }
+
+// ─── Necesidad de compra inmediata (lo que falta comprar para lo que hay que embarcar ya) ───
+function luPanelNecesidad(P, nec) {
+  const titulo = `Necesidad de compra inmediata · ${luEsc(P.nombre)} ${luEsc(luCamp || '')}`;
+  if (!nec.length) return `<div class="lu-card"><div class="lu-ch"><h3>${titulo}</h3></div><div class="lu-empty">Faltan las DJVE por mes de embarque o las compras de SAGyP para esta campaña.</div></div>`;
+  const { ant, m0, m1 } = luMesesRef();
+  const multi = nec.length > 1;
+  const top = nec.map(n => {
+    const falta = n.falta > 0;
+    const sem = n.semanas == null ? 'Sin buques nominados para medir el ritmo de embarque.'
+      : falta ? `≈ ${luSemTxt(n.semanas)} semanas de embarque sin comprar.` : `≈ ${luSemTxt(n.semanas)} semanas de embarque ya compradas por delante.`;
+    return `<div class="lu-nec">
+      ${multi ? `<div class="lu-nec-t">${luEsc(n.def.lbl)}</div>` : ''}
+      <div class="lu-need-top">
+        <div><div class="lu-big" style="color:${falta ? '#a54132' : 'var(--es-green)'}">${falta ? '−' : '+'}${luTBig(Math.abs(n.falta))}</div><div class="lu-lbl">${falta ? 'Falta comprar para lo que tiene que embarcar' : 'Comprado por encima de lo que tiene que embarcar'}</div></div>
+        <div><span class="lu-pres ${n.nivel}">${n.nivel.toUpperCase()}</span><div class="lu-lbl">Presión compradora</div></div>
+      </div>
+      <div class="lu-lbl">${sem}</div>
+    </div>`;
+  }).join('');
+  const td = f => nec.map(n => `<td class="r">${f(n)}</td>`).join('');
+  const th = multi ? nec.map(n => `<th class="r">${luEsc(n.def.lbl.replace(/\s*\(.*\)/, ''))}</th>`).join('') : '<th class="r"></th>';
+  const fCompras = luData.compras && luData.compras.fecha;
+  const otrasFechas = nec.filter(n => n.fecha && n.fecha !== fCompras).map(n => `${n.def.lbl.replace(/\s*\(.*\)/, '').toLowerCase()} al ${n.fecha}`);
+  return `
+    <div class="lu-card">
+      <div class="lu-ch"><h3>${titulo}</h3><span>hasta fin de ${luMesTxt(m1)}</span></div>
+      <div class="lu-nec-grid ${multi ? 'multi' : ''}">${top}</div>
+      <div class="lu-tw" style="margin-top:14px"><table class="lu-table lu-sect lu-nec-tab">
+        <thead><tr><th>Toneladas de grano</th>${th}</tr></thead>
+        <tbody>
+          <tr><td>DJVE con embarque hasta ${luMesTxt(ant)} <span class="t">· se toman como embarcadas</span></td>${td(n => luT(n.dj.vencido))}</tr>
+          <tr><td>DJVE con embarque en ${luMesTxt(m0)}</td>${td(n => n.usaLU ? `<span class="t">${luT(n.dj.mes)}</span>` : luT(n.dj.mes))}</tr>
+          <tr><td>DJVE con embarque en ${luMesTxt(m1)}</td>${td(n => n.usaLU ? `<span class="t">${luT(n.dj.sig)}</span>` : luT(n.dj.sig))}</tr>
+          <tr><td>Line-up próximas 4 semanas</td>${td(n => n.usaLU ? `<b>${luT(n.lu4)}</b> ▲` : `<span class="t">${luT(n.lu4)}</span>`)}</tr>
+          <tr class="tot"><td>Tiene que embarcar hasta fin de ${luMesTxt(m1)}</td>${td(n => luT(n.compromisos))}</tr>
+          <tr><td>Comprado de la campaña ${luEsc(luCamp)}</td>${td(n => '− ' + luT(n.comprado))}</tr>
+          <tr class="tot"><td>Falta comprar (+) / comprado de más (−)</td>${td(n => `<span class="${n.falta > 0 ? 'lu-up' : 'lu-dn'}">${n.falta > 0 ? '+' : '−'}${luT(Math.abs(n.falta))}</span>`)}</tr>
+          <tr><td>Compra semanal <span class="t">· año anterior</span></td>${td(n => luT(n.semanal) + (n.prevSemanal != null ? ` <span class="t">· ${luT(n.prevSemanal)}</span>` : ''))}</tr>
+          <tr><td>Embarque semanal <span class="t">· line-up, próximas 2 semanas</span></td>${td(n => luT(n.ritmo))}</tr>
+        </tbody></table></div>
+      ${luMiniSemanal(luHistSemanal(luProd, luCamp, nec[0].def.sec), nec[0].ritmo, nec[0].def.lbl)}
+      <div class="lu-note sep">Lo que la exportación declaró que va a embarcar hasta fin de ${luMesTxt(m1)}, contra todo lo que ya compró de la campaña. Si falta, tiene que salir a comprar disponible ya.
+        ▲ = el line-up supera lo declarado para ${luMesTxt(m0)} y ${luMesTxt(m1)} (hay DJVE por registrar): se toma el line-up.
+        ${nec.some(n => n.def.sec === 'ind') ? `Industria: DJVE y line-up de harina y pellets pasados a poroto (÷ ${String(LU_SOJA_COEF).replace('.', ',')}); no incluye la molienda para el mercado interno, así que su necesidad real es algo mayor.` : ''}
+        Compras SAGyP al ${luEsc(fCompras || '–')}${otrasFechas.length ? ' (' + luEsc(otrasFechas.join(', ')) + ')' : ''}; DJVE por mes de embarque al ${luEsc(luData.djve ? luData.djve.fecha : '–')}.</div>
+    </div>`;
+}
+
+function luMiniSemanal(hist, ritmo, lbl) {
+  const head = `<div class="lu-ch" style="margin:16px 0 8px"><h3>Compra semanal · ${luEsc(lbl.toLowerCase())}</h3><span>línea punteada: embarque semanal</span></div>`;
+  if (hist.length < 2) return head + '<div class="lu-note" style="margin-top:0">La tendencia aparece cuando el Apps Script haya guardado al menos dos publicaciones semanales de SAGyP (se guardan solas desde la nueva versión).</div>';
+  const h = hist.slice(-10), mx = Math.max(ritmo, ...h.map(x => x.t)) || 1;
+  return head + `<div class="lu-mini">${h.map(x => `<i title="${luFechaCorta(x.fecha)}: ${luT(x.t)}" style="height:${Math.max(x.t / mx * 100, 1).toFixed(1)}%;background:${x.t >= ritmo ? 'var(--es-green)' : '#a54132'}"></i>`).join('')}${ritmo > 0 ? `<b style="bottom:${(ritmo / mx * 100).toFixed(1)}%"></b>` : ''}</div>
+    <div class="lu-mini-lbl">${h.map(x => `<span>${luFechaCorta(x.fecha)}</span>`).join('')}</div>
+    <div class="lu-note" style="margin-top:6px">Verde: compró más de lo que embarca (el colchón crece). Rojo: compró menos (el colchón se achica y la presión sube).</div>`;
+}
+
+// ─── Cosecha nueva: compras anticipadas de todos los granos vs misma fecha del año anterior ───
+function luPanelNueva() {
+  const filas = Object.keys(LU_PRODS).map(k => {
+    const nueva = luCampNueva(k, luCampDefault(k));
+    const co = nueva ? luCompras(k, nueva) : null;
+    if (!co) return null;
+    const t = co.sect.tot.hay ? co.sect.tot : co.sect.exp;
+    if (!(t.total >= 10) && !(t.prevTotal >= 10)) return null;   // menos de 10 mil t: sin compras anticipadas que mirar
+    return { k, nueva, t };
+  }).filter(Boolean);
+  const varTxt = t => {
+    if (!t.hayPrev || !(t.prevTotal > 0)) return '–';
+    const v = t.total / t.prevTotal - 1;
+    return `<span class="${v >= 0 ? 'lu-dn' : 'lu-up'}">${v >= 0 ? '+' : ''}${Math.round(v * 100)}%</span>`;
+  };
+  return `<div class="lu-card">
+    <div class="lu-ch"><h3>Cosecha nueva · compras anticipadas</h3><span>exportación + industria · miles de t</span></div>
+    ${filas.length ? `<div class="lu-tw"><table class="lu-table lu-sect lu-nueva">
+      <thead><tr><th>Grano</th><th class="r">Comprado</th><th class="r">Año ant.</th><th class="r">Var.</th><th class="r">Precio hecho</th><th class="r">Semanal · año ant.</th></tr></thead>
+      <tbody>${filas.map(({ k, nueva, t }) => `<tr${k === luProd ? ' class="tot"' : ''}><td>${LU_PRODS[k].nombre} ${nueva}</td>
+        <td class="r">${luF1(t.total)}</td><td class="r">${t.hayPrev ? luF1(t.prevTotal) : '–'}</td><td class="r">${varTxt(t)}</td>
+        <td class="r">${t.total > 0 ? Math.round(t.hecho / t.total * 100) + '%' : '–'}</td>
+        <td class="r">${luF1(t.semanal)}${t.hayPrev ? ` <span class="t">· ${luF1(t.prevSemanal)}</span>` : ''}</td></tr>`).join('')}</tbody></table></div>`
+    : '<div class="lu-empty">SAGyP todavía no informa compras de cosecha nueva.</div>'}
+    <div class="lu-note sep">Cuánto adelantó la demanda de la próxima campaña contra la misma fecha del año anterior. Más compras que el año pasado = más apetito comprador para preventa; menos = la demanda de cosecha nueva todavía no aparece. "Precio hecho" es la parte con precio; el resto es a fijar.</div>
+  </div>`;
 }
 
 function luBarras(arr, tot) {

@@ -100,7 +100,9 @@ const RS_REGLAS = {
   // ─── Line-Up ───
   lineup: {
     productos: ['soja', 'maiz', 'trigo'],
-    coberturaAlta: 0.95,          // compras / DJVE < 95% → presión compradora alta
-    coberturaBaja: 1.05,          // > 105% → exportación cubierta
+    // Presión compradora = necesidad inmediata: DJVE (o line-up) a embarcar hasta fin del mes siguiente − compras.
+    // Falta comprar → alta; comprado de más pero menos de estas semanas de embarque → media; más → baja.
+    semanasCobertura: 4,
+    cosechaNuevaVar: 0.25,        // compras de cosecha nueva ±25% vs misma fecha año anterior → aviso
   },
 };
