@@ -48,8 +48,8 @@ const CL_CFG = {
 };
 const CL_VIEWS = { chart: 'Gráfico', map: 'Mapa' };
 const CL_PERIODOS = [
-  { key: '60', label: 'Últimos 60 días' },
   { key: '180', label: 'Últimos 180 días' },
+  { key: '60', label: 'Últimos 60 días' },
   { key: '15', label: 'Pronóstico 15 días' }
 ];
 
@@ -116,7 +116,7 @@ const CL_PERIODOS = [
         <span style="font-size:28px;">🌦</span>
         <div>
           <div class="cl-title">Clima por cultivo</div>
-          <div class="cl-sub">Lluvia y temperatura de los últimos 60 y 180 días y pronóstico a 15 días, ponderados por zona productiva. Se actualiza solo al abrir el módulo.</div>
+          <div class="cl-sub">Lluvia y temperatura de los últimos 180 y 60 días y pronóstico a 15 días, ponderados por zona productiva. Se actualiza solo al abrir el módulo.</div>
         </div>
       </div>
       <div class="cl-src">
