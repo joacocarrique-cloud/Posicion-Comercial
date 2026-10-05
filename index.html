@@ -15,7 +15,7 @@
     <div class="header-logo">🌾</div>
     <div>
       <div class="header-title">Suite Comercial · Espartina S.A.</div>
-      <div class="header-subtitle">Coberturas · FAS & Retenciones · Pases & Tasas · Spreads · Desvío de Precios · Line-Up · Resumen</div>
+      <div class="header-subtitle">Coberturas · FAS & Retenciones · Pases & Tasas · Spreads · Desvío de Precios · Line-Up · Resumen · Clima</div>
     </div>
     <span class="header-badge" id="app-version" title="Versión desplegada de la Suite">v10 · 24-sep-26</span>
   </div>
@@ -31,6 +31,7 @@
       <button class="mod-pill" id="pill-lineup" onclick="toggleLineUp()">🚢 Line-Up</button>
       <button class="mod-pill" id="pill-resumen" onclick="toggleResumen()">🧭 Resumen</button>
       <button class="mod-pill" id="pill-escenarios" onclick="toggleEscenarios()">🎯 Escenarios</button>
+      <button class="mod-pill" id="pill-clima" onclick="toggleClima()">🌦 Clima</button>
     </nav>
     <button class="btn-export-pdf" onclick="exportarPDF()" title="Exportar a PDF el módulo activo">🖨 PDF</button>
   </div>
@@ -415,6 +416,46 @@
           <span class="ret-panel-result-val" id="ret-crush-fas" style="color:var(--es-gold);">342.09</span>
         </div>
         <div class="ret-panel-margin" id="ret-crush-margin"></div>
+      </div>
+
+      <!-- ═══ CRUSHING GIRASOL (paridad de molienda: precios internos y exportación) ═══ -->
+      <div class="ret-panel" id="ret-panel-gira" style="display:none;">
+        <div class="ret-panel-title" style="color:var(--es-gold);">Crushing girasol</div>
+        <div class="gira-grupo">Calidad y rendimientos</div>
+        <div class="ret-panel-inputs">
+          <div class="field"><label>Humedad %</label><input type="number" id="gira-hum" value="8" step="0.1" oninput="retCalc()" style="width:70px;"></div>
+          <div class="field"><label>Mat. ext. %</label><input type="number" id="gira-matext" value="4" step="0.1" oninput="retCalc()" style="width:70px;"></div>
+          <div class="field"><label>MG s/SSSL %</label><input type="number" id="gira-mg" value="52" step="0.1" oninput="retCalc()" style="width:70px;"></div>
+          <div class="field"><label>Extracción %</label><input type="number" id="gira-extr" value="95" step="0.1" oninput="retCalc()" style="width:70px;" title="Eficiencia de extracción de aceite sobre la materia grasa tal cual"></div>
+          <div class="field"><label>Cáscara %</label><input type="number" id="gira-casc" value="12" step="0.1" oninput="retCalc()" style="width:70px;"></div>
+        </div>
+        <div class="gira-grupo">Aceite</div>
+        <div class="ret-panel-inputs">
+          <div class="field"><label>FOB · Sheet</label><input type="number" id="gira-ace-fob" value="1275" step="1" oninput="retCalc()" style="width:80px;" title="Se completa con el FOB de aceite de girasol del Sheet FOB para el mes elegido. Si lo editás, queda tu valor hasta recargar."></div>
+          <div class="field"><label>FOB oficial</label><input type="number" id="gira-ace-fobof" value="" step="1" placeholder="= FOB" oninput="retCalc()" style="width:80px;" title="Base de cálculo de la retención. Vacío = igual al FOB."></div>
+          <div class="field"><label>DEX %</label><input type="number" id="gira-ace-dex" value="4.5" step="0.05" oninput="retCalc()" style="width:65px;"></div>
+          <div class="field"><label>Fobbing</label><input type="number" id="gira-ace-fobbing" value="30" step="0.5" oninput="retCalc()" style="width:65px;"></div>
+          <div class="field"><label>Flete int.</label><input type="number" id="gira-ace-flete" value="0" step="0.5" oninput="retCalc()" style="width:65px;"></div>
+          <div class="field"><label>Precio interno</label><input type="number" id="gira-ace-int" value="1200" step="1" oninput="retCalc()" style="width:80px;"></div>
+        </div>
+        <div class="gira-grupo">Subproducto (pellet)</div>
+        <div class="ret-panel-inputs">
+          <div class="field"><label>FOB</label><input type="number" id="gira-sub-fob" value="140" step="1" oninput="retCalc()" style="width:80px;"></div>
+          <div class="field"><label>FOB oficial</label><input type="number" id="gira-sub-fobof" value="" step="1" placeholder="= FOB" oninput="retCalc()" style="width:80px;"></div>
+          <div class="field"><label>DEX %</label><input type="number" id="gira-sub-dex" value="4" step="0.05" oninput="retCalc()" style="width:65px;"></div>
+          <div class="field"><label>Fobbing</label><input type="number" id="gira-sub-fobbing" value="10" step="0.5" oninput="retCalc()" style="width:65px;"></div>
+          <div class="field"><label>Flete int.</label><input type="number" id="gira-sub-flete" value="0" step="0.5" oninput="retCalc()" style="width:65px;"></div>
+          <div class="field"><label>Precio interno</label><input type="number" id="gira-sub-int" value="230" step="1" oninput="retCalc()" style="width:80px;"></div>
+        </div>
+        <div class="gira-grupo">Compra del girasol e industria</div>
+        <div class="ret-panel-inputs">
+          <div class="field"><label>Precio base (u$s)</label><input type="number" id="gira-base" value="460" step="1" oninput="retCalc()" style="width:80px;"></div>
+          <div class="field"><label>Prima (u$s)</label><input type="number" id="gira-prima" value="0" step="0.5" oninput="retCalc()" style="width:70px;"></div>
+          <div class="field"><label>Bonificación %</label><input type="number" id="gira-bonif" value="15.5" step="0.1" oninput="retCalc()" style="width:70px;"></div>
+          <div class="field"><label>Gasto industrial</label><input type="number" id="gira-gasto" value="30" step="0.5" oninput="retCalc()" style="width:75px;" title="u$s por tonelada de girasol procesada"></div>
+          <span class="gira-ref" id="gira-ref-disp"></span>
+        </div>
+        <div id="gira-out"></div>
       </div>
 
       <div class="ret-panel" id="ret-panel-grano-2" style="display:none;">
@@ -1050,6 +1091,7 @@ window.addEventListener('afterprint', function() {
 <script src="reglas_resumen.js"></script>
 <script src="resumen.js"></script>
 <script src="escenarios.js"></script>
+<script src="clima.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

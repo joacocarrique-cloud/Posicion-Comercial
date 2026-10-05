@@ -7,7 +7,8 @@ function isWorkspaceMode() {
   return !theoryMode && !retMode && !paseMode && !spreadMode && !desvioMode
     && !(typeof lineupMode !== 'undefined' && lineupMode)
     && !(typeof resumenMode !== 'undefined' && resumenMode)
-    && !(typeof escMode !== 'undefined' && escMode);
+    && !(typeof escMode !== 'undefined' && escMode)
+    && !(typeof climaMode !== 'undefined' && climaMode);
 }
 
 function renderAll() {
@@ -26,7 +27,7 @@ function renderAll() {
 const UI_MODULOS = {
   workspace: 'switchToWorkspace', ret: 'toggleRetenciones', pase: 'togglePases', spreads: 'toggleSpreads',
   desvio: 'toggleDesvio', theory: 'toggleTheory', lineup: 'toggleLineUp', resumen: 'toggleResumen',
-  escenarios: 'toggleEscenarios',
+  escenarios: 'toggleEscenarios', clima: 'toggleClima',
 };
 Object.entries(UI_MODULOS).forEach(([k, fn]) => {
   const orig = window[fn];
@@ -40,7 +41,7 @@ window.onload = () => {
   if (typeof paramsRestore === 'function') paramsRestore();
   // Campos que se completan desde A3: si el usuario los edita, se respeta su valor.
   // Se escucha en fase de captura para marcarlo ANTES de que corra el oninput del campo.
-  const autoA3 = ['pase-tc-spot', 'fondeo-tc-spot', 'fondeo-precio-usd', 'fondeo-disp'];
+  const autoA3 = ['pase-tc-spot', 'fondeo-tc-spot', 'fondeo-precio-usd', 'fondeo-disp', 'gira-ace-fob'];
   document.addEventListener('input', e => {
     if (e.target && autoA3.includes(e.target.id)) e.target.dataset.manual = '1';
   }, true);
