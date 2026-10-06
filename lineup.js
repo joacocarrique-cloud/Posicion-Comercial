@@ -13,6 +13,8 @@ const LU_REFRESCO_MIN = 30;      // al abrir, si el dato tiene más de 30 min, s
 const LU_SOJA_COEF = 0.78;       // harina + cascarilla por t de poroto
 
 let lineupMode = false, luData = null, luProd = 'maiz', luCamp = null, luCargando = false, luError = null;
+// Panel de destinos: país o región, toneladas / promedio mensual / participación, carga (en soja y girasol), ver todos.
+let luDestVista = 'pais', luDestModo = 't', luDestCarga = 'todo', luDestTodos = false;
 
 const LU_PRODS = {
   maiz:    { nombre: 'Maíz',    unidad: 't',            peso: { maiz: 1 }, incluir: ['maiz'], compras: ['maiz'], djve: { 'MAIZ': 1 } },
@@ -148,6 +150,16 @@ function luZona(p) {
 .lu-mini>b{position:absolute;left:0;right:0;height:0;border-top:2px dashed var(--text)}
 .lu-mini-lbl{display:flex;gap:6px;margin-top:4px}
 .lu-mini-lbl span{flex:1;text-align:center;font:10px var(--mono);color:var(--text-3)}
+.lu-ctrl{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+.lu-ctrl .lu-pill{padding:4px 10px;font-size:11px}
+.lu-ctrl .lu-sep{height:18px;margin:0 3px}
+.lu-dest td:first-child{white-space:normal;min-width:150px}
+.lu-dest td:first-child .t{display:block}
+.lu-dest th.grp{text-align:center;border-bottom:0;padding-bottom:2px;color:var(--text-2)}
+.lu-dest th small{display:block;font-weight:500;text-transform:none;letter-spacing:0;color:var(--text-3)}
+.lu-dest .sepL{border-left:2px solid var(--border)}
+.lu-dest tr.otros td{color:var(--text-2)}
+.lu-dest td.r.nd{color:var(--text-3)}
 `;
   const st = document.createElement('style');
   st.id = 'lu-styles';
@@ -517,6 +529,7 @@ function luRender() {
         ${uyT > 0 ? `<div class="lu-note">No incluye ${luT(uyT)} en puertos de Uruguay.</div>` : ''}
       </div>
     </div>
+    <div class="lu-grid">${luPanelDestinos(P, f0)}</div>
     <div class="lu-grid lu-g2b">
       <div class="lu-card">
         <div class="lu-ch"><h3>Exportadores en el line-up</h3><span>${P.unidad}</span></div>
@@ -663,6 +676,163 @@ function luPanelNueva() {
   </div>`;
 }
 
+// ─── Destinos: embarcado en los últimos 6/3/1 meses y nominado para los próximos 1/3/6 ───
+const LU_REGIONES = {
+  'CONTINENT': 'Europa (Continente)', 'SOUTH EAST ASIA': 'Sudeste asiático', 'EAST ASIA': 'Asia oriental', 'WCSAM': 'Sudamérica costa oeste',
+  'ARAB GULF': 'Golfo Arábigo', 'ECSA': 'Sudamérica costa este', 'INDIC ASIA': 'Subcontinente indio', 'MX & CARIBS': 'México y Caribe',
+  'MEDITERRANEAN SEA': 'Mediterráneo', 'N.AMERICA': 'Norteamérica', 'MAGHREB': 'Magreb', 'OCEANIA': 'Oceanía', 'C.AFRICA': 'África central',
+  'MASCARENES': 'Índico (Mascareñas)', 'S.AFRICA': 'África austral', 'TBC': 'A confirmar'
+};
+const LU_PAISES = {
+  'ALGERIA': 'Argelia', 'ANGOLA': 'Angola', 'ARGENTINA': 'Argentina (cabotaje)', 'AUSTRALIA': 'Australia', 'BANGLADESH': 'Bangladesh', 'BELGIUM': 'Bélgica',
+  'BOLIVIA': 'Bolivia', 'BRAZIL': 'Brasil', 'BRUNEI': 'Brunéi', 'BULGARIA': 'Bulgaria', 'CAMEROON': 'Camerún', 'CANADA': 'Canadá', 'CHILE': 'Chile', 'CHINA': 'China',
+  'COLOMBIA': 'Colombia', 'CUBA': 'Cuba', 'CYPRUS': 'Chipre', 'DEM.REP.CONGO': 'R. D. del Congo', 'DENMARK': 'Dinamarca', 'DOMINICAN REPUBLIC': 'Rep. Dominicana',
+  'ECUADOR': 'Ecuador', 'EGYPT': 'Egipto', 'EL SALVADOR': 'El Salvador', 'FRANCE': 'Francia', 'GERMANY': 'Alemania', 'GHANA': 'Ghana', 'GREECE': 'Grecia',
+  'GUATEMALA': 'Guatemala', 'GUINEA': 'Guinea', 'HONDURAS': 'Honduras', 'INDET.(EUROPA)': 'Europa (sin definir)', 'INDIA': 'India', 'INDONESIA': 'Indonesia',
+  'IRAN': 'Irán', 'IRAQ': 'Irak', 'IRELAND': 'Irlanda', 'ISRAEL': 'Israel', 'ITALY': 'Italia', 'IVORY COAST': 'Costa de Marfil', 'JAMAICA': 'Jamaica',
+  'JAPAN': 'Japón', 'JORDAN': 'Jordania', 'KENYA': 'Kenia', 'KUWAIT': 'Kuwait', 'LATVIA': 'Letonia', 'LEBANON': 'Líbano', 'LIBYA': 'Libia', 'LITHUANIA': 'Lituania',
+  'MADAGASCAR': 'Madagascar', 'MALAYSIA': 'Malasia', 'MAURITIUS': 'Mauricio', 'MEXICO': 'México', 'MOROCCO': 'Marruecos', 'MOZAMBIQUE': 'Mozambique',
+  'NETHERLANDS': 'Países Bajos', 'NEW ZEALAND': 'Nueva Zelanda', 'NIGERIA': 'Nigeria', 'OMAN': 'Omán', 'PAKISTAN': 'Pakistán', 'PARAGUAY': 'Paraguay',
+  'PERU': 'Perú', 'PHILIPPINES': 'Filipinas', 'POLAND': 'Polonia', 'PORTUGAL': 'Portugal', 'PUERTO RICO': 'Puerto Rico', 'REUNION': 'Reunión', 'ROMANIA': 'Rumania',
+  'RUSSIA': 'Rusia', 'SAUDI ARABIA': 'Arabia Saudita', 'SENEGAL': 'Senegal', 'SOUTH AFRICA': 'Sudáfrica', 'SOUTH KOREA': 'Corea del Sur', 'SPAIN': 'España',
+  'SYRIA': 'Siria', 'TAIWAN': 'Taiwán', 'TBC': 'A confirmar', 'THAILAND': 'Tailandia', 'TOGO': 'Togo', 'TUNISIA': 'Túnez', 'TURKEY': 'Turquía',
+  'UAE': 'Emiratos Árabes', 'UK': 'Reino Unido', 'URUGUAY': 'Uruguay', 'USA': 'Estados Unidos', 'VENEZUELA': 'Venezuela', 'VIETNAM': 'Vietnam', 'YEMEN': 'Yemen'
+};
+function luDestTxt(k, mapa) {
+  if (mapa[k]) return mapa[k];
+  return k.charAt(0) + k.slice(1).toLowerCase();
+}
+function luMasMeses(d, k) { const x = new Date(d); x.setMonth(x.getMonth() + k); return x; }
+
+function luPanelDestinos(P, f0) {
+  const E = luData.embarques;
+  const grupos = Object.keys(P.peso);
+  if (luDestCarga !== 'todo' && !grupos.includes(luDestCarga)) luDestCarga = 'todo';
+  const w = g => luDestCarga === 'todo' ? (P.peso[g] || 0) : (g === luDestCarga ? 1 : 0);
+  const unidad = luDestCarga === 'todo' ? P.unidad : 't de ' + (LU_GRUPO_LBL[luDestCarga] || luDestCarga);
+  const porPais = luDestVista === 'pais';
+  const norm = s => { const x = String(s || '').trim().toUpperCase(); return x || 'TBC'; };
+
+  const MP = [6, 3, 1], MF = [1, 3, 6];
+  const limP = MP.map(k => luMasMeses(f0, -k)), limF = MF.map(k => luMasMeses(f0, k));
+  const filas = {}, tot = { p: [0, 0, 0], f: [0, 0, 0] };
+  const fila = (dest, reg) => {
+    const d = norm(dest), rg = norm(reg), k = porPais ? d : rg;
+    const o = filas[k] || (filas[k] = { k, p: [0, 0, 0], f: [0, 0, 0], reg: {} });
+    if (porPais && rg !== 'TBC') o.reg[rg] = (o.reg[rg] || 0) + 1;
+    return o;
+  };
+
+  // Pasado: cargas que zarparon (hoja "embarques" del Apps Script)
+  if (E && E.filas) {
+    const base = new Date(E.desde + 'T12:00:00');
+    E.filas.forEach(([dia, gi, di, t]) => {
+      const p = w(E.grupos[gi]);
+      if (!p) return;
+      const d = new Date(base); d.setDate(d.getDate() + dia);
+      if (d >= f0) return;
+      const [dest, reg] = E.dest[di] || [];
+      const o = fila(dest, reg);
+      limP.forEach((lim, i) => { if (d >= lim) { o.p[i] += t * p; tot.p[i] += t * p; } });
+    });
+  }
+  // Por delante: buques nominados en el line-up de hoy, por fecha de zarpada
+  let maxEts = null;
+  luFilas().forEach(r => {
+    const p = w(r.grupo);
+    if (!p || r.uy) return;
+    const d = r.ets ? new Date(r.ets + 'T12:00:00') : f0;
+    if (d < f0) return;                      // ya figura como zarpado en el histórico
+    if (!maxEts || d > maxEts) maxEts = d;
+    const o = fila(r.destino, r.region);
+    limF.forEach((lim, i) => { if (d < lim) { o.f[i] += r.t * p; tot.f[i] += r.t * p; } });
+  });
+
+  // Meses efectivos de cada ventana (para el promedio mensual): el pasado arranca donde arranca el histórico
+  // y lo nominado termina en el último buque del line-up.
+  const DM = 30.44 * 86400000;
+  const inicio = E ? new Date((E.inicio || E.desde) + 'T12:00:00') : null;
+  const mesesP = limP.map(lim => inicio ? Math.max((f0 - Math.max(lim, inicio)) / DM, 0) : 0);
+  const mesesF = limF.map(lim => maxEts ? Math.max((Math.min(lim, maxEts) - f0) / DM + 1 / 30.44, 0) : 0);
+  const parcialP = limP.map(lim => !inicio || inicio > lim);
+  const cortoF = limF.map(lim => !maxEts || maxEts < lim);
+
+  // Orden: participación en lo embarcado (6 meses) + en lo nominado, para que un destino que recién aparece no quede en "Otros".
+  const peso = o => (tot.p[0] > 0 ? o.p[0] / tot.p[0] : 0) + (tot.f[2] > 0 ? o.f[2] / tot.f[2] : 0);
+  let arr = Object.values(filas).filter(o => o.p[0] > 0 || o.f[2] > 0).sort((a, b) => peso(b) - peso(a));
+  const N = 14, nDest = arr.length;
+  if (!luDestTodos && arr.length > N + 1) {
+    const resto = arr.slice(N), otros = { k: '__otros', p: [0, 0, 0], f: [0, 0, 0], reg: {}, n: resto.length };
+    resto.forEach(o => { for (let i = 0; i < 3; i++) { otros.p[i] += o.p[i]; otros.f[i] += o.f[i]; } });
+    arr = arr.slice(0, N).concat([otros]);
+  }
+
+  const fmtT = v => { if (!(v > 0)) return '–'; const k = v / 1e3; return k >= 10 ? Math.round(k).toLocaleString('es-AR') : luF1(k); };
+  const val = (v, totCol, meses) => luDestModo === 'pct' ? (totCol > 0 && v > 0 ? luF1(v / totCol * 100) + '%' : '–')
+    : luDestModo === 'mes' ? (meses > 0 ? fmtT(v / meses) : '–') : fmtT(v);
+  const maxP = tot.p.map((_, i) => Math.max(...arr.filter(o => o.k !== '__otros').map(o => o.p[i]), 1));
+  const maxF = tot.f.map((_, i) => Math.max(...arr.filter(o => o.k !== '__otros').map(o => o.f[i]), 1));
+  const celda = (v, totCol, meses, mx, cls) => {
+    const a = v > 0 && mx > 0 ? Math.round(v / mx * 30) : 0;
+    return `<td class="r ${cls || ''}${v > 0 ? '' : ' nd'}"${a ? ` style="background:color-mix(in srgb, var(--es-green) ${a}%, transparent)"` : ''}>${val(v, totCol, meses)}</td>`;
+  };
+  const delta = o => {
+    if (o.k === '__total' || !(tot.p[0] > 0) || !(tot.f[0] > 0)) return '<td class="r sepL nd"></td>';
+    const pp = (o.f[0] / tot.f[0] - o.p[0] / tot.p[0]) * 100;
+    if (Math.abs(pp) < 0.05) return '<td class="r sepL nd">0,0</td>';
+    return `<td class="r sepL"><span class="${pp > 0 ? 'lu-dn' : 'lu-up'}">${pp > 0 ? '+' : '−'}${luF1(Math.abs(pp))}</span></td>`;
+  };
+  const nombre = o => {
+    if (o.k === '__total') return 'Total';
+    if (o.k === '__otros') return `Otros <span class="t">${o.n} destinos</span>`;
+    if (!porPais) return luEsc(luDestTxt(o.k, LU_REGIONES));
+    const rg = Object.entries(o.reg).sort((a, b) => b[1] - a[1])[0];
+    return `${luEsc(luDestTxt(o.k, LU_PAISES))}${rg ? `<span class="t">${luEsc(luDestTxt(rg[0], LU_REGIONES))}</span>` : ''}`;
+  };
+  const filaHtml = (o, cls) => `<tr class="${cls || ''}"><td>${nombre(o)}</td>
+    ${o.p.map((v, i) => celda(v, tot.p[i], mesesP[i], cls ? 0 : maxP[i], i === 0 ? 'sepL' : '')).join('')}
+    ${o.f.map((v, i) => celda(v, tot.f[i], mesesF[i], cls ? 0 : maxF[i], i === 0 ? 'sepL' : '')).join('')}
+    ${delta(o)}</tr>`;
+
+  const hdrP = MP.map((k, i) => `<th class="r${i === 0 ? ' sepL' : ''}">${k} ${k === 1 ? 'mes' : 'meses'}${parcialP[i] && inicio ? '*' : ''}<small>desde ${luFechaCorta(luIsoL(limP[i]))}</small></th>`).join('');
+  const hdrF = MF.map((k, i) => `<th class="r${i === 0 ? ' sepL' : ''}">${k} ${k === 1 ? 'mes' : 'meses'}<small>${cortoF[i] && maxEts ? 'nominado al ' + luFechaCorta(luIsoL(maxEts)) : 'hasta ' + luFechaCorta(luIsoL(limF[i]))}</small></th>`).join('');
+  const pill = (campo, v, txt, on) => `<button class="lu-pill ${on ? 'on' : ''}" onclick="luSetDest('${campo}','${v}')">${txt}</button>`;
+  const modoTxt = { t: 'miles de ' + unidad, mes: 'miles de ' + unidad + ' por mes', pct: '% del total de cada columna' }[luDestModo];
+
+  const sinHist = !E || !E.filas;
+  const aviso = sinHist
+    ? `<div class="lu-setup" style="margin-bottom:12px">Para ver lo embarcado en los últimos meses hay que actualizar el Apps Script y ejecutar una vez <code>cargarEmbarques()</code> (ver <code>LEEME_LineUp.txt</code>). Mientras tanto se muestra solo lo nominado por delante.</div>`
+    : (parcialP.some(Boolean) ? `<div class="lu-note" style="margin:0 0 10px">* El histórico arranca el ${luFechaCorta(luIsoL(inicio))}-${String(inicio.getFullYear()).slice(2)}: esa ventana está incompleta${luDestModo === 'mes' ? ' (el promedio mensual usa solo los meses con datos)' : ''}. Se completa ejecutando <code>cargarEmbarques()</code> en el Apps Script.</div>` : '');
+
+  return `<div class="lu-card">
+    <div class="lu-ch"><h3>Destinos · embarcado y nominado · ${luEsc(P.nombre)}</h3>
+      <div class="lu-ctrl">
+        ${pill('vista', 'pais', 'País', porPais)}${pill('vista', 'region', 'Región', !porPais)}
+        <span class="lu-sep"></span>
+        ${pill('modo', 't', 'Toneladas', luDestModo === 't')}${pill('modo', 'mes', 'Por mes', luDestModo === 'mes')}${pill('modo', 'pct', 'Participación', luDestModo === 'pct')}
+        ${grupos.length > 1 ? `<span class="lu-sep"></span>${pill('carga', 'todo', P.unidad === 't poroto eq.' ? 'Poroto eq.' : 'Todo', luDestCarga === 'todo')}${grupos.map(g => pill('carga', g, (LU_GRUPO_LBL[g] || g).replace(/^./, c => c.toUpperCase()), luDestCarga === g)).join('')}` : ''}
+      </div>
+    </div>
+    ${aviso}
+    ${arr.length ? `<div class="lu-tw"><table class="lu-table lu-sect lu-dest">
+      <thead>
+        <tr><th></th><th class="grp sepL" colspan="3">← Embarcado · últimos</th><th class="grp sepL" colspan="3">Nominado · próximos →</th><th class="grp sepL"></th></tr>
+        <tr><th>${porPais ? 'País de destino' : 'Región de destino'}<small>${luEsc(modoTxt)}</small></th>${hdrP}${hdrF}<th class="r sepL">Cambio part.<small>próx. 1 vs últ. 6 (pp)</small></th></tr>
+      </thead>
+      <tbody>${arr.map(o => filaHtml(o, o.k === '__otros' ? 'otros' : '')).join('')}${filaHtml({ k: '__total', p: tot.p, f: tot.f, reg: {} }, 'tot')}</tbody>
+    </table></div>
+    ${nDest > N + 1 ? `<button class="btn btn-sm btn-outline" style="margin-top:10px" onclick="luSetDest('todos')">${luDestTodos ? `Ver los ${N} principales` : `Ver los ${nDest} destinos`}</button>` : ''}`
+    : '<div class="lu-empty">Sin embarques ni buques nominados para este producto.</div>'}
+    <div class="lu-note sep">
+      <b>Embarcado:</b> cargas que zarparon según las fotos diarias del line-up de ISA, cada una con el último destino informado antes de zarpar${E && E.ultima ? ` (última foto procesada: ${luFechaCorta(E.ultima)})` : ''}.
+      <b>Nominado:</b> buques del line-up de hoy por fecha estimada de zarpada. Los buques se nominan con 4 a 6 semanas de anticipación, así que las columnas de 3 y 6 meses por delante se parecen a la de 1 mes: sirven para ver hacia dónde va lo que ya está nominado, no como pronóstico.
+      <b>Cambio part.:</b> participación del destino en lo nominado para el próximo mes menos su participación en lo embarcado en los últimos 6 meses (verde = gana peso).
+      "A confirmar" = destino todavía sin informar (TBC). Sin puertos de Uruguay.
+      ${P.peso.soja_harina && luDestCarga === 'todo' ? `Soja en poroto equivalente: el destino de la harina pesa mucho más que el del poroto; para mirar solo uno, elegir "Poroto" o "Harina".` : ''}
+    </div>
+  </div>`;
+}
+
 function luBarras(arr, tot) {
   const mx = Math.max(...arr.map(a => a[1])) || 1;
   return `<div class="lu-rows">${arr.map(([k, v]) => `<div class="lu-row"><span title="${luEsc(k)}">${luEsc(k)}</span><div class="lu-bar2"><i style="width:${(v / mx * 100).toFixed(1)}%"></i></div><span class="n">${luT(v)}<em>${tot ? Math.round(v / tot * 100) : 0}%</em></span></div>`).join('')}</div>`;
@@ -724,5 +894,9 @@ function luSetupHtml() {
   </div>`;
 }
 
-function luSetProd(k) { luProd = k; luCamp = null; luRender(); }
+function luSetProd(k) { luProd = k; luCamp = null; luDestCarga = 'todo'; luRender(); }
+function luSetDest(campo, v) {
+  if (campo === 'vista') luDestVista = v; else if (campo === 'modo') luDestModo = v; else if (campo === 'carga') luDestCarga = v; else if (campo === 'todos') luDestTodos = !luDestTodos;
+  luRender();
+}
 function luSetCamp(c) { luCamp = c; luRender(); }
