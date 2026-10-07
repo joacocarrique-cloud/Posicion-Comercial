@@ -199,15 +199,15 @@ function renderTabs() {
 function renderModules() {
   const pills = document.querySelectorAll('.mod-pill');
   pills.forEach(p => p.classList.remove('active'));
-  // Índices alineados al orden de las pills en index.html:
-  // 0 Coberturas · 1 FAS&Ret · 2 Pases · 3 Spreads · 4 Desvío · 5 Manual
-  let idx = 0;
-  if (retMode)     idx = 1;
-  if (paseMode)    idx = 2;
-  if (spreadMode)  idx = 3;
-  if (typeof desvioMode !== 'undefined' && desvioMode) idx = 4;
-  if (theoryMode)  idx = 5;
-  if (pills[idx]) pills[idx].classList.add('active');
+  // Se marca por id (pill-xxx en index.html), así el orden de las pills puede cambiar
+  let id = 'pill-workspace';
+  if (retMode)     id = 'pill-ret';
+  if (paseMode)    id = 'pill-pase';
+  if (spreadMode)  id = 'pill-spreads';
+  if (typeof desvioMode !== 'undefined' && desvioMode) id = 'pill-desvio';
+  if (theoryMode)  id = 'pill-theory';
+  const pill = document.getElementById(id);
+  if (pill) pill.classList.add('active');
 }
 
 function switchToWorkspace() {

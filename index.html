@@ -15,23 +15,23 @@
     <div class="header-logo">🌾</div>
     <div>
       <div class="header-title">Suite Comercial · Espartina S.A.</div>
-      <div class="header-subtitle">Coberturas · FAS & Retenciones · Pases & Tasas · Spreads · Desvío de Precios · Line-Up · Resumen · Clima</div>
+      <div class="header-subtitle">Resumen · Clima · Escenarios · Coberturas · FAS & Retenciones · Spreads · Desvío de Precios · Pases & Tasas · Line-Up</div>
     </div>
     <span class="header-badge" id="app-version" title="Versión desplegada de la Suite">v10 · 24-sep-26</span>
   </div>
   <div style="display:flex;align-items:center;gap:12px;">
     <span class="save-indicator" id="save-indicator"></span>
     <nav id="mod-pills" style="display:flex;gap:4px;">
-      <button class="mod-pill active" onclick="switchToWorkspace()">◈ Coberturas</button>
-      <button class="mod-pill" onclick="toggleRetenciones()">🌾 FAS & Ret.</button>
-      <button class="mod-pill" onclick="togglePases()">📊 Pases & Tasas</button>
-      <button class="mod-pill" onclick="toggleSpreads()">📈 Spreads</button>
-      <button class="mod-pill" onclick="toggleDesvio()">📉 Desvío</button>
-      <button class="mod-pill" onclick="toggleTheory()">📙 Manual</button>
-      <button class="mod-pill" id="pill-lineup" onclick="toggleLineUp()">🚢 Line-Up</button>
       <button class="mod-pill" id="pill-resumen" onclick="toggleResumen()">🧭 Resumen</button>
-      <button class="mod-pill" id="pill-escenarios" onclick="toggleEscenarios()">🎯 Escenarios</button>
       <button class="mod-pill" id="pill-clima" onclick="toggleClima()">🌦 Clima</button>
+      <button class="mod-pill" id="pill-escenarios" onclick="toggleEscenarios()">🎯 Escenarios</button>
+      <button class="mod-pill active" id="pill-workspace" onclick="switchToWorkspace()">◈ Coberturas</button>
+      <button class="mod-pill" id="pill-ret" onclick="toggleRetenciones()">🌾 FAS & Ret.</button>
+      <button class="mod-pill" id="pill-spreads" onclick="toggleSpreads()">📈 Spreads</button>
+      <button class="mod-pill" id="pill-desvio" onclick="toggleDesvio()">📉 Desvío</button>
+      <button class="mod-pill" id="pill-pase" onclick="togglePases()">📊 Pases & Tasas</button>
+      <button class="mod-pill" id="pill-lineup" onclick="toggleLineUp()">🚢 Line-Up</button>
+      <button class="mod-pill" id="pill-theory" onclick="toggleTheory()">📙 Manual</button>
     </nav>
     <button class="btn-export-pdf" onclick="exportarPDF()" title="Exportar a PDF el módulo activo">🖨 PDF</button>
   </div>
