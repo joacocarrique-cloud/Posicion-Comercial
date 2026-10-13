@@ -836,20 +836,11 @@ function renderChart() {
     });
   });
 
-  // ─── Calcular rango Y dinámico con padding ────────────────────────────────
-  let allPayoffs = [];
-  prices.forEach(p => {
-    allPayoffs.push(p); // línea Mercado
-    t.strategies.forEach(s => allPayoffs.push(calcPayoff(s, p)));
-  });
-  refVals.forEach(v => allPayoffs.push(v));
-  const rawMin = Math.min(...allPayoffs);
-  const rawMax = Math.max(...allPayoffs);
-  const pad = (rawMax - rawMin) * 0.07 || t.spot * 0.05;
-  // El mínimo del eje Y es siempre el mismo que el del eje X (Eje X mín).
+  // ─── Rango Y: exactamente el mismo que el eje X (Eje X mín / máx) ─────────
   const yMin = t.min;
-  let yMax = Math.ceil((rawMax + pad) / 5) * 5;
-  if (!(yMax > yMin)) yMax = t.max;
+  const yMax = t.max;
+  // Mismo paso de grilla en ambos ejes
+  const ejeStep = [1, 2, 5, 10, 20, 25, 50, 100, 200].find(s => (t.max - t.min) / s <= 12) || 500;
   // ─────────────────────────────────────────────────────────────────────────
 
   // Ajustar altura del wrapper antes de crear/recrear el chart
@@ -882,14 +873,14 @@ function renderChart() {
           min: t.min, max: t.max,
           title: { display: true, text: 'Precio a Vencimiento (u$s)', font: { family: 'Montserrat', size: 12, weight: '600' }, color: '#505845' },
           grid: { color: 'rgba(0,0,0,.05)' },
-          ticks: { font: { family: 'JetBrains Mono', size: 10 }, color: '#7e8574', maxTicksLimit: 16 }
+          ticks: { font: { family: 'JetBrains Mono', size: 10 }, color: '#7e8574', stepSize: ejeStep }
         },
         y: {
           min: yMin,
           max: yMax,
           title: { display: true, text: 'Precio Neto de Venta (u$s)', font: { family: 'Montserrat', size: 12, weight: '600' }, color: '#505845' },
           grid: { color: 'rgba(0,0,0,.05)' },
-          ticks: { font: { family: 'JetBrains Mono', size: 10 }, color: '#7e8574' }
+          ticks: { font: { family: 'JetBrains Mono', size: 10 }, color: '#7e8574', stepSize: ejeStep }
         }
       }
     }
