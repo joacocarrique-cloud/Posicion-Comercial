@@ -846,8 +846,10 @@ function renderChart() {
   const rawMin = Math.min(...allPayoffs);
   const rawMax = Math.max(...allPayoffs);
   const pad = (rawMax - rawMin) * 0.07 || t.spot * 0.05;
-  const yMin = Math.floor((rawMin - pad) / 5) * 5;
-  const yMax = Math.ceil((rawMax + pad) / 5) * 5;
+  // El mínimo del eje Y es siempre el mismo que el del eje X (Eje X mín).
+  const yMin = t.min;
+  let yMax = Math.ceil((rawMax + pad) / 5) * 5;
+  if (!(yMax > yMin)) yMax = t.max;
   // ─────────────────────────────────────────────────────────────────────────
 
   // Ajustar altura del wrapper antes de crear/recrear el chart
