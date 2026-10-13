@@ -25,6 +25,9 @@ const REC_CONFIG = {
     { id: 'maiz_soja', nombre: 'Maíz ABR / Soja MAY', tipo: 'ratio', c1: 'maiz', m1: 'ABR', c2: 'soja', m2: 'MAY', desfase: 0 },
   ],
   diasMinVto: 30,                 // se usa la primera posición del mes que vence en ≥ 30 días
+  ajustarRetenciones: true,       // comparar campañas con las retenciones de la entrega actual (ver REC_RET_HIST)
+  consistenciaEstacional: 2 / 3,  // la estacionalidad cuenta solo si ≥ 2 de cada 3 campañas van en el mismo sentido
+  ruedasPiso: 5,                  // "encontró piso": ≥ 5 ruedas sin un extremo nuevo y pendiente de 10 ruedas plana o a favor
   pesos: { extremo: 0.40, estacional: 0.20, momentum: 0.15, persistencia: 0.15, vi: 0.10 },
   fuerte: 70, moderada: 50,       // clasificación del puntaje
   regimenPct: 80,                 // persistencia > 80% → posible cambio de régimen
@@ -80,6 +83,44 @@ function recHabilesEntre(a, b) {    // hábiles estrictamente entre a y b
   return n;
 }
 function recLegLbl(c, p) { return `${(REC_LBL[c] || c).toUpperCase()} ${p}`; }
+function recMediana(a) { if (!a.length) return null; const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; }
+
+// ─── Retenciones históricas: para comparar campañas en el régimen de hoy ───
+// Cada precio histórico se pasa a la retención de la entrega del contrato actual:
+//   precio ajustado = (precio + fobbing) / (1 − ret. de entonces) × (1 − ret. de la entrega actual) − fobbing
+// "Ret. de entonces" = la vigente (o ya anunciada para esa entrega) en la FECHA DEL PRECIO.
+// Desde REC_RET_DESDE_CRONOGRAMA rige RET_SCHEDULE de globals.js; desde el anuncio del cronograma
+// 2027–2028 (REC_RET_ANUNCIO) los contratos ya descuentan la alícuota de su mes de entrega.
+// Cultivos sin tabla (trigo, girasol) no se ajustan. Fobbing: RET_DEFAULTS de globals.js.
+const REC_RET_HIST = {
+  soja: [{ desde: '2000-01-01', ret: 33 }, { desde: '2025-01-27', ret: 26 }, { desde: '2025-12-01', ret: 24 }],
+  maiz: [{ desde: '2000-01-01', ret: 12 }, { desde: '2025-01-27', ret: 9.5 }, { desde: '2025-12-01', ret: 8.5 }],
+};
+const REC_RET_DESDE_CRONOGRAMA = '2025-12-01';
+const REC_RET_ANUNCIO = '2026-05-21';
+
+function recRetVigente(c, fk) {
+  const t = REC_RET_HIST[c]; if (!t) return null;
+  if (fk >= REC_RET_DESDE_CRONOGRAMA) { const d = recFecha(fk); return getRetencion(c, d.getFullYear(), d.getMonth() + 1); }
+  let v = t[0].ret; t.forEach(x => { if (fk >= x.desde) v = x.ret; });
+  return v;
+}
+function recRetEsperada(c, fk, anio, mes) {
+  if (!REC_RET_HIST[c]) return null;
+  return fk >= REC_RET_ANUNCIO ? getRetencion(c, anio, mes) : recRetVigente(c, fk);
+}
+// Devuelve el ajustador del par, o null si algún cultivo no tiene tabla
+function recAjustador(c1, pos1, c2, pos2) {
+  if (!REC_RET_HIST[c1] || !REC_RET_HIST[c2]) return null;
+  const obj = [null, getRetencionForPos(c1, pos1), getRetencionForPos(c2, pos2)];
+  const fob = [null, (RET_DEFAULTS[c1] || {}).fobbing || 0, (RET_DEFAULTS[c2] || {}).fobbing || 0];
+  if (obj[1] == null || obj[2] == null) return null;
+  return { obj, fob, p(r, leg) {
+    const rt = recRetEsperada(r.cultivo, recFk(r.fecha), r.anio_pos, r.mes_pos);
+    if (rt == null) return r.precio;
+    return (r.precio + fob[leg]) / (1 - rt / 100) * (1 - obj[leg] / 100) - fob[leg];
+  } };
+}
 
 // ═══════════════════════════════════════════════════
 // MOTOR DE SEÑALES
@@ -97,22 +138,28 @@ function recResolverPar(par) {
   return null;
 }
 
-function recSenal(par) {
+// ajustar = true: precios pasados a las retenciones de la entrega actual (null si no hay tabla para el par)
+function recSenal(par, ajustar) {
   const res = recResolverPar(par);
   if (!res) return { error: `No hay posiciones vigentes de ${par.nombre} en futuros_posicion.` };
   const { c1, c2 } = par, { pos1, pos2 } = res;
   const cfgRel = (typeof RS_REGLAS !== 'undefined' && RS_REGLAS.relaciones) || {};
   const ventana = cfgRel.ventanaDias || 20, minPts = cfgRel.minPuntosHist || 15;
+  const aj = ajustar ? recAjustador(c1, pos1, c2, pos2) : null;
+  if (ajustar && !aj) return { error: 'Sin tabla de retenciones para este par.', sinAjuste: true };
+  const px1 = r => aj ? aj.p(r, 1) : r.precio, px2 = r => aj ? aj.p(r, 2) : r.precio;
 
-  // Serie del par actual (igual que Spreads)
+  // Serie del par actual (igual que Spreads; con ajuste, a las retenciones de su entrega)
   const d1 = {}, d2 = {};
   ASST_FUTPOS.forEach(r => {
     if (r.cultivo === c1 && r.pos === pos1) d1[recFk(r.fecha)] = r;
     if (r.cultivo === c2 && r.pos === pos2) d2[recFk(r.fecha)] = r;
   });
   const fechas = Object.keys(d1).filter(f => f in d2).sort();
-  const serie = fechas.map(f => ({ fecha: f, p1: d1[f].precio, p2: d2[f].precio, dte1: d1[f].dias_vto,
-    val: d2[f].precio > 0 ? d1[f].precio / d2[f].precio : null })).filter(s => s.val !== null);
+  const serie = fechas.map(f => {
+    const p1 = px1(d1[f]), p2 = px2(d2[f]);
+    return { fecha: f, p1, p2, dte1: d1[f].dias_vto, val: d2[f].precio > 0 ? p1 / p2 : null };
+  }).filter(s => s.val !== null);
   if (serie.length < 20) return { error: `Pocos datos comunes entre ${recLegLbl(c1, pos1)} y ${recLegLbl(c2, pos2)}.` };
   const vals = serie.map(s => s.val);
   const ult = serie[serie.length - 1];
@@ -130,7 +177,7 @@ function recSenal(par) {
     (idx2[(r1.anio_pos + off) + '|' + recFk(r1.fecha)] || []).forEach(r2 => {
       if (!(r2.precio > 0)) return;
       const k = `${r1.pos}-${r2.pos}`;
-      (season[k] = season[k] || []).push({ dte: r1.dias_vto, val: r1.precio / r2.precio });
+      (season[k] = season[k] || []).push({ dte: r1.dias_vto, val: px1(r1) / px2(r2) });
     });
   });
   const curKey = `${pos1}-${pos2}`;
@@ -159,19 +206,28 @@ function recSenal(par) {
   const fechaLimite = vtoPrimera ? recRestarHabiles(vtoPrimera, REC_CONFIG.habilesAntesVto) : null;
   const dteSalida = vtoPrimera && vto1 ? Math.max(0, Math.round((vto1 - fechaLimite) / 864e5)) : 0;
 
-  // Drift estacional: cambio promedio de cada campaña entre el DTE actual y el DTE de salida
+  // Drift estacional: cambio de cada campaña entre el DTE actual y el DTE de salida.
+  // Se usa la MEDIANA (una campaña rara no arrastra el resultado) y cuenta solo si al menos
+  // consistenciaEstacional de las campañas van en el mismo sentido; si no, no hay patrón.
   const valEn = (pts, d) => {
     let c = pts.filter(p => Math.abs(p.dte - d) <= 3);
     if (!c.length) c = pts.filter(p => Math.abs(p.dte - d) <= 10);
     return c.length ? recMean(c.map(p => p.val)) : null;
   };
   const drifts = histKeys.map(k => { const a = valEn(season[k], curDte), b = valEn(season[k], dteSalida); return a != null && b != null ? b - a : null; }).filter(v => v != null);
-  const drift = drifts.length ? recMean(drifts) : null;
+  const drift = recMediana(drifts), driftProm = drifts.length ? recMean(drifts) : null;
   const nDriftFav = drifts.filter(v => f * v > 0).length;
+  const nDriftSube = drifts.filter(v => v > 0).length;
+  const nMismoSentido = drift == null ? 0 : drifts.filter(v => Math.sign(v) === Math.sign(drift)).length;
+  const patronEst = drifts.length >= 3 && nMismoSentido / drifts.length >= REC_CONFIG.consistenciaEstacional;
 
-  // Momentum: pendiente de las últimas 10 y 20 ruedas; extremo de la campaña
+  // Momentum: pendiente de las últimas 10 y 20 ruedas, extremo de la campaña y "piso":
+  // ruedas desde el último mínimo (o máximo, si la relación está alta) de la campaña
   const slope10 = recPendiente(vals.slice(-10)), slope20 = recPendiente(vals.slice(-20));
   const enMin = actual <= minCamp + 1e-9, enMax = actual >= maxCamp - 1e-9;
+  const idxExt = dir === 'baja' ? vals.lastIndexOf(minCamp) : vals.lastIndexOf(maxCamp);
+  const ruedasDesdeExt = vals.length - 1 - idxExt;
+  const piso = ruedasDesdeExt >= REC_CONFIG.ruedasPiso && f * (slope10 || 0) >= 0;
 
   // Persistencia: % de días de la campaña del mismo lado del promedio histórico (a su DTE)
   const maxD = Math.max(...histAll.map(p => p.dte), ...serie.map(s => s.dte1)) + ventana + 1;
@@ -195,11 +251,12 @@ function recSenal(par) {
 
   const s = {
     par, c1, c2, pos1, pos2, serie, actual, avgCamp, stdCamp, minCamp, maxCamp,
-    histMean, sigH, pctl, zHist, zProp, dir, f, enVentana, ventana, curDte, nCampPrev: histKeys.length,
+    histMean, sigH, pctl, zHist, zProp, dir, f, enVentana, ventana, curDte, nCampPrev: nCamp || histKeys.length,   // campañas con datos a este punto del ciclo
     nCamp, dispRango: nCamp ? [Math.min(...mediasCamp), Math.max(...mediasCamp)] : null, dispStd: recStd(mediasCamp),
-    vto1, vto2, fechaLimite, dteSalida, drift, nDrift: drifts.length, nDriftFav,
-    slope10, slope20, enMin, enMax, persistencia, regimen, curva, vi1, vi2,
+    vto1, vto2, fechaLimite, dteSalida, drift, driftProm, nDrift: drifts.length, nDriftFav, nDriftSube, patronEst,
+    slope10, slope20, enMin, enMax, ruedasDesdeExt, piso, persistencia, regimen, curva, vi1, vi2,
     p1Last: ult.p1, p2Last: ult.p2, ultFecha: ult.fecha,
+    ajustado: !!aj, retObj: aj ? { r1: aj.obj[1], r2: aj.obj[2] } : null,
   };
   s.puntaje = recPuntaje(s);
   return s;
@@ -231,19 +288,26 @@ function recPuntaje(s) {
   const sExt = 0.5 * recClamp((e - 20) / 28 * 100) + 0.5 * recClamp((Math.abs(s.zHist || 0) - 0.5) / 1.5 * 100);
   comp.push({ k: 'extremo', lbl: 'Extremo estadístico', peso: W.extremo, sub: sExt,
     why: `P${s.pctl} y z hist. ${recSig(s.zHist, 2)}` });
-  // 2. Estacionalidad: drift histórico a favor hasta la fecha límite y % de campañas a favor
+  // 2. Estacionalidad: mediana del cambio hasta la fecha límite; sin patrón consistente queda neutra (50)
   let sEst = 50, whyEst = 'sin datos suficientes';
   if (s.drift != null && s.nDrift) {
-    sEst = 0.5 * (50 + 50 * Math.max(-1, Math.min(1, s.f * s.drift / sig))) + 0.5 * (s.nDriftFav / s.nDrift * 100);
-    whyEst = `${recSig(s.drift, 4)} hasta la fecha límite · ${s.nDriftFav} de ${s.nDrift} campañas a favor`;
+    if (s.patronEst) {
+      sEst = 0.5 * (50 + 50 * Math.max(-1, Math.min(1, s.f * s.drift / sig))) + 0.5 * (s.nDriftFav / s.nDrift * 100);
+      whyEst = `mediana ${recSig(s.drift, 4)} hasta la fecha límite · ${s.nDriftFav} de ${s.nDrift} campañas a favor`;
+    } else {
+      whyEst = `sin patrón claro: subió en ${s.nDriftSube} de ${s.nDrift} campañas (mediana ${recSig(s.drift, 4)})`;
+    }
   }
   comp.push({ k: 'estacional', lbl: 'Estacionalidad', peso: W.estacional, sub: sEst, why: whyEst });
-  // 3. Momentum: penaliza entrar contra una caída (o suba) fuerte y el extremo de la campaña
+  // 3. Momentum: penaliza entrar mientras sigue haciendo extremos nuevos y premia que "encuentre piso"
+  //    (≥ ruedasPiso ruedas sin extremo nuevo y pendiente de 10 ruedas plana o a favor)
   const mFav = s.f * (((s.slope10 || 0) * 10 + (s.slope20 || 0) * 20) / 2) / sig;
-  const enExtremoContra = s.dir === 'baja' ? s.enMin : s.enMax;
-  const sMom = recClamp(50 + 100 * mFav - (enExtremoContra ? 15 : 0));
+  const extremoHoy = s.ruedasDesdeExt === 0;
+  const sMom = recClamp(50 + 100 * mFav - (extremoHoy ? 15 : 0) + (s.piso ? 20 : 0));
+  const nomExt = s.dir === 'baja' ? 'mínimo' : 'máximo';
   comp.push({ k: 'momentum', lbl: 'Momentum', peso: W.momentum, sub: sMom,
-    why: `pendiente ${recSig(s.slope10, 4)} (10) · ${recSig(s.slope20, 4)} (20) por rueda${enExtremoContra ? (s.dir === 'baja' ? ' · mínimo de campaña' : ' · máximo de campaña') : ''}` });
+    why: `pendiente ${recSig(s.slope10, 4)} (10) · ${recSig(s.slope20, 4)} (20) por rueda · ` +
+      (extremoHoy ? `${nomExt} de campaña hoy` : s.piso ? `encontró piso: ${s.ruedasDesdeExt} ruedas sin ${nomExt} nuevo` : `${s.ruedasDesdeExt} ruedas desde el ${nomExt}`) });
   // 4. Persistencia: muchos días del mismo lado = desvío estructural
   const sPer = s.persistencia == null ? 50 : recClamp((100 - s.persistencia) / 50 * 100);
   comp.push({ k: 'persistencia', lbl: 'Persistencia y régimen', peso: W.persistencia, sub: sPer,
@@ -328,7 +392,8 @@ function recArmar(s, estr) {
     const r = R0 + sg * k * sig;
     const qV = vTramo;
     const qC = Math.max(ctC, Math.round(qV * (baja ? 1 / r : r) / ctC) * ctC);
-    const t = { n: i + 1, k, r, qV, qC, p1e: r * S, p2e: S, cuando: k === 0 ? 'Hoy (valor actual)' : `${sg < 0 ? '−' : '+'}${k}σ hist.` };
+    const t = { n: i + 1, k, r, qV, qC, p1e: r * S, p2e: S, cuando: (k === 0 ? (s.piso ? 'Hoy (valor actual, con piso)' : 'Al confirmar piso')
+        : `${sg < 0 ? '−' : '+'}${k}σ hist.${s.piso ? '' : ', con piso'}`) };
     if (estr === 'calls') Object.assign(t, callPara(baja ? t.p1e : S, i === 0));
     return t;
   });
@@ -522,8 +587,17 @@ function recRender() {
     return;
   }
   const par = REC_CONFIG.pares.find(p => p.id === recState.parId) || REC_CONFIG.pares[0];
+  // Se calculan las dos versiones: ajustada por retenciones (la que puntúa, salvo que se elija
+  // la otra) y sin ajustar (la que coincide con Spreads). La otra queda en s.alt para mostrarla al lado.
   let s;
-  try { s = recSenal(par); } catch (e) { console.error('Recomendaciones:', e); s = { error: 'Error al calcular la señal: ' + e.message }; }
+  try {
+    const sRaw = recSenal(par, false);
+    const sAj = REC_CONFIG.ajustarRetenciones && !sRaw.error ? recSenal(par, true) : null;
+    const hayAj = sAj && !sAj.error;
+    const usarAj = hayAj && recState.ajuste !== false;
+    s = usarAj ? sAj : sRaw;
+    if (!s.error) s.alt = usarAj ? sRaw : (hayAj ? sAj : null);
+  } catch (e) { console.error('Recomendaciones:', e); s = { error: 'Error al calcular la señal: ' + e.message }; }
   recState.senal = s.error ? null : s;
 
   const fuentes = recEstadoFuentes().map(f => `<div class="rc-fuente"><span class="rc-dot ${f.est}"></span><div><b>${f.lbl}</b>${f.sub ? ' · ' + escHtml(f.sub) : ''}<br><span class="num">${escHtml(f.det)}</span></div></div>`).join('');
@@ -554,9 +628,10 @@ function recHtmlRadar(par, s) {
   const filaPiloto = s.error
     ? `<tr><td><b>${escHtml(par.nombre)}</b></td><td>Relación</td><td colspan="6" style="color:var(--mudo)">${escHtml(s.error)}</td></tr>`
     : `<tr class="sel"><td><b>${REC_LBL[s.c1]} ${s.pos1} / ${REC_LBL[s.c2]} ${s.pos2}</b></td><td>Relación</td>
-        <td class="r num">${recR(s.actual)}</td><td class="r num">${recR(s.histMean)}</td><td class="r num">P${s.pctl}</td><td class="r num">${recSig(s.zHist, 2)}</td>
+        <td class="r num">${recR(s.actual)}</td><td class="r num">${recR(s.histMean)}${s.alt ? `<br><small style="color:var(--mudo)">${s.alt.ajustado ? 'ajust.' : 'sin ajustar'} ${recR(s.alt.histMean)}</small>` : ''}</td>
+        <td class="r num">P${s.pctl}${s.alt ? `<br><small style="color:var(--mudo)">${s.alt.ajustado ? 'ajust.' : 'sin ajustar'} P${s.alt.pctl}</small>` : ''}</td><td class="r num">${recSig(s.zHist, 2)}</td>
         <td><span class="rc-score"><span class="rc-score-bar"><span style="width:${s.puntaje.total}%;background:${recColorSub(s.puntaje.total)}"></span></span><span class="num" style="font-weight:700">${s.puntaje.total}</span><span class="rc-badge ${s.puntaje.clase}">${recClaseLbl(s.puntaje.clase)}</span></span></td>
-        <td>${s.regimen ? '<span class="rc-badge flag">Posible cambio de régimen</span>' : ''}</td></tr>`;
+        <td>${s.ajustado ? '<span class="rc-badge debil">Ajustada por retenciones</span> ' : ''}${s.regimen ? '<span class="rc-badge flag">Posible cambio de régimen</span>' : ''}</td></tr>`;
   const prox = ['Soja NOV − MAY (spread)', 'Maíz ABR − JUL (spread)', 'Trigo MAR − DIC (carry)', 'Coberturas direccionales']
     .map(n => `<tr class="gris"><td>${n}</td><td colspan="7">Se agrega en la fase 5</td></tr>`).join('');
   return `<div class="rc-card"><div class="rc-card-h">Señales configuradas</div><div class="rc-scroll"><table class="rc-tabla">
@@ -568,22 +643,30 @@ function recHtmlSenal(s) {
   const below = s.dir === 'baja';
   const tile = (k, v, d, cls) => `<div class="rc-tile ${cls || ''}"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`;
   const contra = cond => cond ? 'neg' : 'pos';
-  const extremoContra = below ? s.enMin : s.enMax;
   const momContra = s.f * ((s.slope10 || 0) + (s.slope20 || 0)) < 0;
-  const p = s.puntaje;
+  const nomExt = below ? 'mínimo' : 'máximo';
+  const p = s.puntaje, a = s.alt;
+  const altTxt = fn => a ? `<br><span style="color:var(--mudo)">${a.ajustado ? 'ajustada' : 'sin ajustar'}: ${fn(a)}</span>` : '';
+  const momTxt = s.ruedasDesdeExt === 0 ? `<b>${nomExt} de campaña hoy</b>`
+    : s.piso ? `<b>encontró piso</b>: ${s.ruedasDesdeExt} ruedas sin ${nomExt} nuevo` : `${s.ruedasDesdeExt} ruedas desde el ${nomExt}; falta que la pendiente se aplane`;
+  const nota = s.ajustado
+    ? `<b>Comparación ajustada por retenciones:</b> los precios de las campañas anteriores (y de esta campaña antes del anuncio del cronograma) se pasan a las retenciones de la entrega actual, ${REC_LBL[s.c1].toLowerCase()} ${s.pos1} ${recF(s.retObj.r1, 2)} % y ${REC_LBL[s.c2].toLowerCase()} ${s.pos2} ${recF(s.retObj.r2, 2)} %, con fobbing. El puntaje usa esta versión.`
+    : `<b>Sin ajustar por retenciones:</b> son los mismos números que muestra Spreads. ${a ? 'El puntaje usa esta versión porque así se eligió.' : 'No hay tabla de retenciones para este par.'}`;
   return `<div class="rc-grid2">
     <div class="rc-card">
       <div class="rc-card-h">Señal · ${REC_LBL[s.c1]} ${s.pos1} / ${REC_LBL[s.c2]} ${s.pos2} <span class="rc-aux num">${s.curDte} días al vto. de ${s.pos1} · último dato ${spFmtFecha(recFecha(s.ultFecha))}</span></div>
+      <div class="rc-estr-why" style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;"><span>${nota}</span>
+        ${a ? `<button class="rc-btn out" data-html2canvas-ignore onclick="recState.ajuste=${s.ajustado ? 'false' : 'true'};recRender();">${s.ajustado ? 'Ver sin ajustar' : 'Ver ajustada'}</button>` : ''}</div>
       <div class="rc-tiles">
         ${tile('Relación actual', recR(s.actual), `${recF(s.p1Last, 1)} / ${recF(s.p2Last, 1)}`)}
-        ${tile('Prom. campaña', recR(s.avgCamp), `${recSig(s.actual - s.avgCamp, 4)} · rango ${recR(s.minCamp)}–${recR(s.maxCamp)}`)}
-        ${tile('Prom. histórico', recR(s.histMean), s.enVentana ? `${s.nCampPrev} campañas a ${s.curDte} ± ${s.ventana} días` : 'toda la historia (pocos puntos en la ventana)')}
-        ${tile('Percentil hist.', 'P' + s.pctl, below ? `solo ${recF(s.pctl, 1)} % de los días más bajo` : `solo ${recF(100 - s.pctl, 1)} % de los días más alto`, s.pctl <= 30 || s.pctl >= 70 ? 'neg' : '')}
-        ${tile('z hist.', recSig(s.zHist, 2), `σ entre campañas ${recR(s.sigH)}`, Math.abs(s.zHist) >= 1.5 ? 'neg' : '')}
+        ${tile('Prom. campaña', recR(s.avgCamp), `${recSig(s.actual - s.avgCamp, 4)} · rango ${recR(s.minCamp)}–${recR(s.maxCamp)}${altTxt(x => recR(x.avgCamp))}`)}
+        ${tile('Prom. histórico', recR(s.histMean), (s.enVentana ? `${s.nCampPrev} campañas a ${s.curDte} ± ${s.ventana} días` : 'toda la historia (pocos puntos en la ventana)') + altTxt(x => recR(x.histMean)))}
+        ${tile('Percentil hist.', 'P' + s.pctl, (below ? `solo ${recF(s.pctl, 1)} % de los días más bajo` : `solo ${recF(100 - s.pctl, 1)} % de los días más alto`) + altTxt(x => 'P' + x.pctl), s.pctl <= 30 || s.pctl >= 70 ? 'neg' : '')}
+        ${tile('z hist.', recSig(s.zHist, 2), `σ entre campañas ${recR(s.sigH)}${altTxt(x => recSig(x.zHist, 2))}`, Math.abs(s.zHist) >= 1.5 ? 'neg' : '')}
         ${tile('z propia', recSig(s.zProp, 2), `σ de esta campaña ${recR(s.stdCamp)}`)}
-        ${tile('Drift estacional', recSig(s.drift, 4), s.nDrift ? `hasta la fecha límite · ${s.nDriftFav} de ${s.nDrift} campañas a favor` : 'sin datos', s.drift == null ? '' : contra(s.f * s.drift < 0))}
-        ${tile('Momentum', recSig(s.slope10, 4), `por rueda (10) · ${recSig(s.slope20, 4)} (20)${extremoContra ? ` · <b>${below ? 'mínimo' : 'máximo'} de campaña</b>` : ''}`, contra(momContra || extremoContra))}
-        ${tile('Persistencia', recF(s.persistencia, 1) + ' %', `de los días ${below ? 'debajo' : 'encima'} del prom. histórico${s.regimen ? ' · <b>posible cambio de régimen</b>' : ''}`, s.regimen ? 'neg' : '')}
+        ${tile('Drift estacional', recSig(s.drift, 4), !s.nDrift ? 'sin datos' : s.patronEst ? `mediana hasta la fecha límite · ${s.nDriftFav} de ${s.nDrift} campañas a favor` : `<b>sin patrón claro</b>: subió en ${s.nDriftSube} de ${s.nDrift} campañas`, !s.patronEst || s.drift == null ? '' : contra(s.f * s.drift < 0))}
+        ${tile('Momentum', recSig(s.slope10, 4), `por rueda (10) · ${recSig(s.slope20, 4)} (20) · ${momTxt}`, s.piso ? 'pos' : contra(momContra || s.ruedasDesdeExt === 0))}
+        ${tile('Persistencia', recF(s.persistencia, 1) + ' %', `de los días ${below ? 'debajo' : 'encima'} del prom. histórico${s.regimen ? ' · <b>posible cambio de régimen</b>' : ''}${altTxt(x => recF(x.persistencia, 1) + ' %')}`, s.regimen ? 'neg' : '')}
         ${tile('Dispersión campañas', s.dispRango ? recR(s.dispRango[1] - s.dispRango[0]) : '—', s.dispRango ? `rango ${recR(s.dispRango[0])}–${recR(s.dispRango[1])} · σ ${recR(s.dispStd)}` : 'sin datos')}
       </div>
       <div class="rc-chart-box"><canvas id="rc-chart-senal"></canvas></div>
@@ -609,6 +692,9 @@ function recHtmlCfg() {
       <div>Clasificación: Fuerte <b>≥ ${C.fuerte}</b> · Moderada <b>${C.moderada}–${C.fuerte - 1}</b> · Débil <b>&lt; ${C.moderada}</b></div>
       <div>Ventana histórica: los mismos días al vto. ± ventana de Spreads (<b>RS_REGLAS.relaciones</b>)</div>
       <div>Cambio de régimen: persistencia <b>&gt; ${recF(C.regimenPct, 1)} %</b></div>
+      <div>Retenciones: ${C.ajustarRetenciones ? '<b>se ajustan</b>' : '<b>no se ajustan</b>'} · soja ${REC_RET_HIST.soja.map(x => `<b>${recF(x.ret, 1)} %</b> desde ${spFmtFecha(recFecha(x.desde))}`).slice(1).join(', ')} (antes <b>${recF(REC_RET_HIST.soja[0].ret, 1)} %</b>) · maíz ${REC_RET_HIST.maiz.map(x => `<b>${recF(x.ret, 1)} %</b> desde ${spFmtFecha(recFecha(x.desde))}`).slice(1).join(', ')} (antes <b>${recF(REC_RET_HIST.maiz[0].ret, 1)} %</b>) · luego el cronograma de globals.js</div>
+      <div>Estacionalidad: mediana; cuenta solo si <b>${recF(C.consistenciaEstacional * 100, 1)} %</b> de las campañas van en el mismo sentido</div>
+      <div>Piso: <b>${C.ruedasPiso} ruedas</b> sin extremo nuevo y pendiente de 10 ruedas plana o a favor; sin piso, el tramo 1 espera</div>
       <div>Tramos de entrada: <b>${C.tramosSigma.map(k => k ? k + 'σ' : 'actual').join(' · ')}</b> (⅓ cada uno)</div>
       <div>Stop: ${C.stopFijo != null ? `nivel fijo <b>${recR(C.stopFijo)}</b>` : `actual ∓ <b>${recF(C.stopSigma, 1)}σ</b>`}</div>
       <div>Fecha límite: vto. de la primera pata menos <b>${C.habilesAntesVto} hábiles</b></div>
@@ -679,7 +765,8 @@ function recRenderTarjeta() {
   const rbBajo = R.rb1 != null && R.rb1 < 1;
 
   // Riesgos y por qué
-  const momContra = s.f * ((s.slope10 || 0) + (s.slope20 || 0)) < 0, extremoContra = baja ? s.enMin : s.enMax;
+  const momContra = s.f * ((s.slope10 || 0) + (s.slope20 || 0)) < 0, extremoHoy = s.ruedasDesdeExt === 0;
+  const nomExt = baja ? 'mínimo' : 'máximo';
   const vtoTxt = (v) => v ? spFmtFecha(v) : '—';
   const gap = s.vto1 && s.vto2 ? Math.abs(Math.round((s.vto2 - s.vto1) / 864e5)) : null;
   const primera = s.vto1 && s.vto2 && s.vto2 < s.vto1 ? recLegLbl(s.c2, s.pos2) : recLegLbl(s.c1, s.pos1);
@@ -691,17 +778,23 @@ function recRenderTarjeta() {
   if (iaV.ia) liq.push(`${recT(nCtoV)} contratos de ${lV} (interés abierto ${recT(iaV.ia)})`);
   const liqAlta = (R.estr !== 'fisica' && iaC.ia && nCtoC > iaC.ia * REC_CONFIG.liquidezPctIA) || (iaV.ia && nCtoV > iaV.ia * REC_CONFIG.liquidezPctIA);
 
+  const a = s.alt;
   const porQue = [
-    `La relación está en <b>${recR(s.actual)}</b>, en el <b>percentil ${s.pctl}</b> de las ${s.nCampPrev} campañas previas ${s.enVentana ? `al mismo punto del ciclo (${s.curDte} ± ${s.ventana} días al vencimiento)` : '(toda la historia)'}.`,
-    `Está <b>${recR(Math.abs(s.actual - s.histMean))} ${baja ? 'debajo' : 'encima'}</b> del promedio histórico (${recR(s.histMean)}), a <b>${recSig(s.zHist, 2)} desvíos</b> entre campañas, y ${recR(Math.abs(s.actual - s.avgCamp))} ${s.actual < s.avgCamp ? 'debajo' : 'encima'} del promedio de esta campaña (${recR(s.avgCamp)}).`,
+    `La relación está en <b>${recR(s.actual)}</b>, en el <b>percentil ${s.pctl}</b> de las ${s.nCampPrev} campañas previas ${s.enVentana ? `al mismo punto del ciclo (${s.curDte} ± ${s.ventana} días al vencimiento)` : '(toda la historia)'}${s.ajustado ? ', comparando con las retenciones de hoy' : ''}.`,
+    `Está <b>${recR(Math.abs(s.actual - s.histMean))} ${baja ? 'debajo' : 'encima'}</b> del promedio histórico (${recR(s.histMean)}), a <b>${recSig(s.zHist, 2)} desvíos</b> entre campañas, y ${recR(Math.abs(s.actual - s.avgCamp))} ${s.actual < s.avgCamp ? 'debajo' : 'encima'} del promedio de esta campaña (${recR(s.avgCamp)}).`
+      + (a && s.ajustado ? ` Sin ajustar por retenciones daría P${a.pctl} y promedio ${recR(a.histMean)}: la diferencia es lo que explican las retenciones.` : ''),
     s.drift == null ? 'No hay datos suficientes para medir la estacionalidad hasta la fecha límite.'
-      : `Estacionalidad ${s.f * s.drift > 0 ? 'a favor' : 'en contra'}: desde este punto hasta la fecha límite la relación ${s.drift > 0 ? 'subió' : 'bajó'} en promedio <b>${recSig(s.drift, 4)}</b> (${s.nDriftFav} de ${s.nDrift} campañas a favor).`,
+      : s.patronEst ? `Estacionalidad ${s.f * s.drift > 0 ? 'a favor' : 'en contra'}: desde este punto hasta la fecha límite la relación ${s.drift > 0 ? 'subió' : 'bajó'} (mediana <b>${recSig(s.drift, 4)}</b>) en ${s.f * s.drift > 0 ? s.nDriftFav : s.nDrift - s.nDriftFav} de ${s.nDrift} campañas.`
+      : `Sin patrón estacional claro: de acá a la fecha límite la relación subió en ${s.nDriftSube} de ${s.nDrift} campañas y bajó en las demás (mediana ${recSig(s.drift, 4)}).`,
     R.viC && R.viC.pct != null ? `La VI de ${nC} está en <b>P${R.viC.pct}</b> (${recF(R.viC.vi, 1)} %)${R.viC.pct < REC_CONFIG.viBaja ? ': si se quiere opcionalidad en esa pata, los calls están baratos.' : R.viC.pct > REC_CONFIG.viAlta ? ': las opciones están caras, conviene futuros.' : ': en rango normal.'}` : `No hay VI de ${nC} disponible.`,
-    `${momContra || extremoContra ? 'Resta puntos' : 'A favor'}: pendiente de ${recSig(s.slope10, 4)} por rueda (10) y ${recSig(s.slope20, 4)} (20)${extremoContra ? `, en el <b>${baja ? 'mínimo' : 'máximo'} de la campaña</b>` : ''}; ${recF(s.persistencia, 1)} % de los días ${baja ? 'debajo' : 'encima'} del promedio histórico.`,
+    s.piso ? `<b>Encontró piso:</b> lleva ${s.ruedasDesdeExt} ruedas sin un ${nomExt} nuevo y la pendiente de 10 ruedas es ${recSig(s.slope10, 4)} por rueda.`
+      : `${extremoHoy ? `Hoy marcó un <b>${nomExt} de la campaña</b>` : `Lleva ${s.ruedasDesdeExt} ruedas desde el ${nomExt} de la campaña`}, con pendiente de ${recSig(s.slope10, 4)} por rueda (10) y ${recSig(s.slope20, 4)} (20): <b>todavía no encontró piso</b>.`,
   ];
+  const condPiso = `${REC_CONFIG.ruedasPiso} ruedas sin un ${nomExt} nuevo y pendiente de 10 ruedas plana o ${baja ? 'positiva' : 'negativa'}`;
   const riesgos = [
-    `<b>Cambio de régimen:</b> ${recF(s.persistencia, 1)} % de la campaña ${baja ? 'debajo' : 'encima'} del promedio histórico. ${s.regimen ? `El objetivo extendido (${recR(s.histMean)}) puede no llegar.` : 'Por ahora no hay señal de un desvío estructural.'}`,
-    `<b>Momentum ${momContra || extremoContra ? 'en contra' : ''}:</b> ${momContra || extremoContra ? `la relación viene ${baja ? 'cayendo' : 'subiendo'}${extremoContra ? ` y está en el ${baja ? 'mínimo' : 'máximo'} de la campaña` : ''}. Por eso la entrada es en tramos y no todo hoy.` : 'hoy la pendiente acompaña, pero puede darse vuelta. La entrada sigue siendo en tramos.'}`,
+    `<b>Cambio de régimen:</b> ${recF(s.persistencia, 1)} % de la campaña ${baja ? 'debajo' : 'encima'} del promedio histórico${s.ajustado ? ' (ya ajustado por retenciones)' : ''}. ${s.regimen ? `El objetivo extendido (${recR(s.histMean)}) puede no llegar.` : 'Por ahora no hay señal de un desvío estructural.'}`,
+    s.piso ? `<b>Momentum:</b> encontró piso, pero puede volver a ${baja ? 'caer' : 'subir'}. La entrada sigue siendo en tramos.`
+      : `<b>Momentum en contra:</b> la relación ${extremoHoy ? `hizo un ${nomExt} nuevo hoy` : `viene ${baja ? 'cayendo' : 'subiendo'}`}. <b>Esperar piso</b> antes del tramo 1: ${condPiso}.`,
     `<b>Vencimientos desalineados:</b> ${primera} vence el ${vtoTxt(s.vto1 && s.vto2 ? (s.vto1 <= s.vto2 ? s.vto1 : s.vto2) : s.vto1)}${gap != null ? `, ${gap} días antes que ${otra} (${vtoTxt(s.vto1 && s.vto2 ? (s.vto1 <= s.vto2 ? s.vto2 : s.vto1) : null)})` : ''}. Cerrar o rolar antes del <b>${fl}</b>; si no se cierran juntas, la otra pata queda sola.`,
     R.estr === 'calls'
       ? `<b>Pata en opciones:</b> los calls comprados pierden valor con el paso del tiempo; si la relación tarda en moverse, se pierde parte de la prima aunque la tesis sea correcta.`
