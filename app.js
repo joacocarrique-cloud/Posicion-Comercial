@@ -8,7 +8,8 @@ function isWorkspaceMode() {
     && !(typeof lineupMode !== 'undefined' && lineupMode)
     && !(typeof resumenMode !== 'undefined' && resumenMode)
     && !(typeof escMode !== 'undefined' && escMode)
-    && !(typeof climaMode !== 'undefined' && climaMode);
+    && !(typeof climaMode !== 'undefined' && climaMode)
+    && !(typeof recMode !== 'undefined' && recMode);
 }
 
 function renderAll() {
@@ -27,7 +28,7 @@ function renderAll() {
 const UI_MODULOS = {
   workspace: 'switchToWorkspace', ret: 'toggleRetenciones', pase: 'togglePases', spreads: 'toggleSpreads',
   desvio: 'toggleDesvio', theory: 'toggleTheory', lineup: 'toggleLineUp', resumen: 'toggleResumen',
-  escenarios: 'toggleEscenarios', clima: 'toggleClima',
+  escenarios: 'toggleEscenarios', clima: 'toggleClima', recomendaciones: 'toggleRecomendaciones',
 };
 Object.entries(UI_MODULOS).forEach(([k, fn]) => {
   const orig = window[fn];

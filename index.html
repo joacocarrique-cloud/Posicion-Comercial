@@ -15,7 +15,7 @@
     <div class="header-logo">🌾</div>
     <div>
       <div class="header-title">Suite Comercial · Espartina S.A.</div>
-      <div class="header-subtitle">Resumen · Clima · Escenarios · Coberturas · FAS & Retenciones · Spreads · Desvío de Precios · Pases & Tasas · Line-Up</div>
+      <div class="header-subtitle">Resumen · Clima · Escenarios · Recomendaciones · Coberturas · FAS & Retenciones · Spreads · Desvío de Precios · Pases & Tasas · Line-Up</div>
     </div>
     <span class="header-badge" id="app-version" title="Versión desplegada de la Suite">v10 · 24-sep-26</span>
   </div>
@@ -25,6 +25,7 @@
       <button class="mod-pill" id="pill-resumen" onclick="toggleResumen()">🧭 Resumen</button>
       <button class="mod-pill" id="pill-clima" onclick="toggleClima()">🌦 Clima</button>
       <button class="mod-pill" id="pill-escenarios" onclick="toggleEscenarios()">🎯 Escenarios</button>
+      <button class="mod-pill" id="pill-recomendaciones" onclick="toggleRecomendaciones()">💡 Recomendaciones</button>
       <button class="mod-pill active" id="pill-workspace" onclick="switchToWorkspace()">◈ Coberturas</button>
       <button class="mod-pill" id="pill-ret" onclick="toggleRetenciones()">🌾 FAS & Ret.</button>
       <button class="mod-pill" id="pill-spreads" onclick="toggleSpreads()">📈 Spreads</button>
@@ -885,6 +886,9 @@
     <div id="esc-body"></div>
   </div>
 
+  <!-- ═══ RECOMENDACIONES DE OPERACIONES (lo arma recomendaciones.js) ═══ -->
+  <div id="rec-space" style="display:none;"></div>
+
 </div><!-- /container: Spreads y Desvío quedan adentro, con el mismo margen que el resto -->
 
   <!-- ═══ ALERTAS ═══ -->
@@ -1092,6 +1096,7 @@ window.addEventListener('afterprint', function() {
 <script src="resumen.js"></script>
 <script src="escenarios.js"></script>
 <script src="clima.js"></script>
+<script src="recomendaciones.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
