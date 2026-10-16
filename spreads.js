@@ -257,6 +257,14 @@ function spCalcSpread(){
       <div style="font-size:10px;color:var(--text-3);">${Math.abs(current-avg)>std*1.5?'⚠️ Fuera de 1,5σ':'Dentro de 1,5σ'}</div>
     </div>`;
 
+  // Título de los 3 gráficos desde los selectores: "Spread Maíz Abril – Maíz Julio" / "Relación Maíz Abril / Maíz Julio"
+  const spCropLbl={soja:'Soja',maiz:'Maíz',trigo:'Trigo',girasol:'Girasol'};
+  const spLegLbl=(crop,pos)=>`${spCropLbl[crop]||crop} ${MONTH_LABELS[pos.slice(0,3)]||pos.slice(0,3)}`;
+  const spPairTitle={display:true,color:'#1f2a24',font:{size:13,weight:'bold'},padding:{top:2,bottom:6},
+    text:spMode==='basis'
+      ?`Spread ${spLegLbl(crop1,pos1)} – ${spLegLbl(crop2,pos2)}`
+      :`Relación ${spLegLbl(crop1,pos1)} / ${spLegLbl(crop2,pos2)}`};
+
   // ─── Chart 1: Serie actual (solo este par) ───
   if(spChartCurrent){spChartCurrent.destroy();}
   const ctxC=document.getElementById('sp-chart-current').getContext('2d');
@@ -266,7 +274,7 @@ function spCalcSpread(){
       {label:spMode==='basis'?'Basis':'Relación',data:filtered.map(s=>spMode==='basis'?s.basis:s.ratio),borderColor:'#1A6B3C',backgroundColor:'rgba(26,107,60,.06)',fill:true,borderWidth:1.5,pointRadius:0,tension:0.3},
       {label:'Promedio',data:filtered.map(()=>avg),borderColor:'#C8A44A',borderWidth:1,borderDash:[5,5],pointRadius:0}
     ]
-  },options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{font:{size:9},boxWidth:12}},tooltip:{mode:'index',intersect:false}},
+  },options:{responsive:true,maintainAspectRatio:false,plugins:{title:{...spPairTitle},legend:{display:true,labels:{font:{size:9},boxWidth:12}},tooltip:{mode:'index',intersect:false}},
     scales:{x:{ticks:{maxTicksLimit:8,font:{size:10}},grid:{display:false}},y:yAxisCurrent}}});
 
   // ─── Chart 2: Estacionalidad por DTE ───
@@ -330,6 +338,7 @@ function spCalcSpread(){
       responsive:true,
       maintainAspectRatio:false,
       plugins:{
+        title:{...spPairTitle},
         legend:{
           display:true,
           labels:{font:{size:8},boxWidth:10,filter:item=>item.text!=='_min'},
@@ -374,7 +383,7 @@ function spCalcSpread(){
 
   const ctxD=document.getElementById('sp-chart-dist').getContext('2d');
   spChartDist=new Chart(ctxD,{type:'bar',data:{labels:binLabels,datasets:[{data:bins,backgroundColor:barColors,borderRadius:2}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{title:(items)=>{const i=items[0].dataIndex;return `Rango: ${fmt(min+i*binWidth)} a ${fmt(min+(i+1)*binWidth)}`;},label:(item)=>`${item.raw} observaciones`}}},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{title:{...spPairTitle},legend:{display:false},tooltip:{callbacks:{title:(items)=>{const i=items[0].dataIndex;return `Rango: ${fmt(min+i*binWidth)} a ${fmt(min+(i+1)*binWidth)}`;},label:(item)=>`${item.raw} observaciones`}}},
       scales:{x:{ticks:{maxTicksLimit:10,font:{size:10,family:'JetBrains Mono'}},grid:{display:false}},y:{ticks:{font:{size:9}},grid:{color:'rgba(0,0,0,.05)'}}}}});
 
   // Insight
