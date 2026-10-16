@@ -754,20 +754,23 @@
 
     <!-- Gráficos 1 y 2 -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-bottom:16px;">
-      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);">
+      <div class="chart-card" style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);">
+        <button class="chart-expand-btn" onclick="chartToggleExpand(this)" title="Ampliar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
         <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Serie actual</div>
-        <div style="position:relative;height:300px;"><canvas id="sp-chart-current"></canvas></div>
+        <div class="chart-box" style="position:relative;height:300px;"><canvas id="sp-chart-current"></canvas></div>
       </div>
-      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);">
+      <div class="chart-card" style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);">
+        <button class="chart-expand-btn" onclick="chartToggleExpand(this)" title="Ampliar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
         <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Estacionalidad (por días al vencimiento)</div>
-        <div style="position:relative;height:300px;"><canvas id="sp-chart-season"></canvas></div>
+        <div class="chart-box" style="position:relative;height:300px;"><canvas id="sp-chart-season"></canvas></div>
       </div>
     </div>
 
     <!-- Gráfico 3: Distribución -->
-    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);margin-bottom:16px;">
+    <div class="chart-card" style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);margin-bottom:16px;">
+      <button class="chart-expand-btn" onclick="chartToggleExpand(this)" title="Ampliar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
       <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Distribución histórica</div>
-      <div style="position:relative;height:240px;"><canvas id="sp-chart-dist"></canvas></div>
+      <div class="chart-box" style="position:relative;height:240px;"><canvas id="sp-chart-dist"></canvas></div>
       <div id="sp-dist-insight" style="margin-top:8px;"></div>
     </div>
 

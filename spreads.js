@@ -217,12 +217,10 @@ function spCalcSpread(){
   const pctVsHist=pctBase===histVals;
   const percentile=Math.round(pctBase.filter(v=>v<=current).length/pctBase.length*100);
 
-  // Y axis
+  // Y axis: escala pareja (paso redondo); los inputs manuales tienen prioridad
   const yMinInput=document.getElementById('sp-ymin').value;
   const yMaxInput=document.getElementById('sp-ymax').value;
-  const padding=(max-min)*0.1||1;
-  const yMin=yMinInput!==''?parseFloat(yMinInput):Math.floor((min-padding)*10)/10;
-  const yMax=yMaxInput!==''?parseFloat(yMaxInput):Math.ceil((max+padding)*10)/10;
+  const yAxisCurrent=chartApplyNiceY({ticks:{font:{size:10,family:'JetBrains Mono'}}},min,max,yMinInput,yMaxInput);
 
   // Stats
   document.getElementById('sp-stats').style.gridTemplateColumns='repeat(auto-fit,minmax(130px,1fr))';
@@ -269,7 +267,7 @@ function spCalcSpread(){
       {label:'Promedio',data:filtered.map(()=>avg),borderColor:'#C8A44A',borderWidth:1,borderDash:[5,5],pointRadius:0}
     ]
   },options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{font:{size:9},boxWidth:12}},tooltip:{mode:'index',intersect:false}},
-    scales:{x:{ticks:{maxTicksLimit:8,font:{size:10}},grid:{display:false}},y:{min:yMin,max:yMax,ticks:{font:{size:10,family:'JetBrains Mono'}}}}}});
+    scales:{x:{ticks:{maxTicksLimit:8,font:{size:10}},grid:{display:false}},y:yAxisCurrent}}});
 
   // ─── Chart 2: Estacionalidad por DTE ───
   if(spChartSeason){spChartSeason.destroy();}
@@ -285,43 +283,44 @@ function spCalcSpread(){
       borderWidth:isCurr?2.5:1.5,pointRadius:isCurr?3:2,tension:0.3,
       borderDash:isCurr?[]:[3,3],hidden:!isCurr});ci++;
   }
-  // ─── Línea promedio: campañas ANTERIORES (sin la actual, para poder compararla) ───
+  // ─── Promedio y rango mín–máx: campañas ANTERIORES (sin la actual, para poder compararla) ───
   const avgByDte={};
   for(const key of sKeys.filter(k=>k!==currentKey)){
     (seasonData[key]||[]).forEach(p=>{
       const dteBin=Math.round(p.dte/5)*5;
-      if(!avgByDte[dteBin])avgByDte[dteBin]={sum:0,count:0};
-      avgByDte[dteBin].sum+=p.val;avgByDte[dteBin].count++;
+      if(!avgByDte[dteBin])avgByDte[dteBin]={sum:0,count:0,min:Infinity,max:-Infinity};
+      const b=avgByDte[dteBin];
+      b.sum+=p.val;b.count++;
+      if(p.val<b.min)b.min=p.val;if(p.val>b.max)b.max=p.val;
     });
   }
-  const avgPts=Object.keys(avgByDte).map(d=>({x:parseInt(d),y:avgByDte[d].sum/avgByDte[d].count})).sort((a,b)=>b.x-a.x);
-  // Auto Y-axis inicial: Promedio + campaña actual (el resto arranca oculto)
+  const dteBins=Object.keys(avgByDte).map(d=>parseInt(d)).sort((a,b)=>b-a);
+  const avgPts=dteBins.map(d=>({x:d,y:avgByDte[d].sum/avgByDte[d].count}));
+  const minPts=dteBins.map(d=>({x:d,y:avgByDte[d].min}));
+  const maxPts=dteBins.map(d=>({x:d,y:avgByDte[d].max}));
+  // Auto Y-axis inicial: rango histórico + campaña actual (el resto arranca oculto)
   let sYMin=Infinity,sYMax=-Infinity;
-  avgPts.concat((seasonData[currentKey]||[]).map(p=>({y:p.val}))).forEach(p=>{if(p.y<sYMin)sYMin=p.y;if(p.y>sYMax)sYMax=p.y;});
-  const sPad=(sYMax-sYMin)*0.1||1;
-  const sAxisMin=yMinInput!==''?parseFloat(yMinInput):Math.floor((sYMin-sPad)*10)/10;
-  const sAxisMax=yMaxInput!==''?parseFloat(yMaxInput):Math.ceil((sYMax+sPad)*10)/10;
+  minPts.concat(maxPts,(seasonData[currentKey]||[]).map(p=>({y:p.val}))).forEach(p=>{if(p.y<sYMin)sYMin=p.y;if(p.y>sYMax)sYMax=p.y;});
+  const yAxisSeason=chartApplyNiceY({title:{display:true,text:spMode==='basis'?'Basis (u$s)':'Relación',font:{size:10}},
+    ticks:{font:{size:9,family:'JetBrains Mono'}}},sYMin,sYMax,yMinInput,yMaxInput);
   if(avgPts.length>1){
+    // Banda: "_min" sin relleno (oculto en la leyenda) + "Rango histórico" que rellena hasta el anterior ('-1')
+    sDatasets.push({label:'_min',data:minPts,showLine:true,borderColor:'rgba(200,164,74,.35)',borderWidth:1,
+      pointRadius:0,pointHitRadius:0,tension:0.4,fill:false,order:3,isBand:true});
+    sDatasets.push({label:'Rango histórico (mín–máx)',data:maxPts,showLine:true,borderColor:'rgba(200,164,74,.35)',borderWidth:1,
+      backgroundColor:'rgba(200,164,74,.16)',pointRadius:0,pointHitRadius:0,tension:0.4,fill:'-1',order:3,isBand:true});
     sDatasets.push({label:'Promedio',data:avgPts,showLine:true,borderColor:'#C8A44A',borderWidth:2.5,
-      pointRadius:0,tension:0.4,borderDash:[6,3],backgroundColor:'rgba(217,119,6,.08)',fill:true});
+      pointRadius:0,tension:0.4,borderDash:[6,3],backgroundColor:'#C8A44A',fill:false,order:2});
   }
   function spSeasonRecalcY(chart){
     const yManMin=document.getElementById('sp-ymin').value;
     const yManMax=document.getElementById('sp-ymax').value;
-    if(yManMin!==''&&yManMax!==''){
-      chart.options.scales.y.min=parseFloat(yManMin);
-      chart.options.scales.y.max=parseFloat(yManMax);
-      chart.update('none');return;
-    }
     let vMin=Infinity,vMax=-Infinity;
     chart.data.datasets.forEach((ds,i)=>{
-      if(chart.getDatasetMeta(i).hidden)return;
+      if(!chart.isDatasetVisible(i))return;
       (ds.data||[]).forEach(p=>{if(p.y<vMin)vMin=p.y;if(p.y>vMax)vMax=p.y;});
     });
-    if(!isFinite(vMin)||!isFinite(vMax))return;
-    const pad=(vMax-vMin)*0.1||1;
-    chart.options.scales.y.min=Math.floor((vMin-pad)*10)/10;
-    chart.options.scales.y.max=Math.ceil((vMax+pad)*10)/10;
+    if(isFinite(vMin)&&isFinite(vMax))chartApplyNiceY(chart.options.scales.y,vMin,vMax,yManMin,yManMax);
     chart.update('none');
   }
   spChartSeason=new Chart(ctxS,{
@@ -333,19 +332,32 @@ function spCalcSpread(){
       plugins:{
         legend:{
           display:true,
-          labels:{font:{size:8},boxWidth:10},
+          labels:{font:{size:8},boxWidth:10,filter:item=>item.text!=='_min'},
           onClick:function(e,legendItem,legend){
-            const index=legendItem.datasetIndex;
-            const meta=legend.chart.getDatasetMeta(index);
-            meta.hidden=meta.hidden===null?!legend.chart.data.datasets[index].hidden:!meta.hidden;
-            spSeasonRecalcY(legend.chart);
+            const chart=legend.chart,index=legendItem.datasetIndex;
+            // La banda son dos datasets (_min y máx): se prenden/apagan juntos
+            const idxs=chart.data.datasets[index].isBand
+              ?chart.data.datasets.map((d,i)=>d.isBand?i:-1).filter(i=>i>=0):[index];
+            const vis=chart.isDatasetVisible(index);
+            idxs.forEach(i=>chart.setDatasetVisibility(i,!vis));
+            spSeasonRecalcY(chart);
           }
         },
-        tooltip:{mode:'nearest'}
+        tooltip:{mode:'nearest',
+          filter:it=>!it.dataset.isBand,
+          callbacks:{
+            afterBody:items=>{
+              if(!items.length)return [];
+              const b=avgByDte[Math.round(items[0].parsed.x/5)*5];
+              if(!b||!items[0].chart.isDatasetVisible(sDatasets.findIndex(d=>d.isBand)))return [];
+              return [`Rango hist.: ${b.min.toFixed(2)} – ${b.max.toFixed(2)}`,`Promedio: ${(b.sum/b.count).toFixed(2)} (${b.count} obs.)`];
+            }
+          }
+        }
       },
       scales:{
         x:{title:{display:true,text:'Días al vencimiento',font:{size:10}},reverse:true,ticks:{font:{size:9}}},
-        y:{min:sAxisMin,max:sAxisMax,title:{display:true,text:spMode==='basis'?'Basis (u$s)':'Relación',font:{size:10}},ticks:{font:{size:9,family:'JetBrains Mono'}}}
+        y:yAxisSeason
       }
     }
   });

@@ -287,3 +287,49 @@ let asstVisionSel='floor', asstModeNum=1, asstChainRows=[];
 let spMode='basis';
 let spChartCurrent=null, spChartSeason=null, spChartDist=null;
 let spExcludedYears=new Set();
+
+// ─── Gráficos: helpers compartidos ───
+// Escala Y pareja: paso "redondo" (1, 2, 5 × 10^n) y extremos múltiplos del paso
+function chartNiceAxis(vMin,vMax,maxTicks){
+  maxTicks=maxTicks||10;
+  if(!isFinite(vMin)||!isFinite(vMax))return null;
+  if(vMin===vMax){const d=Math.abs(vMin)*0.1||1;vMin-=d;vMax+=d;}
+  const pad=(vMax-vMin)*0.05;vMin-=pad;vMax+=pad;
+  const raw=(vMax-vMin)/maxTicks;
+  const mag=Math.pow(10,Math.floor(Math.log10(raw)));
+  const step=[1,2,5,10].map(m=>m*mag).find(s=>s>=raw*(1-1e-9));
+  const r=x=>+x.toFixed(10);
+  return {min:r(Math.floor(vMin/step)*step),max:r(Math.ceil(vMax/step)*step),step:r(step)};
+}
+// Aplica a un eje Y de Chart.js; los valores manuales (inputs) tienen prioridad
+function chartApplyNiceY(yScale,vMin,vMax,manMin,manMax){
+  const lo=manMin!==''&&manMin!=null?parseFloat(manMin):vMin;
+  const hi=manMax!==''&&manMax!=null?parseFloat(manMax):vMax;
+  const n=chartNiceAxis(lo,hi);
+  if(!n)return yScale;
+  yScale.min=manMin!==''&&manMin!=null?lo:n.min;
+  yScale.max=manMax!==''&&manMax!=null?hi:n.max;
+  if(!yScale.ticks)yScale.ticks={};
+  yScale.ticks.stepSize=n.step;
+  return yScale;
+}
+
+// Ampliar gráfico a pantalla completa (botón .chart-expand-btn dentro de .chart-card)
+const CHART_ICON_EXPAND='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>';
+const CHART_ICON_COLLAPSE='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>';
+function chartSetExpanded(card,open){
+  card.classList.toggle('chart-expanded',open);
+  document.body.classList.toggle('chart-modal-open',!!document.querySelector('.chart-card.chart-expanded'));
+  const btn=card.querySelector('.chart-expand-btn');
+  if(btn){btn.innerHTML=open?CHART_ICON_COLLAPSE:CHART_ICON_EXPAND;btn.title=open?'Cerrar (Esc)':'Ampliar';}
+  requestAnimationFrame(()=>card.querySelectorAll('canvas').forEach(cv=>{const ch=Chart.getChart(cv);if(ch)ch.resize();}));
+}
+function chartToggleExpand(btn){
+  const card=btn.closest('.chart-card');
+  const open=!card.classList.contains('chart-expanded');
+  document.querySelectorAll('.chart-card.chart-expanded').forEach(c=>{if(c!==card)chartSetExpanded(c,false);});
+  chartSetExpanded(card,open);
+}
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape')document.querySelectorAll('.chart-card.chart-expanded').forEach(c=>chartSetExpanded(c,false));
+});

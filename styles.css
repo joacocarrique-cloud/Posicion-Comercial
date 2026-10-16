@@ -480,6 +480,23 @@ body {
 .rs-pcard-s { font-size: 11px; color: var(--text-3); margin-bottom: 6px; }
 .rs-pcard-row { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--text-2); border-top: 1px dashed var(--border); padding-top: 4px; margin-top: 4px; }
 .rs-pcard-row b { font-family: var(--mono); font-weight: 600; color: var(--text); }
+/* FAS & Retenciones: crushing girasol (ocupa el ancho completo, debajo de exportación grano) */
+#ret-panel-gira { grid-column: 1 / -1; }
+.gira-grupo { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); margin: 2px 0 6px; }
+.gira-ref { align-self: flex-end; font-size: 11px; color: var(--text-3); font-family: var(--mono); padding-bottom: 6px; }
+.gira-rinde { font-size: 12px; color: var(--text-2); margin: 4px 0 10px; }
+.gira-rinde b { font-family: var(--mono); color: var(--text); }
+.gira-tabla { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.gira-tabla th { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); text-align: right; padding: 5px 6px; border-bottom: 2px solid var(--es-gold); }
+.gira-tabla th:first-child, .gira-tabla td:first-child { text-align: left; }
+.gira-tabla td { padding: 5px 6px; border-bottom: 1px solid var(--border); text-align: right; font-family: var(--mono); }
+.gira-tabla td:first-child { font-family: var(--font); color: var(--text-2); }
+.gira-tabla small { display: block; font-size: 10px; color: var(--text-3); }
+.gira-tabla tr.gira-sub td { font-weight: 700; background: var(--bg-input); }
+.gira-tabla tr.gira-mb td { font-weight: 700; font-size: 13.5px; border-top: 2px solid var(--border); }
+.gira-tabla tr.gira-dif td { font-size: 11px; }
+.gira-warn { font-size: 11.5px; color: #8a5a00; font-weight: 600; margin-top: 6px; }
+
 /* Desvío: panel fijo de Precios Objetivo / Dolor */
 .dv-refs-panel { margin: 4px 0 18px; }
 .dv-refs-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-2); margin-bottom: 8px; }
@@ -2607,3 +2624,12 @@ td.esc-muted { font-size: 11px; }
   #esc-space .esc-nueva, #esc-space .esc-chip-btn { display: none !important; }
   #esc-space .esc-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ─── Gráficos: botón ampliar / pantalla completa ─── */
+.chart-card { position: relative; }
+.chart-expand-btn { position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text-3); cursor: pointer; z-index: 2; transition: color .15s, border-color .15s; }
+.chart-expand-btn:hover { color: var(--es-green); border-color: var(--es-green); }
+.chart-card.chart-expanded { position: fixed; inset: 16px; z-index: 1000; margin: 0 !important; display: flex; flex-direction: column; box-shadow: 0 12px 48px rgba(0,0,0,.3) !important; }
+.chart-card.chart-expanded .chart-box { flex: 1; height: auto !important; min-height: 0; }
+body.chart-modal-open { overflow: hidden; }
+body.chart-modal-open::before { content: ''; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 999; }
