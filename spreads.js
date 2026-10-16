@@ -296,18 +296,18 @@ function spCalcSpread(){
   }
   const dteBins=Object.keys(avgByDte).map(d=>parseInt(d)).sort((a,b)=>b-a);
   const avgPts=dteBins.map(d=>({x:d,y:avgByDte[d].sum/avgByDte[d].count}));
-  const minPts=dteBins.map(d=>({x:d,y:avgByDte[d].min}));
-  const maxPts=dteBins.map(d=>({x:d,y:avgByDte[d].max}));
+  const bandMinPts=dteBins.map(d=>({x:d,y:avgByDte[d].min}));
+  const bandMaxPts=dteBins.map(d=>({x:d,y:avgByDte[d].max}));
   // Auto Y-axis inicial: rango histórico + campaña actual (el resto arranca oculto)
   let sYMin=Infinity,sYMax=-Infinity;
-  minPts.concat(maxPts,(seasonData[currentKey]||[]).map(p=>({y:p.val}))).forEach(p=>{if(p.y<sYMin)sYMin=p.y;if(p.y>sYMax)sYMax=p.y;});
+  bandMinPts.concat(bandMaxPts,(seasonData[currentKey]||[]).map(p=>({y:p.val}))).forEach(p=>{if(p.y<sYMin)sYMin=p.y;if(p.y>sYMax)sYMax=p.y;});
   const yAxisSeason=chartApplyNiceY({title:{display:true,text:spMode==='basis'?'Basis (u$s)':'Relación',font:{size:10}},
     ticks:{font:{size:9,family:'JetBrains Mono'}}},sYMin,sYMax,yMinInput,yMaxInput);
   if(avgPts.length>1){
     // Banda: "_min" sin relleno (oculto en la leyenda) + "Rango histórico" que rellena hasta el anterior ('-1')
-    sDatasets.push({label:'_min',data:minPts,showLine:true,borderColor:'rgba(200,164,74,.35)',borderWidth:1,
+    sDatasets.push({label:'_min',data:bandMinPts,showLine:true,borderColor:'rgba(200,164,74,.35)',borderWidth:1,
       pointRadius:0,pointHitRadius:0,tension:0.4,fill:false,order:3,isBand:true});
-    sDatasets.push({label:'Rango histórico (mín–máx)',data:maxPts,showLine:true,borderColor:'rgba(200,164,74,.35)',borderWidth:1,
+    sDatasets.push({label:'Rango histórico (mín–máx)',data:bandMaxPts,showLine:true,borderColor:'rgba(200,164,74,.35)',borderWidth:1,
       backgroundColor:'rgba(200,164,74,.16)',pointRadius:0,pointHitRadius:0,tension:0.4,fill:'-1',order:3,isBand:true});
     sDatasets.push({label:'Promedio',data:avgPts,showLine:true,borderColor:'#C8A44A',borderWidth:2.5,
       pointRadius:0,tension:0.4,borderDash:[6,3],backgroundColor:'#C8A44A',fill:false,order:2});
