@@ -288,7 +288,7 @@ function spCalcSpread(){
     const isCurr=key===currentKey;
     sDatasets.push({label:key,data:pts.map(p=>({x:p.dte,y:p.val})),showLine:true,
       borderColor:dsColors[ci%dsColors.length],backgroundColor:dsColors[ci%dsColors.length],
-      borderWidth:isCurr?2.5:1.5,pointRadius:isCurr?3:2,tension:0.3,
+      borderWidth:isCurr?2.5:1.5,pointRadius:0,pointHoverRadius:isCurr?4:3,tension:0.3,
       borderDash:isCurr?[]:[3,3],hidden:!isCurr});ci++;
   }
   // ─── Promedio y rango mín–máx: campañas ANTERIORES (sin la actual, para poder compararla) ───
