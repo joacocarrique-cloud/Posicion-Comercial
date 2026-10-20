@@ -26,7 +26,6 @@
       <button class="mod-pill" id="pill-resumen" onclick="toggleResumen()">🧭 Resumen</button>
       <button class="mod-pill" id="pill-clima" onclick="toggleClima()">🌦 Clima</button>
       <button class="mod-pill" id="pill-escenarios" onclick="toggleEscenarios()">🎯 Escenarios</button>
-      <button class="mod-pill" id="pill-recomendaciones" onclick="toggleRecomendaciones()">💡 Recomendaciones</button>
       <button class="mod-pill active" id="pill-workspace" onclick="switchToWorkspace()">◈ Coberturas</button>
       <button class="mod-pill" id="pill-ret" onclick="toggleRetenciones()">🌾 FAS & Ret.</button>
       <button class="mod-pill" id="pill-spreads" onclick="toggleSpreads()">📈 Spreads</button>
@@ -716,6 +715,9 @@
 
     <div id="spread-sync-bar" style="display:none;padding:8px 16px;border-radius:8px;margin-bottom:10px;border:1px solid var(--border);font-size:12px;"></div>
 
+    <!-- Radar de señales (lo arma recomendaciones.js) -->
+    <div id="sp-rec-radar" class="rc-scope"></div>
+
     <!-- Selectores cross-producto -->
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:20px;box-shadow:var(--shadow);margin-bottom:16px;">
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">
@@ -753,6 +755,9 @@
     <!-- Stats -->
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px;" id="sp-stats"></div>
 
+    <!-- Puntaje del par seleccionado (lo arma recomendaciones.js) -->
+    <div id="sp-rec-banda" class="rc-scope"></div>
+
     <!-- Gráficos 1 y 2 -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-bottom:16px;">
       <div class="chart-card" style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);">
@@ -774,6 +779,9 @@
       <div class="chart-box" style="position:relative;height:240px;"><canvas id="sp-chart-dist"></canvas></div>
       <div id="sp-dist-insight" style="margin-top:8px;"></div>
     </div>
+
+    <!-- Señal completa y recomendación de operación (lo arma recomendaciones.js) -->
+    <div id="sp-rec" class="rc-scope" style="scroll-margin-top:70px;"></div>
 
     <!-- Tabla datos -->
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow);max-height:300px;overflow-y:auto;">
@@ -889,9 +897,6 @@
     <input type="file" id="esc-file" accept=".html,.htm,.json" style="display:none" onchange="escImportar(event)">
     <div id="esc-body"></div>
   </div>
-
-  <!-- ═══ RECOMENDACIONES DE OPERACIONES (lo arma recomendaciones.js) ═══ -->
-  <div id="rec-space" style="display:none;"></div>
 
 </div><!-- /container: Spreads y Desvío quedan adentro, con el mismo margen que el resto -->
 
@@ -1100,7 +1105,7 @@ window.addEventListener('afterprint', function() {
 <script src="resumen.js?v=2026-10-16c"></script>
 <script src="escenarios.js?v=2026-10-16c"></script>
 <script src="clima.js?v=2026-10-16c"></script>
-<script src="recomendaciones.js?v=2026-10-19c"></script>
-<script src="app.js?v=2026-10-16c"></script>
+<script src="recomendaciones.js?v=2026-10-20a"></script>
+<script src="app.js?v=2026-10-20a"></script>
 </body>
 </html>

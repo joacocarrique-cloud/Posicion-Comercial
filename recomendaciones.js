@@ -12,15 +12,15 @@
 //   config_operaciones (opcional)  → tamaño de contrato y garantías por cultivo.
 // Black-76: asstB76 de asistente.js. PDF: escPdfLibs de escenarios.js.
 //
-// El cálculo de la relación replica el de spCalcSpread (spreads.js), sin años
-// excluidos, para que los números coincidan con el módulo Spreads.
+// Vive dentro del módulo Spreads: puntúa el par que esté seleccionado (Basis → spread,
+// Relación → ratio) y arriba muestra el radar con las señales de REC_CONFIG.pares.
+// El cálculo replica el de spCalcSpread (spreads.js) y respeta los años excluidos
+// del filtro de campañas, para que los números coincidan con lo que muestra Spreads.
 // ═══════════════════════════════════════════════════
-
-let recMode = false;
 
 // ─── Parámetros (editar acá) ───
 const REC_CONFIG = {
-  // Señales a evaluar. desfase = año pos. 2 − año pos. 1
+  // Señales del radar (favoritos). desfase = año pos. 2 − año pos. 1
   //   'ratio'  = precio 1 / precio 2
   //   'spread' = precio 1 − precio 2, en USD/t (spreads entre posiciones y carry)
   //   'precio' = precio de una sola posición (coberturas direccionales; sin pata 2)
@@ -67,7 +67,8 @@ const REC_TIPO = {
 };
 function recComb(tipo, p1, p2) { return tipo === 'ratio' ? (p2 > 0 ? p1 / p2 : null) : tipo === 'spread' ? p1 - p2 : p1; }
 
-let recState = { parId: REC_CONFIG.pares[0].id, estr: null, tnManual: null, senal: null, senales: {}, cfgSheet: null, cfgEstado: 'pendiente' };
+// precioId: cobertura de precio abierta desde el radar (null = se muestra el par de los selectores)
+let recState = { precioId: null, clave: null, estr: null, tnManual: null, senal: null, senales: {}, radarClave: null, cfgSheet: null, cfgEstado: 'pendiente' };
 let recChSenal = null, recChPayoff = null;
 
 // ─── Formatos: coma decimal; USD y % con 1 decimal; relaciones con 4 ───
@@ -175,9 +176,12 @@ function recSinParMotivo(par) {
 }
 
 // ajustar = true: precios pasados a las retenciones de la entrega actual (null si no hay tabla para el par)
+// Si el par trae pos1/pos2 (el seleccionado en Spreads) se usan esas posiciones tal cual.
 function recSenal(par, ajustar) {
-  const res = recResolverPar(par);
+  const res = par.pos1 ? { pos1: par.pos1, pos2: par.pos2 || null } : recResolverPar(par);
   if (!res) return { error: recSinParMotivo(par) };
+  // Años excluidos en el filtro de campañas de Spreads: no entran en la comparación histórica
+  const excl = typeof spExcludedYears !== 'undefined' ? spExcludedYears : new Set();
   const tipo = par.tipo || 'ratio', T = REC_TIPO[tipo], precio = tipo === 'precio';
   const c1 = par.c1, c2 = precio ? null : par.c2, { pos1, pos2 } = res;
   const cfgRel = (typeof RS_REGLAS !== 'undefined' && RS_REGLAS.relaciones) || {};
@@ -212,6 +216,7 @@ function recSenal(par, ajustar) {
   const season = {};
   ASST_FUTPOS.forEach(r1 => {
     if (r1.cultivo !== c1 || r1.mes_label !== mes1) return;
+    if (excl.has(r1.anio_pos) || (!precio && excl.has(r1.anio_pos + off))) return;
     if (precio) { if (r1.precio > 0) (season[r1.pos] = season[r1.pos] || []).push({ dte: r1.dias_vto, val: px1(r1) }); return; }
     (idx2[(r1.anio_pos + off) + '|' + recFk(r1.fecha)] || []).forEach(r2 => {
       const v = comb(r1, r2); if (v == null) return;
@@ -295,7 +300,7 @@ function recSenal(par, ajustar) {
     vto1, vto2, fechaLimite, dteSalida, drift, driftProm, nDrift: drifts.length, nDriftFav, nDriftSube, patronEst,
     slope10, slope20, enMin, enMax, ruedasDesdeExt, piso, persistencia, regimen, curva, vi1, vi2,
     p1Last: ult.p1, p2Last: ult.p2, ultFecha: ult.fecha,
-    ajustado: !!aj, retObj: aj ? { r1: aj.obj[1], r2: aj.obj[2] } : null,
+    ajustado: !!aj, retObj: aj ? { r1: aj.obj[1], r2: aj.obj[2] } : null, exclAnios: excl.size ? [...excl].sort() : null,
     fv: v => recF(v, T.dec), fd: v => recSig(v, T.decD),
   };
   s.puntaje = recPuntaje(s);
@@ -423,8 +428,9 @@ function recPrecioA3(c, p) {
 
 // Arma la recomendación para la señal s y la estructura estr ('fisica' | 'spread' | 'calls').
 // Relación: neutral en dólares. Spread: mismas toneladas en las dos patas y P&L en USD del spread.
+// Mismo grano (calSp): la física es guardar la pata cercana; entre granos, reservar la barata.
 function recArmar(s, estr) {
-  const C = REC_CONFIG, baja = s.dir === 'baja', esSpread = s.tipo === 'spread';
+  const C = REC_CONFIG, baja = s.dir === 'baja', esSpread = s.tipo === 'spread', calSp = s.c1 === s.c2;
   const compra = baja ? { c: s.c1, p: s.pos1, i: 1 } : { c: s.c2, p: s.pos2, i: 2 };
   const venta = baja ? { c: s.c2, p: s.pos2, i: 2 } : { c: s.c1, p: s.pos1, i: 1 };
   const a1 = recPrecioA3(s.c1, s.pos1), a2 = recPrecioA3(s.c2, s.pos2);
@@ -438,18 +444,18 @@ function recArmar(s, estr) {
   const spC = recSinPrecio(compra.c, compra.p), spV = recSinPrecio(venta.c, venta.p);
   const vtoC = compra.i === 1 ? s.vto1 : s.vto2, vtoV = venta.i === 1 ? s.vto1 : s.vto2;
   const compraCercana = !!(vtoC && vtoV && vtoC < vtoV);
-  const hayFisica = esSpread ? !!(compraCercana && spC && spC.tn > 0) : !!(spC && spV && spC.tn > 0 && spV.tn > 0);
+  const hayFisica = calSp ? !!(compraCercana && spC && spC.tn > 0) : !!(spC && spV && spC.tn > 0 && spV.tn > 0);
   const viC = compra.i === 1 ? s.vi1 : s.vi2, viV = venta.i === 1 ? s.vi1 : s.vi2;
   const viBarata = !!(viC && viC.pct != null && viC.pct < C.viBaja);
   const viVentaCara = !!(viV && viV.pct != null && viV.pct > C.viAlta);
-  // En un spread del mismo grano no se sugieren calls: la prima suele ser mayor que todo el movimiento del spread
-  const sugerida = hayFisica ? 'fisica' : (viBarata && !esSpread ? 'calls' : 'spread');
+  // Entre posiciones del mismo grano no se sugieren calls: la prima suele ser mayor que todo el movimiento del spread
+  const sugerida = hayFisica ? 'fisica' : (viBarata && !calSp ? 'calls' : 'spread');
   if (!estr || !REC_ESTR[estr] || (estr === 'fisica' && !hayFisica)) estr = sugerida;
 
   // Volumen: tope según la señal sobre las tn sin precio de la pata vendida
-  // (en un spread con física, sobre las tn que se guardan)
+  // (mismo grano con física: sobre las tn que se guardan)
   const tope = C.topeVolumen[s.puntaje.clase] || 0;
-  const spBase = esSpread && estr === 'fisica' ? spC : spV;
+  const spBase = calSp && estr === 'fisica' ? spC : spV;
   const base = recState.tnManual != null ? recState.tnManual : (spBase ? spBase.tn : 0);
   const V = tope * base;
   const ctV = recContratoT(venta.c), ctC = recContratoT(compra.c);
@@ -635,10 +641,19 @@ function recCss() {
   const st = document.createElement('style');
   st.id = 'rec-css';
   st.textContent = `
-#rec-space { --marca:#006e5a; --marca-claro:#e3f1ed; --terra:#a54132; --terra-claro:#f6e6e2; --oro:#d79b23; --oro-claro:#fbf1dc;
+.rc-scope { --marca:#006e5a; --marca-claro:#e3f1ed; --terra:#a54132; --terra-claro:#f6e6e2; --oro:#d79b23; --oro-claro:#fbf1dc;
   --tinta:#10120f; --tinta2:#53544e; --mudo:#8b8a83; --plano:#f4f3ef; --sup:#fbfaf7; --blanco:#fff; --borde:#e2e0d8; --borde2:#cfccc1;
   --ok:#0ca30c; --warn:#fab219; --mal:#d03b3b; color:var(--tinta); }
-#rec-space .num { font-family: var(--mono); }
+.rc-scope .num { font-family: var(--mono); }
+.rc-banda { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+.rc-banda .rc-banda-txt { flex:1; min-width:240px; font-size:12px; color:var(--tinta2); line-height:1.5; }
+.rc-banda .rc-banda-txt b.t { color:var(--tinta); font-size:13px; }
+.rc-banda .rc-total-n { font-family:var(--mono); font-size:26px; font-weight:700; }
+details.rc-radar > summary { cursor:pointer; list-style:none; }
+details.rc-radar > summary::-webkit-details-marker { display:none; }
+details.rc-radar > summary .rc-card-h { margin-bottom:0; }
+details.rc-radar[open] > summary .rc-card-h { margin-bottom:10px; }
+.rc-h2 { font-size:16px; font-weight:700; margin:6px 0 12px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
 .rc-top { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:14px; }
 .rc-h1 { font-size:20px; font-weight:700; }
 .rc-sub { font-size:12px; color:var(--tinta2); margin-top:3px; max-width:760px; line-height:1.5; }
@@ -672,7 +687,7 @@ function recCss() {
 .rc-badge.debil { background:var(--plano); color:var(--tinta2); border:1px solid var(--borde2); }
 .rc-badge.flag { background:var(--terra-claro); color:var(--terra); }
 .rc-grid2 { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,1fr); gap:16px; }
-@media (max-width:1100px) { .rc-grid2 { grid-template-columns:1fr; } }
+@media (max-width:1100px) { .rc-grid2 { grid-template-columns:minmax(0,1fr); } }
 .rc-tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin-bottom:14px; }
 .rc-tile { border:1px solid var(--borde); border-radius:10px; padding:10px 12px; background:var(--sup); }
 .rc-tile .k { font-size:10px; font-weight:700; color:var(--mudo); text-transform:uppercase; letter-spacing:.4px; }
@@ -727,45 +742,109 @@ details.rc-cfg summary { cursor:pointer; font-size:12px; font-weight:700; color:
   document.head.appendChild(st);
 }
 
-function recRender() {
+// ─── Render dentro de Spreads ───
+// Tres lugares del módulo: #sp-rec-radar (arriba de los selectores), #sp-rec-banda (debajo
+// de los recuadros: puntaje del par en una línea) y #sp-rec (señal completa + recomendación).
+
+// Par armado desde los selectores de Spreads: Basis → 'spread', Relación → 'ratio'
+function recParSeleccion() {
+  const v = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const c1 = v('sp-crop1'), c2 = v('sp-crop2'), pos1 = v('sp-pos1'), pos2 = v('sp-pos2');
+  if (!pos1 || !pos2 || (c1 === c2 && pos1 === pos2)) return null;
+  const tipo = spMode === 'basis' ? 'spread' : 'ratio';
+  return { id: 'sel', nombre: recParLbl(c1, pos1, c2, pos2, tipo), tipo, c1, c2, pos1, pos2,
+    m1: pos1.slice(0, 3), m2: pos2.slice(0, 3), desfase: parseInt(pos2.slice(3), 10) - parseInt(pos1.slice(3), 10) };
+}
+
+// Señales del radar: se recalculan solo si cambian los datos, el filtro de campañas o el ajuste
+function recSpRadar() {
+  const clave = [ASST_FUTPOS.length, recUltimaFecha(ASST_FUTPOS), [...spExcludedYears].sort().join(','), recState.ajuste].join('|');
+  if (clave === recState.radarClave) return;
+  recState.senales = {};
+  REC_CONFIG.pares.forEach(p => { recState.senales[p.id] = recCalcPar(p); });
+  recState.radarClave = clave;
+}
+
+// Se puede armar la operación mientras no haya pasado la fecha límite (vto. de la primera pata − hábiles)
+function recOperable(s) { return !s.fechaLimite || s.fechaLimite >= recHoy(); }
+
+// Varios cambios seguidos de los selectores (cultivo → posición → modo) se agrupan en un solo cálculo
+let recSpTimer = null;
+function recSpProgramar() { clearTimeout(recSpTimer); recSpTimer = setTimeout(recSpRender, 0); }
+
+function recSpRender() {
   recCss();
-  const host = document.getElementById('rec-space');
-  if (!host) return;
+  const hRadar = document.getElementById('sp-rec-radar'), hBanda = document.getElementById('sp-rec-banda'), host = document.getElementById('sp-rec');
+  if (!host || !hRadar || !hBanda) return;
   if (!ASST_FUTPOS.length) {
+    hRadar.innerHTML = hBanda.innerHTML = '';
     host.innerHTML = `<div class="rc-card"><div class="rc-vacio">⏳ Cargando datos históricos…</div></div>`;
     return;
   }
-  // Todas las señales configuradas; se abre la elegida (por defecto, la de mayor puntaje)
-  recState.senales = {};
-  REC_CONFIG.pares.forEach(p => { recState.senales[p.id] = recCalcPar(p); });
-  if (!recState.parElegido) {
-    const mejor = REC_CONFIG.pares.filter(p => !recState.senales[p.id].error)
-      .sort((a, b) => recOrden(recState.senales[b.id]) - recOrden(recState.senales[a.id]))[0];
-    if (mejor) recState.parId = mejor.id;
-  }
-  const par = REC_CONFIG.pares.find(p => p.id === recState.parId) || REC_CONFIG.pares[0];
-  const s = recState.senales[par.id];
+  recSpRadar();
+  const parPrecio = recState.precioId && REC_CONFIG.pares.find(p => p.id === recState.precioId);
+  const par = parPrecio || recParSeleccion();
+  const s = !par ? { error: 'Seleccioná dos posiciones diferentes.' } : parPrecio ? recState.senales[par.id] : recCalcPar(par);
+  // Al cambiar de par se vuelve a la estructura sugerida y a la base de la posición comercial
+  const clave = par ? [par.tipo, par.c1, par.pos1 || par.m1, par.c2, par.pos2 || par.m2].join('|') : '';
+  if (clave !== recState.clave) { recState.clave = clave; recState.estr = null; recState.tnManual = null; }
   recState.senal = s.error ? null : s;
 
   const fuentes = recEstadoFuentes().map(f => `<div class="rc-fuente"><span class="rc-dot ${f.est}"></span><div><b>${f.lbl}</b>${f.sub ? ' · ' + escHtml(f.sub) : ''}<br><span class="num">${escHtml(f.det)}</span></div></div>`).join('');
+  const operable = !s.error && recOperable(s);
+  const avisoVig = s.error || operable ? recAvisoVto(s) : `<div class="rc-card"><div class="rc-aviso" style="margin:0"><b>Fecha límite vencida:</b> la fecha límite para operar ${escHtml(s.lbl)} fue el ${spFmtFecha(s.fechaLimite)} (vto. de la primera pata menos ${REC_CONFIG.habilesAntesVto} hábiles). El puntaje queda como referencia${s.ultFecha ? `, con el último dato del ${spFmtFecha(recFecha(s.ultFecha))}` : ''}; no se arma operación.</div></div>`;
+  const volver = parPrecio ? `<div class="rc-card"><div class="rc-aviso" style="margin:0;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;"><span>Se muestra la <b>cobertura de precio ${escHtml(s.lbl || par.nombre)}</b> elegida en el radar. Los recuadros y gráficos de arriba siguen siendo del par de los selectores.</span><button class="rc-btn out" onclick="recState.precioId=null;recSpRender();">Volver al par seleccionado</button></div></div>` : '';
 
+  hRadar.innerHTML = recHtmlRadar(par);
+  hBanda.innerHTML = recHtmlBanda(s, par, operable);
   host.innerHTML = `
-  <div class="rc-top">
-    <div>
-      <div class="rc-h1">💡 Recomendaciones de Operaciones</div>
-      <div class="rc-sub">Lee las señales que ya calcula la Suite (Spreads, volatilidad implícita y posición comercial) y propone operaciones con futuros y opciones de A3: qué operar, cuánto, dónde entrar, objetivos, stop y por qué. <b>Recomienda, no ejecuta.</b></div>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+  <div class="rc-h2"><span>💡 Señal y recomendación${s.lbl ? ' · ' + escHtml(s.lbl) : ''}</span>
+    <span style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="rc-btn out" onclick="recRecargar()">🔄 Recalcular</button>
       <button class="rc-btn out" onclick="const d=document.getElementById('rc-cfg');d.open=true;d.scrollIntoView({behavior:'smooth'})">⚙ Parámetros</button>
-    </div>
-  </div>
+    </span></div>
+  ${volver}
   <div class="rc-card"><div class="rc-card-h">Estado de las fuentes</div><div class="rc-fuentes">${fuentes}</div></div>
-  ${recHtmlRadar(par.id)}
-  ${s.error ? `<div class="rc-card"><div class="rc-vacio">⚠️ ${escHtml(par.nombre)}: ${escHtml(s.error)}</div></div>` : recHtmlSenal(s) + `<div class="rc-card rc-reco" id="rc-tarjeta"></div>`}
+  ${s.error ? `<div class="rc-card"><div class="rc-vacio">⚠️ ${par ? escHtml(par.nombre) + ': ' : ''}${escHtml(s.error)}</div></div>`
+    : recHtmlSenal(s) + avisoVig + (operable ? `<div class="rc-card rc-reco" id="rc-tarjeta"></div>` : '')}
   ${recHtmlCfg()}`;
 
-  if (!s.error) { recDibujarSenal(s); recRenderTarjeta(); }
+  if (!s.error) { recDibujarSenal(s); if (operable) recRenderTarjeta(); }
+}
+
+// Par elegido a mano que vence pronto: se puede operar, pero con poco margen
+function recAvisoVto(s) {
+  if (s.error) return '';
+  const patas = [[s.c1, s.pos1], [s.c2, s.pos2]].filter(x => x[0] && x[1]).map(([c, p]) => ({ l: recLegLbl(c, p), d: spDteHoy(c, p) })).filter(x => x.d);
+  const cerca = patas.filter(x => x.d.dias < REC_CONFIG.diasMinVto);
+  if (!cerca.length) return '';
+  return `<div class="rc-card"><div class="rc-aviso" style="margin:0"><b>Vencimiento cercano:</b> ${cerca.map(x => `${x.l} vence en ${x.d.dias} días`).join(' y ')} (el radar pide al menos ${REC_CONFIG.diasMinVto}). Hay poco tiempo para que ${s.T.el} vuelva a su promedio antes de la fecha límite (${s.fechaLimite ? spFmtFecha(s.fechaLimite) : '—'}).</div></div>`;
+}
+
+// Línea de puntaje debajo de los recuadros de Spreads
+function recHtmlBanda(s, par, operable) {
+  if (s.error) return `<div class="rc-card rc-banda"><div class="rc-banda-txt">💡 <b class="t">Puntaje de la señal:</b> ${escHtml(s.error)}</div></div>`;
+  const p = s.puntaje, baja = s.dir === 'baja';
+  let accion;
+  if (s.tipo === 'precio') accion = p.clase === 'debil' ? `sin señal de cobertura (P${s.pctl})` : baja ? 'precio bajo: no cubrir' : 'precio alto: cubrir';
+  else {
+    const lC = baja ? recLegLbl(s.c1, s.pos1) : recLegLbl(s.c2, s.pos2), lV = baja ? recLegLbl(s.c2, s.pos2) : recLegLbl(s.c1, s.pos1);
+    const adj = s.tipo === 'ratio' ? (baja ? 'baja' : 'alta') : (baja ? 'bajo' : 'alto');
+    accion = !operable ? `${s.T.el} está ${adj}, solo como referencia` : p.clase === 'debil' ? `${s.T.el} está ${adj}, sin operación sugerida` : `largo ${lC} / corto ${lV}`;
+  }
+  const avisos = [
+    p.sinExtremo ? '<span class="rc-badge flag">Sin extremo</span>' : '',
+    s.ajustado ? '<span class="rc-badge debil">Ajustada por retenciones</span>' : '',
+    s.exclAnios ? `<span class="rc-badge debil">Sin ${s.exclAnios.join(', ')}</span>` : '',
+    s.regimen ? '<span class="rc-badge flag">Posible cambio de régimen</span>' : '',
+    operable ? '' : '<span class="rc-badge flag">Fecha límite vencida</span>',
+  ].join(' ');
+  return `<div class="rc-card rc-banda">
+    <span class="rc-total-n" style="color:${p.sinExtremo ? 'var(--terra)' : recColorSub(p.total)}">${p.total}</span>
+    <span class="rc-badge ${p.clase}">${recClaseLbl(p.clase)}</span>
+    <div class="rc-banda-txt">💡 <b class="t">Puntaje de la señal · ${escHtml(s.lbl)}</b> — ${accion}. P${s.pctl} · z hist. ${recSig(s.zHist, 2)} contra ${s.nCampPrev} campañas previas.<br>${avisos}</div>
+    <button class="rc-btn out" onclick="document.getElementById('sp-rec').scrollIntoView({behavior:'smooth',block:'start'})">Ver señal y recomendación ↓</button>
+  </div>`;
 }
 
 function recClaseLbl(c) { return c === 'fuerte' ? 'Fuerte' : c === 'moderada' ? 'Moderada' : 'Débil'; }
@@ -776,30 +855,45 @@ const REC_TIPO_RADAR = { ratio: 'Relación', spread: 'Spread', precio: 'Cobertur
 // Orden de la tabla: primero las señales con extremo (por puntaje), después las sin extremo, al final las sin par vigente
 function recOrden(s) { return s.error ? -1e4 : s.puntaje.total - (s.puntaje.sinExtremo ? 1000 : 0); }
 
-// Tabla de todas las señales, ordenadas por puntaje (las que no tienen par vigente, al final). Clic = abrir.
-function recHtmlRadar(selId) {
+// Radar: los favoritos de REC_CONFIG.pares, ordenados por puntaje. Clic = cargar el par en los selectores.
+function recHtmlRadar(cur) {
+  const esSel = (p, s) => recState.precioId ? p.id === recState.precioId
+    : !!cur && !s.error && s.tipo === cur.tipo && s.c1 === cur.c1 && s.pos1 === cur.pos1 && s.c2 === cur.c2 && s.pos2 === cur.pos2;
   const pares = REC_CONFIG.pares.map(p => ({ p, s: recState.senales[p.id] })).sort((a, b) => recOrden(b.s) - recOrden(a.s));
   const alt = (s, fn) => s.alt ? `<br><small style="color:var(--mudo)">${s.alt.ajustado ? 'ajust.' : 'sin ajustar'} ${fn(s.alt)}</small>` : '';
+  const nFuertes = pares.filter(x => !x.s.error && !x.s.puntaje.sinExtremo && x.s.puntaje.clase !== 'debil').length;
   const filas = pares.map(({ p, s }) => {
     const tipo = REC_TIPO_RADAR[p.tipo || 'ratio'];
-    if (s.error) return `<tr class="gris clic" onclick="recElegirPar('${p.id}')"><td>${escHtml(p.nombre)}</td><td>${tipo}</td><td colspan="6">${escHtml(s.error)}</td></tr>`;
+    if (s.error) return `<tr class="gris"><td>${escHtml(p.nombre)}</td><td>${tipo}</td><td colspan="6">${escHtml(s.error)}</td></tr>`;
     const lado = s.tipo === 'precio' ? (s.dir === 'alta' ? 'precio alto' : 'precio bajo') : null;
-    return `<tr class="clic ${p.id === selId ? 'sel' : ''}" onclick="recElegirPar('${p.id}')"><td><b>${s.lbl}</b>${s.tipo === 'spread' && /carry/i.test(p.nombre) ? ' <small style="color:var(--mudo)">carry</small>' : ''}</td><td>${tipo}</td>
+    return `<tr class="clic ${esSel(p, s) ? 'sel' : ''}" onclick="recElegirPar('${p.id}')"><td><b>${s.lbl}</b>${s.tipo === 'spread' && /carry/i.test(p.nombre) ? ' <small style="color:var(--mudo)">carry</small>' : ''}</td><td>${tipo}</td>
         <td class="r num">${s.fv(s.actual)}</td><td class="r num">${s.fv(s.histMean)}${alt(s, x => x.fv(x.histMean))}</td>
         <td class="r num">P${s.pctl}${alt(s, x => 'P' + x.pctl)}</td><td class="r num">${recSig(s.zHist, 2)}${alt(s, x => recSig(x.zHist, 2))}</td>
         <td><span class="rc-score"><span class="rc-score-bar"><span style="width:${s.puntaje.total}%;background:${s.puntaje.sinExtremo ? 'var(--terra)' : recColorSub(s.puntaje.total)}"></span></span><span class="num" style="font-weight:700">${s.puntaje.total}</span><span class="rc-badge ${s.puntaje.clase}">${recClaseLbl(s.puntaje.clase)}</span></span></td>
         <td>${s.puntaje.sinExtremo ? '<span class="rc-badge flag">Sin extremo</span> ' : ''}${lado ? `<span class="rc-badge debil">${lado}</span> ` : ''}${s.ajustado ? '<span class="rc-badge debil">Ajustada por retenciones</span> ' : ''}${s.regimen ? '<span class="rc-badge flag">Posible cambio de régimen</span>' : ''}</td></tr>`;
   }).join('');
-  return `<div class="rc-card"><div class="rc-card-h">Señales configuradas <span class="rc-aux">ordenadas por puntaje · clic en una fila para ver su señal y su recomendación</span></div><div class="rc-scroll"><table class="rc-tabla">
+  return `<div class="rc-card"><details class="rc-radar" ${uiGet('recRadarAbierto', false) ? 'open' : ''} ontoggle="uiSet('recRadarAbierto',this.open)">
+    <summary><div class="rc-card-h">💡 Radar de señales <span class="rc-aux">${nFuertes ? `${nFuertes} con señal Moderada o Fuerte · ` : 'ninguna con señal · '}favoritos de REC_CONFIG · clic para abrir o cerrar ▾</span></div></summary>
+    <div class="rc-scroll"><table class="rc-tabla">
     <thead><tr><th>Par</th><th>Tipo</th><th class="r">Actual</th><th class="r">Prom. histórico</th><th class="r">Percentil</th><th class="r">z hist.</th><th>Puntaje</th><th>Avisos</th></tr></thead>
     <tbody>${filas}</tbody></table></div>
-    <div class="rc-note">Relación = precio 1 / precio 2 · Spread = precio 1 − precio 2, en USD/t · Cobertura = precio de una sola posición contra las campañas anteriores, para decidir si cubrir la física sin precio.</div></div>`;
+    <div class="rc-note">Relación = precio 1 / precio 2 · Spread = precio 1 − precio 2, en USD/t · Cobertura = precio de una sola posición contra las campañas anteriores, para decidir si cubrir la física sin precio. Cualquier otro par se puntúa eligiéndolo en los selectores.${spExcludedYears.size ? ` Sin las campañas ${[...spExcludedYears].sort().join(', ')} (filtro de abajo).` : ''}</div>
+  </details></div>`;
 }
 
+// Fila del radar: un par se carga en los selectores (y Spreads recalcula todo); una cobertura de precio
+// no tiene pata 2, así que se muestra solo en la sección de recomendación
 function recElegirPar(id) {
-  recState.parId = id; recState.parElegido = true; recState.estr = null; recState.tnManual = null;
-  recRender();
-  const el = document.querySelector('#rec-space .rc-grid2'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const par = REC_CONFIG.pares.find(p => p.id === id), s = recState.senales[id];
+  if (!par || !s || s.error) return;
+  if (par.tipo === 'precio') { recState.precioId = id; recSpRender(); }
+  else {
+    const set = (el, v) => { const e = document.getElementById(el); if (e) e.value = v; };
+    set('sp-crop1', s.c1); spUpdatePos1(); set('sp-pos1', s.pos1);
+    set('sp-crop2', s.c2); spUpdatePos2(); set('sp-pos2', s.pos2);
+    spSetMode(s.tipo === 'spread' ? 'basis' : 'ratio');
+  }
+  setTimeout(() => { const el = document.getElementById(par.tipo === 'precio' ? 'sp-rec' : 'sp-rec-banda'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
 }
 
 function recHtmlSenal(s) {
@@ -816,15 +910,16 @@ function recHtmlSenal(s) {
   const retTxt = !s.retObj ? '' : s.tipo === 'precio'
     ? `${REC_LBL[s.c1].toLowerCase()} ${s.pos1} ${recF(s.retObj.r1, 2)} %`
     : `${REC_LBL[s.c1].toLowerCase()} ${s.pos1} ${recF(s.retObj.r1, 2)} % y ${REC_LBL[s.c2].toLowerCase()} ${s.pos2} ${recF(s.retObj.r2, 2)} %`;
-  const nota = s.ajustado
+  const nota = (s.ajustado
     ? `<b>Comparación ajustada por retenciones:</b> los precios de las campañas anteriores (y de esta campaña antes del anuncio del cronograma) se pasan a las retenciones de la entrega actual, ${retTxt}, con fobbing. El puntaje usa esta versión.`
-    : `<b>Sin ajustar por retenciones:</b> ${s.tipo === 'precio' ? 'precios tal como cotizaron.' : 'son los mismos números que muestra Spreads.'} ${a ? 'El puntaje usa esta versión porque así se eligió.' : `No hay tabla de retenciones para ${REC_LBL[s.c1].toLowerCase()}${s.c2 && s.c2 !== s.c1 ? ' o ' + REC_LBL[s.c2].toLowerCase() : ''}.`}`;
+    : `<b>Sin ajustar por retenciones:</b> ${s.tipo === 'precio' ? 'precios tal como cotizaron.' : 'son los mismos números que muestra Spreads.'} ${a ? 'El puntaje usa esta versión porque así se eligió.' : `No hay tabla de retenciones para ${REC_LBL[s.c1].toLowerCase()}${s.c2 && s.c2 !== s.c1 ? ' o ' + REC_LBL[s.c2].toLowerCase() : ''}.`}`)
+    + (s.exclAnios ? ` <b>Campañas excluidas</b> por el filtro de Spreads: ${s.exclAnios.join(', ')}.` : '');
   const actualDet = s.tipo === 'ratio' ? `${recF(s.p1Last, 1)} / ${recF(s.p2Last, 1)}` : s.tipo === 'spread' ? `${recF(s.p1Last, 1)} − ${recF(s.p2Last, 1)} USD/t` : 'USD/t';
   return `<div class="rc-grid2">
     <div class="rc-card">
       <div class="rc-card-h">Señal · ${s.lbl} <span class="rc-aux num">${s.curDte} días al vto. de ${s.pos1} · último dato ${spFmtFecha(recFecha(s.ultFecha))}</span></div>
       <div class="rc-estr-why" style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;"><span>${nota}</span>
-        ${a ? `<button class="rc-btn out" data-html2canvas-ignore onclick="recState.ajuste=${s.ajustado ? 'false' : 'true'};recRender();">${s.ajustado ? 'Ver sin ajustar' : 'Ver ajustada'}</button>` : ''}</div>
+        ${a ? `<button class="rc-btn out" data-html2canvas-ignore onclick="recState.ajuste=${s.ajustado ? 'false' : 'true'};recSpRender();">${s.ajustado ? 'Ver sin ajustar' : 'Ver ajustada'}</button>` : ''}</div>
       <div class="rc-tiles">
         ${tile(T.lbl + ' actual', fv(s.actual), actualDet)}
         ${tile('Prom. campaña', fv(s.avgCamp), `${s.fd(s.actual - s.avgCamp)} · rango ${fv(s.minCamp)}–${fv(s.maxCamp)}${altTxt(x => x.fv(x.avgCamp))}`)}
@@ -866,7 +961,8 @@ function recHtmlCfg() {
       <div>Piso: <b>${C.ruedasPiso} ruedas</b> sin extremo nuevo y pendiente de 10 ruedas plana o a favor; sin piso, el tramo 1 espera</div>
       <div>Tramos de entrada: <b>${C.tramosSigma.map(k => k ? k + 'σ' : 'actual').join(' · ')}</b> (⅓ cada uno)</div>
       <div>Stop: ${C.stopFijo != null ? `relaciones en nivel fijo <b>${recR(C.stopFijo)}</b>; spreads y coberturas en actual ∓ <b>${recF(C.stopSigma, 1)}σ</b>` : `actual ∓ <b>${recF(C.stopSigma, 1)}σ</b>`}</div>
-      <div>Señales: ${C.pares.map(p => `<b>${escHtml(p.nombre)}</b>`).join(' · ')}. Se usa la primera posición de cada mes con las dos patas a <b>≥ ${C.diasMinVto} días</b> del vencimiento.</div>
+      <div>Radar: ${C.pares.map(p => `<b>${escHtml(p.nombre)}</b>`).join(' · ')}. Se usa la primera posición de cada mes con las dos patas a <b>≥ ${C.diasMinVto} días</b> del vencimiento. El par de los selectores se puntúa con las posiciones elegidas.</div>
+      <div>Campañas: las excluidas en el filtro de Spreads tampoco entran en el puntaje${spExcludedYears.size ? ` (hoy: <b>${[...spExcludedYears].sort().join(', ')}</b>)` : ''}</div>
       <div>Fecha límite: vto. de la primera pata menos <b>${C.habilesAntesVto} hábiles</b></div>
       <div>Tope de volumen: Fuerte <b>${pc(C.topeVolumen.fuerte)}</b> · Moderada <b>${pc(C.topeVolumen.moderada)}</b> · Débil <b>${pc(C.topeVolumen.debil)}</b> de lo sin precio</div>
       <div>VI: <b>&lt; P${C.viBaja}</b> → calls comprados · <b>&gt; P${C.viAlta}</b> → aviso de calls vendidos</div>
@@ -885,6 +981,11 @@ const REC_ESTR_SPREAD = {
   spread: { chip: 'Spread en futuros', sub: 'mismas toneladas en las dos patas, sin física' },
   calls:  { chip: 'Calls + venta de la pata cara', sub: 'no se sugiere: la prima suele superar el movimiento del spread' },
 };
+// Textos de las estructuras según el par: mismo grano (calendario) o entre granos; spread o relación
+function recEstrTxt(s) {
+  const base = s.c1 === s.c2 ? REC_ESTR_SPREAD : REC_ESTR;
+  return { ...base, spread: { chip: base.spread.chip, sub: (s.tipo === 'spread' ? 'mismas toneladas en las dos patas' : 'neutral en dólares') + ', sin física' } };
+}
 
 function recRenderTarjeta() {
   const s = recState.senal, host = document.getElementById('rc-tarjeta');
@@ -892,32 +993,35 @@ function recRenderTarjeta() {
   if (s.tipo === 'precio') return recRenderTarjetaPrecio(s, host);
   const R = recArmar(s, recState.estr);
   recState.estr = R.estr;
-  const baja = s.dir === 'baja', p = s.puntaje, esSp = s.tipo === 'spread', T = s.T, fv = s.fv;
+  // esSp: resultado en USD/t con mismas toneladas (si no, relación neutral en dólares)
+  // calSp: mismo grano, la física es guardar la pata cercana y las patas se nombran por posición
+  const baja = s.dir === 'baja', p = s.puntaje, esSp = s.tipo === 'spread', calSp = s.c1 === s.c2, T = s.T, fv = s.fv;
   const lC = recLegLbl(R.compra.c, R.compra.p), lV = recLegLbl(R.venta.c, R.venta.p);
-  // En un spread del mismo grano, las patas se nombran por posición
-  const nC = esSp ? lC : REC_LBL[R.compra.c].toLowerCase(), nV = esSp ? lV : REC_LBL[R.venta.c].toLowerCase();
+  const nC = calSp ? lC : REC_LBL[R.compra.c].toLowerCase(), nV = calSp ? lV : REC_LBL[R.venta.c].toLowerCase();
+  const adj = s.tipo === 'ratio' ? (baja ? 'baja' : 'alta') : (baja ? 'bajo' : 'alto');
+  const ton = esSp ? 'con las mismas toneladas en las dos patas' : `neutral en dólares (${recF(baja ? 1 / s.actual : s.actual, 3)} t de ${nC} por t de ${nV}, redondeado a contratos)`;
   const t1 = R.tramos[0];
   // Con física guardada la única pata en futuros es la vendida: la fecha límite sale de su vencimiento
   const vtoV = R.venta.i === 1 ? s.vto1 : s.vto2;
-  const flFisica = esSp && R.estr === 'fisica' && vtoV;
+  const flFisica = calSp && R.estr === 'fisica' && vtoV;
   const fechaLim = flFisica ? recRestarHabiles(vtoV, REC_CONFIG.habilesAntesVto) : s.fechaLimite;
   const fl = fechaLim ? spFmtFecha(fechaLim) : '—';
   const pctFmt = v => v && v.pct != null ? 'P' + v.pct : '—';
 
-  const chips = Object.entries(esSp ? REC_ESTR_SPREAD : REC_ESTR).map(([k, e]) => {
+  const chips = Object.entries(recEstrTxt(s)).map(([k, e]) => {
     const disp = k !== 'fisica' || R.hayFisica;
     const tag = k === R.sugerida ? ' · sugerida' : '';
     return `<button class="rc-chip ${k === R.estr ? 'on' : ''}" ${disp ? '' : 'disabled style="opacity:.5;cursor:not-allowed"'} onclick="recState.estr='${k}';recRenderTarjeta();">${k === R.estr ? '✓ ' : ''}${e.chip}<small>${e.sub}${tag}</small></button>`;
   }).join('');
 
-  const why = esSp ? {
-    fisica: `<b>Guardar física + venta de ${lV}:</b> el spread está ${baja ? 'bajo' : 'alto'}: ${lC} está barato contra ${lV}. En lugar de vender la física en ${lC}, se guarda sin fijar y se vende ${lV} en futuros, así se captura el spread sin poner garantía por la pata comprada. El grano guardado <b>no se vende</b> hasta cerrar la venta de ${lV}. No incluye almacenaje, financiación ni merma: restalos del spread antes de decidir.`,
-    spread: `<b>Spread en futuros:</b> compra de ${lC} y venta de ${lV}, con las mismas toneladas en las dos patas. El resultado depende solo del spread, no del nivel de precios. Es la variante para cuando no hay física para guardar${R.compraCercana ? '' : ` (acá la pata barata, ${lC}, vence después que ${lV}, así que no se puede armar con física guardada)`}. Requiere garantía en las dos patas.`,
-    calls: `<b>Calls de ${lC} en lugar de futuro comprado:</b> la VI de ${REC_LBL[s.c1].toLowerCase()} está en ${pctFmt(R.viC)}${R.viBarata ? `, por debajo de P${REC_CONFIG.viBaja}` : ''}. Se paga la prima por adelantado y, si el spread sigue en contra, la pérdida de esa pata queda limitada a la prima. La venta de ${lV} sigue igual. Primas: tramo 1 ${t1.fuente === 'A3' ? 'de A3' : 'por Black-76'}, tramos 2 y 3 por Black-76 (VI ${recF(R.viC ? R.viC.vi : 20, 1)} %, ${R.dteC} días). Payoff al vencimiento.`,
+  const why = calSp ? {
+    fisica: `<b>Guardar física + venta de ${lV}:</b> ${T.el} está ${adj}: ${lC} está barato contra ${lV}. En lugar de vender la física en ${lC}, se guarda sin fijar y se vende ${lV} en futuros, así se captura ${T.el} sin poner garantía por la pata comprada. El grano guardado <b>no se vende</b> hasta cerrar la venta de ${lV}. No incluye almacenaje, financiación ni merma: restalos antes de decidir.`,
+    spread: `<b>Spread en futuros:</b> compra de ${lC} y venta de ${lV}, ${ton}. El resultado depende solo ${s.tipo === 'ratio' ? 'de la relación' : 'del spread'}, no del nivel de precios. Es la variante para cuando no hay física para guardar${R.compraCercana ? '' : ` (acá la pata barata, ${lC}, vence después que ${lV}, así que no se puede armar con física guardada)`}. Requiere garantía en las dos patas.`,
+    calls: `<b>Calls de ${lC} en lugar de futuro comprado:</b> la VI de ${REC_LBL[s.c1].toLowerCase()} está en ${pctFmt(R.viC)}${R.viBarata ? `, por debajo de P${REC_CONFIG.viBaja}` : ''}. Se paga la prima por adelantado y, si ${T.el} sigue en contra, la pérdida de esa pata queda limitada a la prima. La venta de ${lV} sigue igual. Primas: tramo 1 ${t1.fuente === 'A3' ? 'de A3' : 'por Black-76'}, tramos 2 y 3 por Black-76 (VI ${recF(R.viC ? R.viC.vi : 20, 1)} %, ${R.dteC} días). Payoff al vencimiento.`,
   }[R.estr] : {
-    fisica: `<b>Física + venta de ${nV}:</b> la relación está ${baja ? 'baja' : 'alta'} y hay ${nV} y ${nC} sin precio. La regla es cubrir la pata cara (${lV}) y dejar sin fijar la barata (${nC}). El resultado económico es el mismo que el del spread en futuros, pero no hay que poner garantía por el ${nC}. El ${nC} reservado <b>no se vende</b> mientras la operación esté abierta.`,
-    spread: `<b>Spread en futuros:</b> compra de ${lC} y venta de ${lV}, neutral en dólares (${recF(baja ? 1 / s.actual : s.actual, 3)} t de ${nC} por t de ${nV}, redondeado a contratos). Es la variante para cuando no hay posición física. Requiere garantía en las dos patas.`,
-    calls: `<b>Calls de ${nC} en lugar de futuro comprado:</b> la VI de ${nC} está en ${pctFmt(R.viC)}${R.viBarata ? `, por debajo de P${REC_CONFIG.viBaja}` : ''}. Se paga la prima por adelantado y, si la relación sigue en contra, la pérdida de esa pata queda limitada a la prima. La venta de ${nV} sigue igual. Primas: tramo 1 ${t1.fuente === 'A3' ? 'de A3' : 'por Black-76'}, tramos 2 y 3 por Black-76 (VI ${recF(R.viC ? R.viC.vi : 20, 1)} %, ${R.dteC} días). Payoff al vencimiento.`,
+    fisica: `<b>Física + venta de ${nV}:</b> ${T.el} está ${adj} y hay ${nV} y ${nC} sin precio. La regla es cubrir la pata cara (${lV}) y dejar sin fijar la barata (${nC}). El resultado económico es el mismo que el del spread en futuros, pero no hay que poner garantía por el ${nC}. El ${nC} reservado <b>no se vende</b> mientras la operación esté abierta.`,
+    spread: `<b>Spread en futuros:</b> compra de ${lC} y venta de ${lV}, ${ton}. Es la variante para cuando no hay posición física. Requiere garantía en las dos patas.`,
+    calls: `<b>Calls de ${nC} en lugar de futuro comprado:</b> la VI de ${nC} está en ${pctFmt(R.viC)}${R.viBarata ? `, por debajo de P${REC_CONFIG.viBaja}` : ''}. Se paga la prima por adelantado y, si ${T.el} sigue en contra, la pérdida de esa pata queda limitada a la prima. La venta de ${nV} sigue igual. Primas: tramo 1 ${t1.fuente === 'A3' ? 'de A3' : 'por Black-76'}, tramos 2 y 3 por Black-76 (VI ${recF(R.viC ? R.viC.vi : 20, 1)} %, ${R.dteC} días). Payoff al vencimiento.`,
   }[R.estr];
 
   // Patas
@@ -926,13 +1030,13 @@ function recRenderTarjeta() {
   const filaV = `<tr><td><b>${lV}</b></td><td>Venta futuro</td><td class="r num">${cto(t1.qV, R.ctV)}</td><td class="r num">${cto(R.qVTot, R.ctV)}</td><td class="r num">${recF(R.venta.i === 1 ? R.P1 : R.P2, 1)}</td><td class="r num">${garTxt(R.garV)}</td></tr>`;
   const pC = R.compra.i === 1 ? R.P1 : R.P2;
   let filaC;
-  if (R.estr === 'fisica') filaC = `<tr><td><b>${lC}</b></td><td>${esSp ? 'Físico guardado sin fijar' : 'Físico sin fijar (reservado)'}</td><td class="r num">${recT(t1.qC)} t</td><td class="r num">${recT(R.qCTot)} t</td><td class="r num">${recF(pC, 1)}</td><td class="r num">—</td></tr>`;
+  if (R.estr === 'fisica') filaC = `<tr><td><b>${lC}</b></td><td>${calSp ? 'Físico guardado sin fijar' : 'Físico sin fijar (reservado)'}</td><td class="r num">${recT(t1.qC)} t</td><td class="r num">${recT(R.qCTot)} t</td><td class="r num">${recF(pC, 1)}</td><td class="r num">—</td></tr>`;
   else if (R.estr === 'spread') filaC = `<tr><td><b>${lC}</b></td><td>Compra futuro</td><td class="r num">${cto(t1.qC, R.ctC)}</td><td class="r num">${cto(R.qCTot, R.ctC)}</td><td class="r num">${recF(pC, 1)}</td><td class="r num">${garTxt(R.garC)}</td></tr>`;
   else filaC = `<tr><td><b>${lC} call ${recF(t1.k, 0)}</b></td><td>Compra call</td><td class="r num">${cto(t1.qC, R.ctC)}</td><td class="r num">${cto(R.qCTot, R.ctC)}</td><td class="r num">prima ${recF(t1.prima, 1)}</td><td class="r num">prima ${garTxt(R.primas)}</td></tr>`;
 
-  // Base de volumen: en un spread con física guardada son las t que se guardan (pata comprada)
-  const nBase = esSp && R.estr === 'fisica' ? nC : nV;
-  const n1 = esSp ? s.pos1 : REC_LBL[s.c1], n2 = esSp ? recLegLbl(s.c2, s.pos2) : REC_LBL[s.c2].toLowerCase();
+  // Base de volumen: con física guardada (mismo grano) son las t que se guardan (pata comprada)
+  const nBase = calSp && R.estr === 'fisica' ? nC : nV;
+  const n1 = calSp ? s.pos1 : REC_LBL[s.c1], n2 = calSp ? recLegLbl(s.c2, s.pos2) : REC_LBL[s.c2].toLowerCase();
   const sinPos = !R.spBase && recState.tnManual == null;
   const baseTxt = R.spBase && recState.tnManual == null
     ? `${recT(R.spBase.tn)} t de ${nBase} sin precio (posición comercial)`
@@ -976,7 +1080,7 @@ function recRenderTarjeta() {
     s.drift == null ? 'No hay datos suficientes para medir la estacionalidad hasta la fecha límite.'
       : s.patronEst ? `Estacionalidad ${s.f * s.drift > 0 ? 'a favor' : 'en contra'}: desde este punto hasta la fecha límite ${T.el} ${s.drift > 0 ? 'subió' : 'bajó'} (mediana <b>${s.fd(s.drift)}</b>) en ${s.f * s.drift > 0 ? s.nDriftFav : s.nDrift - s.nDriftFav} de ${s.nDrift} campañas.`
       : `Sin patrón estacional claro: de acá a la fecha límite ${T.el} subió en ${s.nDriftSube} de ${s.nDrift} campañas y bajó en las demás (mediana ${s.fd(s.drift)}).`,
-    R.viC && R.viC.pct != null ? `La VI de ${esSp ? REC_LBL[s.c1].toLowerCase() : nC} está en <b>P${R.viC.pct}</b> (${recF(R.viC.vi, 1)} %)${R.viC.pct < REC_CONFIG.viBaja ? ': si se quiere opcionalidad en esa pata, los calls están baratos.' : R.viC.pct > REC_CONFIG.viAlta ? ': las opciones están caras, conviene futuros.' : ': en rango normal.'}` : `No hay VI de ${esSp ? REC_LBL[s.c1].toLowerCase() : nC} disponible.`,
+    R.viC && R.viC.pct != null ? `La VI de ${calSp ? REC_LBL[s.c1].toLowerCase() :nC} está en <b>P${R.viC.pct}</b> (${recF(R.viC.vi, 1)} %)${R.viC.pct < REC_CONFIG.viBaja ? ': si se quiere opcionalidad en esa pata, los calls están baratos.' : R.viC.pct > REC_CONFIG.viAlta ? ': las opciones están caras, conviene futuros.' : ': en rango normal.'}` : `No hay VI de ${calSp ? REC_LBL[s.c1].toLowerCase() :nC} disponible.`,
     s.piso ? `<b>Encontró piso:</b> lleva ${s.ruedasDesdeExt} ruedas sin un ${nomExt} nuevo y la pendiente de 10 ruedas es ${s.fd(s.slope10)} por rueda.`
       : `${extremoHoy ? `Hoy marcó un <b>${nomExt} de la campaña</b>` : `Lleva ${s.ruedasDesdeExt} ruedas desde el ${nomExt} de la campaña`}, con pendiente de ${s.fd(s.slope10)} por rueda (10) y ${s.fd(s.slope20)} (20): <b>todavía no encontró piso</b>.`,
   ];
@@ -989,8 +1093,8 @@ function recRenderTarjeta() {
     `<b>Vencimientos desalineados:</b> ${primera} vence el ${vtoTxt(s.vto1 && s.vto2 ? (s.vto1 <= s.vto2 ? s.vto1 : s.vto2) : s.vto1)}${gap != null ? `, ${gap} días antes que ${otra} (${vtoTxt(s.vto1 && s.vto2 ? (s.vto1 <= s.vto2 ? s.vto2 : s.vto1) : null)})` : ''}. Cerrar o rolar antes del <b>${fl}</b>; si no se cierran juntas, la otra pata queda sola.`,
     R.estr === 'calls'
       ? `<b>Pata en opciones:</b> los calls comprados pierden valor con el paso del tiempo; si ${T.el} tarda en moverse, se pierde parte de la prima aunque la tesis sea correcta.`
-      : `<b>Pata vendida:</b> la venta de ${lV} pierde si sube ${esSp ? lV : 'el ' + nV}${R.estr === 'fisica' ? ' (lo compensa el físico, que se vende más caro)' : ''}. ${R.viVentaCara ? `La VI de ${esSp ? REC_LBL[s.c1].toLowerCase() : nV} está en P${R.viV.pct}: se podría financiar vendiendo calls de ${nV}, pero la pérdida de esa pata <b>no tiene techo</b>.` : 'No se proponen calls vendidos: la VI de ' + (esSp ? REC_LBL[s.c1].toLowerCase() : nV) + ' no está alta.'}`,
-    ...(esSp && R.estr === 'fisica' ? [`<b>Costo de guardar:</b> almacenaje, financiación y merma del grano guardado no están en el P&L. Si suman más que la mejora esperada del spread, no conviene.`] : []),
+      : `<b>Pata vendida:</b> la venta de ${lV} pierde si sube ${esSp ? lV : 'el ' + nV}${R.estr === 'fisica' ? ' (lo compensa el físico, que se vende más caro)' : ''}. ${R.viVentaCara ? `La VI de ${calSp ? REC_LBL[s.c1].toLowerCase() :nV} está en P${R.viV.pct}: se podría financiar vendiendo calls de ${nV}, pero la pérdida de esa pata <b>no tiene techo</b>.` : 'No se proponen calls vendidos: la VI de ' + (calSp ? REC_LBL[s.c1].toLowerCase() :nV) + ' no está alta.'}`,
+    ...(calSp && R.estr === 'fisica' ? [`<b>Costo de guardar:</b> almacenaje, financiación y merma del grano guardado no están en el P&L. Si suman más que la mejora esperada del spread, no conviene.`] : []),
     `<b>Liquidez:</b> ${liq.length ? liq.join(' y ') + '.' : 'sin dato de interés abierto de A3.'} ${liqAlta ? 'Superan el ' + recF(REC_CONFIG.liquidezPctIA * 100, 1) + ' % del interés abierto: entrar con órdenes límite y repartido en varias ruedas.' : 'Conviene entrar con órdenes límite.'}`,
   ];
 
@@ -1019,11 +1123,11 @@ function recRenderTarjeta() {
     <div class="rc-scroll"><table class="rc-tabla"><thead><tr><th>Contrato</th><th>Operación</th><th class="r">Tramo 1 (hoy)</th><th class="r">Con los 3 tramos</th><th class="r">Precio ref.</th><th class="r">Garantía est.</th></tr></thead><tbody>${filaV}${filaC}</tbody></table></div>
     <div class="rc-note">${notaPatas}
       Precios ${desdeA3 ? 'de A3 en vivo' : 'del último dato histórico (A3 sin datos de alguna pata)'}${difVivo > (esSp ? 0.5 : 0.002) ? ` · ojo: ${T.el} en vivo (${fv(vivo)}) difiere de la serie (${fv(s.actual)})` : ''}.
-      ${R.estr === 'fisica' ? `Opcional: puts de ${lC} para proteger el ${esSp ? 'grano guardado' : nC + ' abierto'}; no están incluidos en el payoff.` : ''}
+      ${R.estr === 'fisica' ? `Opcional: puts de ${lC} para proteger el ${calSp ? 'grano guardado' : nC + ' abierto'}; no están incluidos en el payoff.` : ''}
       Garantías: ${recState.cfgEstado === 'ok' ? 'config_operaciones' : 'valores manuales hasta cargar config_operaciones'}.</div>
 
     <div class="rc-sec">2 · Entradas escalonadas <small>⅓ del volumen en cada tramo · ${n2} en ${recF(R.S, 1)} como referencia</small></div>
-    <div class="rc-scroll"><table class="rc-tabla"><thead><tr><th>Tramo</th><th>Cuándo</th><th class="r">${T.lbl}</th><th class="r">${n1} equivalente</th><th class="r">${esSp ? R.venta.p : REC_LBL[R.venta.c]} (venta)</th><th class="r">${esSp ? R.compra.p : REC_LBL[R.compra.c]} (${R.estr === 'fisica' ? (esSp ? 'guardado' : 'reservado') : R.estr === 'calls' ? 'calls' : 'compra'})</th></tr></thead><tbody>
+    <div class="rc-scroll"><table class="rc-tabla"><thead><tr><th>Tramo</th><th>Cuándo</th><th class="r">${T.lbl}</th><th class="r">${n1} equivalente</th><th class="r">${calSp ? R.venta.p : REC_LBL[R.venta.c]} (venta)</th><th class="r">${calSp ? R.compra.p : REC_LBL[R.compra.c]} (${R.estr === 'fisica' ? (calSp ? 'guardado' : 'reservado') : R.estr === 'calls' ? 'calls' : 'compra'})</th></tr></thead><tbody>
       ${R.tramos.map(t => `<tr><td><b>${t.n}</b></td><td>${t.cuando}</td><td class="r num">${fv(t.r)}</td><td class="r num">${recF(t.p1e, 1)}</td><td class="r num">${cto(t.qV, R.ctV)}</td><td class="r num">${R.estr === 'fisica' ? recT(t.qC) + ' t' : cto(t.qC, R.ctC)}${R.estr === 'calls' ? ` · K ${recF(t.k, 0)} · prima ${recF(t.prima, 1)}` : ''}</td></tr>`).join('')}
     </tbody></table></div>
 
@@ -1046,7 +1150,6 @@ function recRenderTarjeta() {
 
     <div class="rc-acciones" data-html2canvas-ignore>
       <button class="rc-btn" id="rc-btn-pdf" onclick="recPdf()">📄 Exportar PDF</button>
-      <button class="rc-btn out" onclick="recVerEnSpreads()">📈 Ver en Spreads</button>
       <button class="rc-btn out" onclick="recCopiar()">📋 Copiar resumen</button>
     </div>
     <div class="rc-legal">Propuesta generada automáticamente. Requiere validación del equipo comercial. No constituye asesoramiento financiero.</div>`;
@@ -1236,7 +1339,7 @@ function recDibujarPayoff(s, R) {
   const lo = Math.min(...niv), hi = Math.max(...niv), m = (hi - lo) * 0.12 || 0.01;
   const xs = []; for (let r = lo - m; r <= hi + m + 1e-9; r += (hi - lo + 2 * m) / 120) xs.push(r);
   const ds = (label, fn, c, w, dash) => ({ label, data: xs.map(r => ({ x: r, y: fn(r) / 1000 })), borderColor: c, borderWidth: w, borderDash: dash || [], pointRadius: 0, tension: 0 });
-  const nom = s.tipo === 'spread' ? s.pos2 : REC_LBL[s.c2].toLowerCase();
+  const nom = s.c1 === s.c2 ? s.pos2 : REC_LBL[s.c2].toLowerCase();
   const lineas = [
     ...R.tramos.map(t => ({ x: t.r, t: 'E' + t.n, c: '#53544e' })),
     { x: R.niveles[0].r, t: 'Obj 1', c: '#006e5a' }, { x: R.niveles[1].r, t: 'Obj 2', c: '#006e5a' },
@@ -1294,26 +1397,18 @@ function recDibujarPayoffPrecio(s, R) {
 async function recRecargar() {
   recState.cfgEstado = 'pendiente';
   await Promise.all([recCargarConfig(), typeof escLeerVinculado === 'function' ? escLeerVinculado(false).catch(() => {}) : null]);
-  recRender();
-}
-
-function recVerEnSpreads() {
-  const s = recState.senal; if (!s || s.tipo === 'precio') return;
-  toggleSpreads();
-  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-  set('sp-crop1', s.c1); spUpdatePos1(); set('sp-pos1', s.pos1);
-  set('sp-crop2', s.c2); spUpdatePos2(); set('sp-pos2', s.pos2);
-  spSetMode(s.tipo === 'spread' ? 'basis' : 'ratio');
+  recState.radarClave = null;
+  recSpRender();
 }
 
 function recCopiar() {
   const s = recState.senal, u = recState.ultima; if (!s || !u) return;
   const txt = d => d.replace(/<[^>]+>/g, '');
   const R = u.R, t1 = R.tramos[0], fv = s.fv, precio = s.tipo === 'precio';
-  const estrLbl = (precio ? REC_ESTR_PRECIO : s.tipo === 'spread' ? REC_ESTR_SPREAD : REC_ESTR)[R.estr].chip;
+  const estrLbl = (precio ? REC_ESTR_PRECIO : recEstrTxt(s))[R.estr].chip;
   const tramo1 = precio
     ? `Tramo 1: ${R.estr === 'venta' ? 'venta' : R.estr === 'puts' ? 'compra puts K ' + recF(t1.k, 0) + ' de' : 'compra calls K ' + recF(t1.k, 0) + ' de'} ${recT(t1.q)} t ${recLegLbl(s.c1, s.pos1)}`
-    : `Tramo 1: venta ${recT(t1.qV)} t ${recLegLbl(R.venta.c, R.venta.p)} · ${R.estr === 'fisica' ? (s.tipo === 'spread' ? 'guardar' : 'reservar') : R.estr === 'calls' ? 'calls' : 'compra'} ${recT(t1.qC)} t ${recLegLbl(R.compra.c, R.compra.p)}`;
+    : `Tramo 1: venta ${recT(t1.qV)} t ${recLegLbl(R.venta.c, R.venta.p)} · ${R.estr === 'fisica' ? (s.c1 === s.c2 ? 'guardar' : 'reservar') : R.estr === 'calls' ? 'calls' : 'compra'} ${recT(t1.qC)} t ${recLegLbl(R.compra.c, R.compra.p)}`;
   const lineas = [
     `RECOMENDACIÓN · ${s.lbl} · Señal ${recClaseLbl(s.puntaje.clase)} ${s.puntaje.total}`,
     `${s.T.lbl} ${fv(s.actual)} · P${s.pctl} · prom. histórico ${fv(s.histMean)} · prom. campaña ${fv(s.avgCamp)}`,
@@ -1368,65 +1463,40 @@ async function recPdf() {
 }
 
 // ═══════════════════════════════════════════════════
-// NAVEGACIÓN (mismo esquema que Clima y Escenarios)
+// ENGANCHE CON SPREADS
 // ═══════════════════════════════════════════════════
-async function toggleRecomendaciones() {
-  recMode = true;
-  theoryMode = false; retMode = false; paseMode = false; asstMode = false; spreadMode = false;
-  if (typeof desvioMode !== 'undefined') desvioMode = false;
-  if (typeof futOpcMode !== 'undefined') futOpcMode = false;
-  if (typeof lineupMode !== 'undefined') lineupMode = false;
-  if (typeof resumenMode !== 'undefined') resumenMode = false;
-  if (typeof escMode !== 'undefined') escMode = false;
-  if (typeof climaMode !== 'undefined') climaMode = false;
-  ['workspace', 'theory-space', 'ret-space', 'pase-space', 'spreads-space', 'desvio-space', 'alertas-space',
-   'futopc-space', 'lineup-space', 'resumen-space', 'esc-space', 'clima-space']
-    .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
-  ['tabs-container', 'mkt-bar', 'fob-bar'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
-  document.getElementById('rec-space').style.display = 'block';
-  recMarcarPill();
-  recRender();
+
+// Antes era una pestaña propia: si quedó guardada como último módulo abierto, se abre Spreads
+function toggleRecomendaciones() { toggleSpreads(); }
+
+// Fuentes que Spreads no carga (garantías y posición comercial): se piden al entrar al módulo
+async function recSpCargarFuentes() {
   const tareas = [recCargarConfig()];
-  if (!ASST_FUTPOS.length) tareas.push(asstLoadDrive());
   if (typeof escLeerVinculado === 'function') tareas.push(escLeerVinculado(false).catch(() => {}));
   await Promise.all(tareas);
-  if (recMode) recRender();
+  if (spreadMode) recSpProgramar();
 }
 
-function recMarcarPill() {
-  document.querySelectorAll('.mod-pill').forEach(p => p.classList.toggle('active', p.id === 'pill-recomendaciones'));
-}
-
-// Al ir a cualquier otro módulo se oculta Recomendaciones
-(function recEnvolverNavegacion() {
-  ['switchToWorkspace', 'toggleTheory', 'toggleRetenciones', 'togglePases', 'toggleSpreads', 'toggleDesvio',
-   'toggleLineUp', 'toggleResumen', 'toggleEscenarios', 'toggleClima', 'switchTab'].forEach(fn => {
-    const orig = window[fn];
-    if (typeof orig !== 'function') return;
-    window[fn] = function () {
-      recMode = false;
-      const el = document.getElementById('rec-space');
-      if (el) el.style.display = 'none';
-      return orig.apply(this, arguments);
-    };
-  });
-  const origRT = window.renderTabs;
-  if (typeof origRT === 'function') window.renderTabs = function () {
-    const r = origRT.apply(this, arguments);
-    if (recMode) { const tc = document.getElementById('tabs-container'); if (tc) tc.style.display = 'none'; }
+(function recEngancharSpreads() {
+  // Cada recálculo de Spreads (selectores, modo, filtro de campañas) vuelve a puntuar el par elegido
+  const origCalc = window.spCalcSpread;
+  if (typeof origCalc === 'function') window.spCalcSpread = function () {
+    const r = origCalc.apply(this, arguments);
+    recState.precioId = null;
+    recSpProgramar();
     return r;
   };
-  const origRM = window.renderModules;
-  if (typeof origRM === 'function') window.renderModules = function () {
-    const r = origRM.apply(this, arguments);
-    if (recMode) recMarcarPill();
+  const origTog = window.toggleSpreads;
+  if (typeof origTog === 'function') window.toggleSpreads = function () {
+    const r = origTog.apply(this, arguments);
+    recSpCargarFuentes();
     return r;
   };
-  // Si llegan precios de A3 con el módulo abierto, se recalcula la tarjeta
+  // Si llegan precios de A3 con Spreads abierto, se recalcula la tarjeta
   const origFS = window.finishSync;
   if (typeof origFS === 'function') window.finishSync = function () {
     const r = origFS.apply(this, arguments);
-    if (recMode) recRender();
+    if (spreadMode) recSpProgramar();
     return r;
   };
 })();

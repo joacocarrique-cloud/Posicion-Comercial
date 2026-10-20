@@ -8,8 +8,7 @@ function isWorkspaceMode() {
     && !(typeof lineupMode !== 'undefined' && lineupMode)
     && !(typeof resumenMode !== 'undefined' && resumenMode)
     && !(typeof escMode !== 'undefined' && escMode)
-    && !(typeof climaMode !== 'undefined' && climaMode)
-    && !(typeof recMode !== 'undefined' && recMode);
+    && !(typeof climaMode !== 'undefined' && climaMode);
 }
 
 function renderAll() {
