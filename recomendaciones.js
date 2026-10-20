@@ -351,8 +351,9 @@ function recPuntaje(s) {
   const comp = [];
   // 1. Extremo estadístico: distancia del percentil a P50 y |z hist.|
   const e = Math.abs(s.pctl - 50);
-  const sExt = 0.5 * recClamp((e - 20) / 28 * 100) + 0.5 * recClamp((Math.abs(s.zHist || 0) - 0.5) / 1.5 * 100);
-  comp.push({ k: 'extremo', lbl: 'Extremo estadístico', peso: W.extremo, sub: sExt,
+  const nPct = recClamp((e - 20) / 28 * 100), nZ = recClamp((Math.abs(s.zHist || 0) - 0.5) / 1.5 * 100);
+  const sExt = 0.5 * nPct + 0.5 * nZ;
+  comp.push({ k: 'extremo', lbl: 'Extremo estadístico', peso: W.extremo, sub: sExt, notas: { pct: Math.round(nPct), z: Math.round(nZ) },
     why: `P${s.pctl} y z hist. ${recSig(s.zHist, 2)}` });
   // 2. Estacionalidad: mediana del cambio hasta la fecha límite; sin patrón consistente queda neutra (50)
   let sEst = 50, whyEst = 'sin datos suficientes';
@@ -653,6 +654,21 @@ details.rc-radar > summary { cursor:pointer; list-style:none; }
 details.rc-radar > summary::-webkit-details-marker { display:none; }
 details.rc-radar > summary .rc-card-h { margin-bottom:0; }
 details.rc-radar[open] > summary .rc-card-h { margin-bottom:10px; }
+.rc-tip { position:relative; cursor:help; outline:none; }
+.rc-tip-i { display:inline-block; width:14px; height:14px; line-height:14px; border-radius:50%; background:var(--plano); border:1px solid var(--borde2); color:var(--mudo); font-size:9.5px; font-weight:700; text-align:center; vertical-align:1px; margin-left:2px; }
+.rc-tip::after { content:attr(data-tip); display:none; position:absolute; left:0; top:calc(100% + 6px); z-index:60; width:300px; max-width:80vw; padding:10px 12px; border-radius:8px;
+  background:var(--tinta); color:#fff; font-size:11.5px; font-weight:400; line-height:1.5; white-space:pre-line; text-transform:none; letter-spacing:0; box-shadow:0 6px 18px rgba(16,18,15,.22); }
+.rc-tip:hover::after, .rc-tip:focus::after { display:block; }
+.rc-tip:hover .rc-tip-i, .rc-tip:focus .rc-tip-i { background:var(--marca); border-color:var(--marca); color:#fff; }
+.rc-ayuda p, .rc-ayuda li { font-size:12px; line-height:1.6; color:var(--tinta2); margin:6px 0; max-width:820px; }
+.rc-ayuda ul { padding-left:18px; margin:4px 0; }
+.rc-ayuda h4 { font-size:12.5px; color:var(--marca); margin:18px 0 4px; }
+.rc-ayuda h4 small { color:var(--mudo); font-weight:500; }
+.rc-ayuda-cmp { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin:10px 0; max-width:820px; }
+.rc-ayuda-cmp > div { font-size:11.5px; line-height:1.6; background:var(--sup); border:1px solid var(--borde); border-radius:8px; padding:9px 12px; font-family:var(--mono); }
+.rc-ayuda-cmp > div b:first-child { font-family:Montserrat, sans-serif; }
+.rc-ayuda-cmp .pos { color:var(--marca); font-weight:700; } .rc-ayuda-cmp .neg { color:var(--terra); font-weight:700; }
+.rc-ayuda-ej { background:var(--marca-claro); border-radius:8px; padding:9px 12px; }
 .rc-h2 { font-size:16px; font-weight:700; margin:6px 0 12px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
 .rc-top { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:14px; }
 .rc-h1 { font-size:20px; font-weight:700; }
@@ -807,7 +823,8 @@ function recSpRender() {
   <div class="rc-card"><div class="rc-card-h">Estado de las fuentes</div><div class="rc-fuentes">${fuentes}</div></div>
   ${s.error ? `<div class="rc-card"><div class="rc-vacio">⚠️ ${par ? escHtml(par.nombre) + ': ' : ''}${escHtml(s.error)}</div></div>`
     : recHtmlSenal(s) + avisoVig + (operable ? `<div class="rc-card rc-reco" id="rc-tarjeta"></div>` : '')}
-  ${recHtmlCfg()}`;
+  ${recHtmlCfg()}
+  ${recHtmlAyuda(s)}`;
 
   if (!s.error) { recDibujarSenal(s); if (operable) recRenderTarjeta(); }
 }
@@ -938,13 +955,71 @@ function recHtmlSenal(s) {
     <div class="rc-card">
       <div class="rc-card-h">Puntaje de la señal <span class="rc-badge ${p.clase}">${recClaseLbl(p.clase)}</span></div>
       <div class="rc-desg">${p.comp.map(c => `<div class="rc-desg-row">
-        <div class="lbl"><b>${c.lbl}</b><small>peso ${recF(c.peso * 100, 1)} % · ${c.sub}/100</small></div>
+        <div class="lbl"><b class="rc-tip" tabindex="0" data-tip="${escHtml(recAyudaCorta(c.k, s))}">${c.lbl} <span class="rc-tip-i">?</span></b><small>peso ${recF(c.peso * 100, 1)} % · ${c.sub}/100</small></div>
         <div class="rc-desg-bar"><span style="width:${c.sub}%;background:${recColorSub(c.sub)}"></span></div>
         <div class="pts">${recF(c.pts, 1)}</div><div class="rc-desg-why">${c.why}</div></div>`).join('')}</div>
       <div class="rc-total"><div><b style="font-size:13px;">Total</b><div style="font-size:11px;color:var(--mudo);">Fuerte ≥ ${REC_CONFIG.fuerte} · Moderada ${REC_CONFIG.moderada}–${REC_CONFIG.fuerte - 1} · Débil &lt; ${REC_CONFIG.moderada} · con extremo &lt; ${REC_CONFIG.extremoMin}, siempre Débil</div></div><span class="num">${p.total}</span></div>
       ${p.sinExtremo ? `<div class="rc-aviso"><b>Sin extremo estadístico (${p.comp[0].sub}/100, mínimo ${REC_CONFIG.extremoMin}):</b> ${s.T.el} no está ni ${s.tipo === 'ratio' ? 'barata ni cara' : 'barato ni caro'} contra las campañas anteriores, así que la señal queda Débil${p.total >= REC_CONFIG.moderada ? `, aunque el total dé ${p.total}` : ''}. Los otros componentes solo deciden cuándo y cuánto entrar cuando ya hay un extremo.</div>` : ''}
+      <div class="rc-note">Pasá el mouse sobre cada componente para ver qué mide. <a href="#" onclick="const d=document.getElementById('rc-ayuda');d.open=true;d.scrollIntoView({behavior:'smooth'});return false;">Cómo se calcula, paso a paso ↓</a></div>
     </div>
   </div>`;
+}
+
+// ─── Ayuda: qué mide cada componente del puntaje ───
+// Versión corta (al pasar el mouse sobre el componente) y larga (sección "Cómo se calcula el puntaje")
+function recAyudaCorta(k, s) {
+  const precio = s.tipo === 'precio', v = (typeof RS_REGLAS !== 'undefined' && RS_REGLAS.relaciones && RS_REGLAS.relaciones.ventanaDias) || 20;
+  return {
+    extremo: `¿Está raro para esta época del ciclo?\nSe compara el valor de hoy con los días de las campañas anteriores que estaban a la misma distancia del vencimiento (± ${v} días). Se miran dos cosas: en qué puesto queda hoy (percentil) y a cuántos "pasos típicos" del promedio está (z). Cada una da una nota de 0 a 100 y se promedian.\nSi da menos de ${REC_CONFIG.extremoMin}, la señal queda Débil sí o sí.`,
+    estacional: `¿Suele moverse a favor de acá a la fecha límite?\nEn cada campaña anterior se mira cuánto cambió desde este punto del ciclo hasta la fecha límite. Si al menos 2 de cada 3 campañas fueron para el mismo lado, cuenta: más nota cuanto más se movió a favor y cuantas más campañas a favor. Si no hay patrón claro, queda en 50 (neutra).`,
+    momentum: `¿Dejó de ir en contra?\nMira hacia dónde viene ${s.T.el} en las últimas 10 y 20 ruedas. Arranca en 50: sube si viene a favor y baja si viene en contra. Resta 15 si hoy marcó un ${s.dir === 'baja' ? 'mínimo' : 'máximo'} nuevo de la campaña y suma 20 si "encontró ${precio && s.dir === 'alta' ? 'techo' : 'piso'}" (${REC_CONFIG.ruedasPiso} ruedas sin extremo nuevo).`,
+    persistencia: `¿Es una rareza pasajera o un cambio de nivel?\nCuenta qué parte de los días de esta campaña estuvo del mismo lado del promedio histórico. Mitad y mitad da 100; siempre del mismo lado da 0. Más de ${recF(REC_CONFIG.regimenPct, 0)} % avisa "posible cambio de régimen": puede que no vuelva al promedio.`,
+    vi: precio
+      ? `¿Las opciones están baratas o caras?\nUbica la volatilidad implícita de hoy contra la de otros años en el mismo mes. Si está baja, conviene comprar opciones (puts o calls) en vez de operar el futuro. Nunca baja de 50: si se opera con futuros, no afecta.`
+      : `¿Las opciones están baratas o caras?\nUbica la volatilidad implícita de hoy contra la de otros años en el mismo mes. Suma si los calls de la pata barata están baratos o los de la pata cara están caros. Nunca baja de 50: si se opera con futuros, no afecta.`,
+  }[k] || '';
+}
+
+function recHtmlAyuda(s) {
+  const ok = s && !s.error, C = REC_CONFIG, W = C.pesos, pc = x => recF(x * 100, 0) + ' %';
+  const v = (typeof RS_REGLAS !== 'undefined' && RS_REGLAS.relaciones && RS_REGLAS.relaciones.ventanaDias) || 20;
+  const ext = ok ? s.puntaje.comp[0] : null, dist = ok ? Math.abs(s.actual - s.histMean) : null;
+  const ejemplo = ok ? `<p class="rc-ayuda-ej"><b>En ${escHtml(s.lbl)}:</b> hoy vale <b>${s.fv(s.actual)}</b> y faltan ${s.curDte} días al vencimiento. El promedio de los días comparables es <b>${s.fv(s.histMean)}</b>.<br>
+      · Puesto: <b>P${s.pctl}</b> → nota <b>${ext.notas.pct}</b>.<br>
+      · Distancia: está ${s.fv(dist)} ${s.actual < s.histMean ? 'debajo' : 'encima'} del promedio; el paso típico es ${s.fv(s.sigH)}; ${s.fv(dist)} ÷ ${s.fv(s.sigH)} = <b>${recF(Math.abs(s.zHist), 2)} pasos</b> → nota <b>${ext.notas.z}</b>.<br>
+      · Extremo = (${ext.notas.pct} + ${ext.notas.z}) ÷ 2 = <b>${ext.sub}</b>${ext.sub < C.extremoMin ? `: menos de ${C.extremoMin}, la señal queda Débil` : ''}.</p>` : '';
+  return `<div class="rc-card"><details class="rc-cfg rc-ayuda" id="rc-ayuda"><summary>❓ Cómo se calcula el puntaje</summary>
+    <p>El puntaje va de 0 a 100 y suma cinco componentes, cada uno con su peso. <b>Fuerte</b> ≥ ${C.fuerte} · <b>Moderada</b> ${C.moderada}–${C.fuerte - 1} · <b>Débil</b> &lt; ${C.moderada}. La clase define cuánto del volumen sin precio se propone operar.</p>
+
+    <h4>1 · Extremo estadístico <small>peso ${pc(W.extremo)}</small></h4>
+    <p>Responde: <b>¿${ok ? s.T.el : 'el valor'} de hoy está raro para esta época del ciclo?</b> Es como preguntar si hace frío para ser octubre: se compara con los días de octubre de otros años, no con todo el año.</p>
+    <p><b>Paso 1 · Historia comparable.</b> Se toman las campañas anteriores del mismo par (mismo mes, mismo desfase de año) y, de cada una, solo los días que estaban a la misma distancia del vencimiento que hoy (± ${v} días).</p>
+    <p><b>Paso 2 · Dos preguntas a esa historia.</b></p>
+    <ul>
+      <li><b>¿En qué puesto queda hoy? (percentil)</b> Se ordenan todos esos días de menor a mayor. P50 es el medio; P0, más bajo que todos; P100, más alto que todos.</li>
+      <li><b>¿A cuántos pasos típicos del promedio está? (z)</b> El paso típico (desvío estándar) es cuánto se separa del promedio, en general, un día cualquiera. Sirve para saber si una distancia es grande <i>para ese spread</i>.</li>
+    </ul>
+    <div class="rc-ayuda-cmp">
+      <div><b>Spread A · se mueve poco</b><br>Historia 10 · 12 · 14 · 16 · 18 (promedio 14)<br>Paso típico 2,8<br>Hoy 8: está 6 abajo → 6 ÷ 2,8 = <b>2,1 pasos</b><br><span class="pos">Muy raro: oportunidad</span></div>
+      <div><b>Spread B · se mueve mucho</b><br>Historia 4 · 9 · 14 · 19 · 24 (promedio 14)<br>Paso típico 7,1<br>Hoy 8: está 6 abajo → 6 ÷ 7,1 = <b>0,85 pasos</b><br><span class="neg">Normal: ruido</span></div>
+    </div>
+    <p><b>Paso 3 · Notas de 0 a 100.</b> Puesto: entre P30 y P70 da 0 y sube hasta 100 en P2 (o P98). Distancia: hasta 0,5 pasos da 0 y sube hasta 100 en 2 pasos. El extremo es el promedio de las dos.</p>
+    ${ejemplo}
+    <p><b>Paso 4 · Regla de corte.</b> Si el extremo da menos de ${C.extremoMin}, la señal queda Débil aunque el resto sume mucho: si no está raro, no hay nada para operar.</p>
+    <p><b>¿Por qué dos preguntas?</b> El puesto solo engaña cuando la historia casi no se movió (estar último puede ser estar apenas por debajo). La distancia sola engaña cuando unos pocos días locos agrandan el paso típico.</p>
+
+    <h4>2 · Estacionalidad <small>peso ${pc(W.estacional)}</small></h4>
+    <p>Responde: <b>¿suele moverse a favor de acá a la fecha límite?</b> En cada campaña anterior se mide cuánto cambió desde este punto del ciclo hasta la fecha límite (vencimiento menos ${C.habilesAntesVto} hábiles). Cuenta solo si al menos 2 de cada 3 campañas fueron para el mismo lado; entonces la nota sale mitad de cuánto se movió (la mediana, comparada con el paso típico) y mitad de qué parte de las campañas fue a favor. Sin patrón claro queda en 50.</p>
+
+    <h4>3 · Momentum <small>peso ${pc(W.momentum)}</small></h4>
+    <p>Responde: <b>¿dejó de ir en contra?</b> Mira la tendencia de las últimas 10 y 20 ruedas. Arranca en 50, sube si viene a favor y baja si viene en contra. Resta 15 si hoy marcó un extremo nuevo de la campaña y suma 20 si "encontró piso" (o techo): ${C.ruedasPiso} ruedas sin extremo nuevo y tendencia de 10 ruedas plana o a favor. La idea es no entrar mientras sigue yendo en contra.</p>
+
+    <h4>4 · Persistencia y régimen <small>peso ${pc(W.persistencia)}</small></h4>
+    <p>Responde: <b>¿es una rareza pasajera o un cambio de nivel?</b> Cuenta qué parte de los días de esta campaña estuvo del mismo lado del promedio histórico. Mitad y mitad da 100 (va y viene, es esperable que vuelva); siempre del mismo lado da 0. Con más de ${recF(C.regimenPct, 0)} % aparece el aviso <b>posible cambio de régimen</b>: algo estructural pudo haber cambiado (retenciones, oferta, logística) y el promedio histórico puede no volver.</p>
+
+    <h4>5 · Volatilidad implícita <small>peso ${pc(W.vi)}</small></h4>
+    <p>Responde: <b>¿las opciones están baratas o caras?</b> Ubica la volatilidad implícita de hoy contra la de otros años en el mismo mes. Sirve para elegir entre operar con futuros o con opciones. Nunca baja de 50: si se opera con futuros, no afecta.</p>
+  </details></div>`;
 }
 
 function recHtmlCfg() {
