@@ -488,12 +488,50 @@ function paseCalcStrategies(pair, inp, calc) {
   return strats;
 }
 
+// ─── Pases ocultos (preferencia del usuario, se guarda en el navegador) ───
+function paseKey(pair) { return pair.tagFrom + '-' + pair.tagTo; }
+function paseHiddenList() {
+  const v = (typeof uiGet === 'function') ? uiGet('pasesOcultos', []) : [];
+  return Array.isArray(v) ? v : [];
+}
+function paseHide(key) {
+  const l = paseHiddenList();
+  if (!l.includes(key)) l.push(key);
+  if (typeof uiSet === 'function') uiSet('pasesOcultos', l);
+  paseCalc();
+}
+function paseShow(key) {
+  const l = paseHiddenList().filter(k => k !== key);
+  if (typeof uiSet === 'function') uiSet('pasesOcultos', l);
+  paseCalc();
+}
+function paseRenderHiddenBar(hiddenPairs) {
+  const el = document.getElementById('pase-hidden-bar');
+  if (!el) return;
+  if (hiddenPairs.length === 0) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  el.innerHTML = '<span class="pase-hidden-lbl">Pases ocultos:</span>' + hiddenPairs.map(p =>
+    `<button class="pase-hidden-chip" onclick="paseShow('${paseKey(p)}')" title="Volver a mostrar este pase">
+       ${p.tagFrom.toUpperCase()} → ${p.tagTo.toUpperCase()} <span class="pase-hidden-sub">${p.label}</span> <span class="pase-hidden-act">Mostrar</span>
+     </button>`).join('');
+}
+
 function paseCalc() {
   const inp = paseGetInputs();
-  const pairs = paseBuildPairs(inp);
+  const allPairs = paseBuildPairs(inp);
+  const hidden = paseHiddenList();
+  const pairs = allPairs.filter(p => !hidden.includes(paseKey(p)));
+  paseRenderHiddenBar(allPairs.filter(p => hidden.includes(paseKey(p))));
   if (pairs.length === 0) {
     const tbody = document.getElementById('pase-matrix-body');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-3); padding:20px; font-size:13px;">⚠ Completá las fechas de vencimiento para calcular los pases</td></tr>';
+    const msg = allPairs.length === 0
+      ? '⚠ Completá las fechas de vencimiento para calcular los pases'
+      : 'Todos los pases están ocultos. Usá los botones de “Pases ocultos” para volver a mostrarlos.';
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--text-3); padding:20px; font-size:13px;">${msg}</td></tr>`;
+    ['pase-reading-grid', 'pase-carry-tabs', 'pase-carry-cards', 'pase-carry-decision', 'pase-carry-note',
+     'pase-strat-tabs', 'pase-strat-summary', 'pase-strat-rows', 'pase-strat-note'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.innerHTML = '';
+    });
     return;
   }
 
@@ -512,10 +550,15 @@ function paseCalc() {
 
     matrixHTML += `<tr>
       <td>
-        <span class="pase-pos-tag ${pair.tagFrom}" style="font-size:10px; padding:2px 7px; margin:0;">${pair.tagFrom.toUpperCase()}</span>
-        →
-        <span class="pase-pos-tag ${pair.tagTo}" style="font-size:10px; padding:2px 7px; margin:0;">${pair.tagTo.toUpperCase()}</span>
-        <br><span style="font-size:11px; color:var(--text-3);">${pair.label}</span>
+        <div class="pase-cell-head">
+          <div>
+            <span class="pase-pos-tag ${pair.tagFrom}" style="font-size:10px; padding:2px 7px; margin:0;">${pair.tagFrom.toUpperCase()}</span>
+            →
+            <span class="pase-pos-tag ${pair.tagTo}" style="font-size:10px; padding:2px 7px; margin:0;">${pair.tagTo.toUpperCase()}</span>
+            <br><span style="font-size:11px; color:var(--text-3);">${pair.label}</span>
+          </div>
+          <button class="pase-hide-btn" onclick="paseHide('${paseKey(pair)}')" title="Ocultar este pase" aria-label="Ocultar pase ${pair.label}">Ocultar</button>
+        </div>
       </td>
       <td style="font-family:var(--mono); font-weight:600;">${pair.days}</td>
       <td style="font-family:var(--mono); font-weight:600; color:${c.paseUSD >= 0 ? 'var(--green)' : 'var(--red)'};">${c.paseUSD >= 0 ? '+' : ''}${c.paseUSD.toFixed(1)}</td>

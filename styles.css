@@ -1584,6 +1584,30 @@ body {
 }
 .pase-sem.win { background: var(--es-green-light); color: var(--es-green-dark); }
 .pase-sem.lose { background: #fde8e8; color: var(--red); }
+/* Ocultar / mostrar pases en la matriz */
+.pase-cell-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.pase-hide-btn {
+  font-size: 10px; font-weight: 600; letter-spacing: .02em;
+  color: var(--text-3); background: transparent;
+  border: 1px solid var(--border, #e2e2dc); border-radius: 10px;
+  padding: 2px 9px; cursor: pointer; white-space: nowrap;
+  opacity: .55; transition: opacity .15s, color .15s, border-color .15s;
+}
+.pase-matrix tr:hover .pase-hide-btn { opacity: 1; }
+.pase-hide-btn:hover { color: var(--red); border-color: var(--red); }
+.pase-hidden-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin: -8px 0 20px; font-size: 11px;
+}
+.pase-hidden-lbl { color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; font-size: 10px; }
+.pase-hidden-chip {
+  font-size: 11px; font-weight: 600; color: var(--text-2, #555);
+  background: var(--surface, #fff); border: 1px dashed var(--border, #d6d6cf);
+  border-radius: 12px; padding: 3px 10px; cursor: pointer;
+}
+.pase-hidden-chip:hover { border-style: solid; border-color: var(--es-green, #1f6b3a); }
+.pase-hidden-sub { font-weight: 400; color: var(--text-3); margin-left: 4px; }
+.pase-hidden-act { color: var(--es-green, #1f6b3a); margin-left: 6px; }
 .pase-reading-grid {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
